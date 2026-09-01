@@ -1,0 +1,15 @@
+# LiveKit-SFU fuer den WebRTC-Transport (Schritt direkt nach dem lokalen Audio-Milestone).
+#
+#   docker compose up
+#
+# Dev-Modus: feste Test-Keys  devkey / secret  -- nur lokal verwenden.
+services:
+  livekit:
+    image: livekit/livekit-server:v1.8
+    command: --config /etc/livekit.yaml --node-ip 127.0.0.1
+    ports:
+      - "7880:7880" # HTTP / WebSocket (Signaling)
+      - "7881:7881" # RTC / TCP
+      - "7882:7882/udp" # RTC / UDP
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro

@@ -1,0 +1,40 @@
+[project]
+name = "pacemaker-agent"
+version = "0.0.0"
+description = "Pacemaker Phase-0 Voice-Agent (Proof of Concept)"
+requires-python = ">=3.12"
+dependencies = [
+    "pipecat-ai[azure,silero]>=0.0.65",
+    "pyaudio>=0.2.14",
+    "python-dotenv>=1.0",
+    "loguru>=0.7",
+    "pandas>=2.2",
+]
+
+[project.scripts]
+pacemaker-agent = "pacemaker_agent.main:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pacemaker_agent"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
