@@ -18,17 +18,19 @@ TRANSPORTS = ("local", "webrtc", "livekit")
 
 def _build_transport(kind: str):
     if kind == "local":
-        from pipecat.audio.vad.silero import SileroVADAnalyzer
         from pipecat.transports.local.audio import (
             LocalAudioTransport,
             LocalAudioTransportParams,
         )
 
+        # VAD wird in pipeline.py auf Aggregator-Ebene konfiguriert
+        # (LLMUserAggregatorParams.vad_analyzer), nicht hier am Transport --
+        # LocalAudioTransportParams hat in Pipecat >=1.8 kein vad_analyzer-Feld
+        # mehr (wuerde von Pydantic still verworfen).
         return LocalAudioTransport(
             LocalAudioTransportParams(
                 audio_in_enabled=True,
                 audio_out_enabled=True,
-                vad_analyzer=SileroVADAnalyzer(),
             )
         )
 

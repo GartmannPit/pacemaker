@@ -67,8 +67,9 @@ cd agent
 uv sync
 uv run pacemaker-agent --stack baseline            # lokaler Lauf
 uv run pytest
+uv run python -m pacemaker_agent.tests.generate_fixtures              # einmalig, Test-Audio erzeugen
 uv run python -m pacemaker_agent.tests.synthetic_caller --stack azure-eu --turns 30
-uv run python -m pacemaker_agent.metrics.aggregate experiments/runs
+uv run python -m pacemaker_agent.metrics.aggregate
 ```
 
 Frontend:

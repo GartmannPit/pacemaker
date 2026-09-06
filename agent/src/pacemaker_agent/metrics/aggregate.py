@@ -1,6 +1,7 @@
 """Aggregiert experiments/runs/*.jsonl zu p50/p90/p95 je Stack.
 
-    uv run python -m pacemaker_agent.metrics.aggregate experiments/runs
+    uv run python -m pacemaker_agent.metrics.aggregate               # Default: RUNS_DIR
+    uv run python -m pacemaker_agent.metrics.aggregate <anderer-pfad>
 """
 
 from __future__ import annotations
@@ -10,7 +11,9 @@ from pathlib import Path
 
 import pandas as pd
 
-METRIC_COLS = ["e2e_ms", "stt_final_ms", "llm_ttft_ms", "tts_ttfb_ms"]
+from .collector import RUNS_DIR
+
+METRIC_COLS = ["e2e_ms", "turn_detection_ms", "llm_ttfb_ms", "tts_ttfb_ms"]
 E2E_TARGET_P90_MS = 900  # Akzeptanzkriterium Phase 0 §2
 
 
@@ -36,7 +39,7 @@ def summarize(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def main() -> None:
-    runs_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("experiments/runs")
+    runs_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else RUNS_DIR
     df = load(runs_dir)
 
     pd.set_option("display.max_columns", None)

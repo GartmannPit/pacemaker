@@ -1,20 +1,24 @@
 """Schreibt Latenzmetriken pro Turn als JSON-Lines nach experiments/runs/.
 
-Pipecat liefert Metriken ueber MetricsFrame bzw. den Observer-Mechanismus. Welcher
-Hook zur installierten Pipecat-Version passt, nach `uv sync` gegen die Quickstart
-abgleichen (siehe README). Das JSONL-Schema unten ist die Schnittstelle zu
-metrics/aggregate.py und bleibt stabil.
+Gespeist von Pipecats eingebautem `UserBotLatencyObserver`
+(`pipecat.observers.user_bot_latency_observer`), verdrahtet in pipeline.py.
+Der Observer misst `e2e_ms` direkt (VAD-Sprechende-erkannt -> erstes Bot-Audio,
+das Latenzbudget-Kriterium aus CLAUDE.md) und liefert zusaetzlich eine
+Breakdown pro Zyklus: Turn-Detection-Overhead sowie TTFB pro Service. Das
+JSONL-Schema unten ist die Schnittstelle zu metrics/aggregate.py und bleibt
+stabil.
 
 Schema pro Zeile:
   {"ts": ISO8601, "stack": str, "turn": int,
-   "e2e_ms": float, "stt_final_ms": float|null,
-   "llm_ttft_ms": float|null, "tts_ttfb_ms": float|null}
+   "e2e_ms": float,
+   "turn_detection_ms": float|null,
+   "llm_ttfb_ms": float|null, "tts_ttfb_ms": float|null}
 """
 
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 # .../agent/src/pacemaker_agent/metrics/collector.py -> parents[4] == Repo-Wurzel
@@ -28,7 +32,7 @@ class MetricsCollector:
         self._turn = 0
         target = runs_dir or RUNS_DIR
         target.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         self._path = target / f"{stamp}-{stack}.jsonl"
 
     @property
@@ -39,18 +43,18 @@ class MetricsCollector:
         self,
         *,
         e2e_ms: float,
-        stt_final_ms: float | None = None,
-        llm_ttft_ms: float | None = None,
+        turn_detection_ms: float | None = None,
+        llm_ttfb_ms: float | None = None,
         tts_ttfb_ms: float | None = None,
     ) -> None:
         self._turn += 1
         row = {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "stack": self.stack,
             "turn": self._turn,
             "e2e_ms": round(e2e_ms, 1),
-            "stt_final_ms": None if stt_final_ms is None else round(stt_final_ms, 1),
-            "llm_ttft_ms": None if llm_ttft_ms is None else round(llm_ttft_ms, 1),
+            "turn_detection_ms": None if turn_detection_ms is None else round(turn_detection_ms, 1),
+            "llm_ttfb_ms": None if llm_ttfb_ms is None else round(llm_ttfb_ms, 1),
             "tts_ttfb_ms": None if tts_ttfb_ms is None else round(tts_ttfb_ms, 1),
         }
         with self._path.open("a", encoding="utf-8") as fh:

@@ -62,11 +62,20 @@ Resource Group und derselben Region**.
    - Deployment name: **`gpt-4.1-mini`** (frei wählbar — genau dieser Name kommt in die `.env`)
    - Deployment type: **Data Zone Standard** (EU) falls angeboten, sonst **Standard**
      (regional). *Nicht* „Global Standard" (routet ggf. außerhalb der EU).
-   - „View code" im Deployment zeigt die passende **api-version** → nach `AZURE_OPENAI_API_VERSION`.
    - TPM/Quota: Default lassen; bei „quota exceeded" TPM auf z. B. 10K senken.
 6. Zurück auf der **Azure-OpenAI-Ressource** (nicht Foundry) → **Keys and Endpoint**. Notieren:
-   - **Endpoint** (`https://pacemaker-openai.openai.azure.com/`) → `AZURE_OPENAI_ENDPOINT`
+   - **Endpoint** (`https://pacemaker-openai.openai.azure.com/`) → an `AZURE_OPENAI_ENDPOINT`
+     zusätzlich **`openai/v1`** anhängen (siehe unten, § 3).
    - **KEY 1** → `AZURE_OPENAI_API_KEY`
+
+**Wichtig — welche API-Version:** Pipecats `AzureLLMService` (≥ 1.8.0) nutzt die neue
+Azure-**v1-API**, sobald `AZURE_OPENAI_ENDPOINT` auf `/openai/v1` endet — keine separate
+`api-version` mehr nötig. Neu erstellte Azure-Ressourcen über den **AI-Foundry-„New
+project"-Flow** (Beispielcode dort nutzt `DefaultAzureCredential` + `/openai/v1`) sprechen
+teils **nur** diese v1-API; die klassische Route
+(`/openai/deployments/<name>/chat/completions?api-version=...`) liefert dann `404 Resource
+not found`, egal wie Deployment-Name oder api-version lauten. Immer `/openai/v1` anhängen,
+dann funktioniert Key-Auth auf beiden Ressourcentypen.
 
 ### 2.3 Netzwerkzugriff — welchen „Type"?
 
@@ -98,10 +107,9 @@ Dann `agent/.env` öffnen und eintragen:
 | `AZURE_SPEECH_KEY` | Speech → Keys and Endpoint → KEY 1 | `a1b2c3…` |
 | `AZURE_SPEECH_REGION` | Speech → Keys and Endpoint → Location | `germanywestcentral` |
 | `AZURE_TTS_VOICE` | fest vorgegeben (sachliche männliche Stimme) | `de-DE-ConradNeural` |
-| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI → Keys and Endpoint → Endpoint | `https://pacemaker-openai.openai.azure.com/` |
+| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI → Keys and Endpoint → Endpoint, **+ `openai/v1` anhängen** | `https://pacemaker-openai.openai.azure.com/openai/v1` |
 | `AZURE_OPENAI_API_KEY` | Azure OpenAI → Keys and Endpoint → KEY 1 | `d4e5f6…` |
 | `AZURE_OPENAI_DEPLOYMENT` | **Deployment-Name** aus AI Foundry (nicht der Modellname, falls abweichend) | `gpt-4.1-mini` |
-| `AZURE_OPENAI_API_VERSION` | aus „View code" des Deployments | `2025-01-01-preview` |
 
 `agent/.env` ist gitignored und darf nicht eingecheckt werden.
 
@@ -134,9 +142,14 @@ egal wie langsam. Barge-in (Reinreden) sollte grundsätzlich funktionieren.
 | `Invalid device` / kein Mikrofon | Windows-Sounseinstellungen → Standard-Eingabegerät setzen. `LocalAudioTransport` nutzt das System-Standardgerät. |
 | Azure **`401` / `403`** | Falscher Schlüssel oder Region. Der Key gehört zu genau einer Ressource in genau einer Region — `AZURE_SPEECH_REGION` muss dazu passen. |
 | Azure OpenAI **`404 DeploymentNotFound`** | `AZURE_OPENAI_DEPLOYMENT` muss der **Deployment-Name** aus AI Foundry sein, nicht zwangsläufig der Modellname. |
+| Azure OpenAI **`404 Resource not found`** bei **jedem** Chat-Call, egal welcher Deployment-Name | `AZURE_OPENAI_ENDPOINT` endet nicht auf `/openai/v1`. Manche (v. a. neu über den AI-Foundry-„New project"-Flow angelegte) Ressourcen sprechen **nur** die neue v1-API, nicht die klassische `/openai/deployments/...?api-version=...`-Route. Fix: `/openai/v1` an den Endpoint anhängen — funktioniert mit Key-Auth auf beiden Ressourcentypen. Direkt testbar mit `curl -s -w '%{http_code}' "$AZURE_OPENAI_ENDPOINT/responses" -H "api-key: $AZURE_OPENAI_API_KEY" -H "Content-Type: application/json" -d '{"model":"'$AZURE_OPENAI_DEPLOYMENT'","input":"OK"}'`. |
 | Azure OpenAI **`429`** | TPM-Quota des Deployments zu klein oder erschöpft → in AI Foundry TPM erhöhen oder Quota-Antrag stellen. |
+| Deployment von `gpt-4.1-mini` scheitert mit **„Insufficient quota" / „Quota exceeded"** (Deployment lässt sich gar nicht erst anlegen) | Bei **Free-Trial-Subscriptions** vergibt Azure für OpenAI-Modelle i. d. R. **0 Default-Quota**, unabhängig von Region oder Guthaben. Fix: Subscription auf **Pay-As-You-Go** upgraden (Portal → Subscriptions → Upgrade), danach erneut versuchen. Bleibt die Quota 0: AI Foundry → *Management Center* → *Quota* → Erhöhung beantragen (bei Standard-Deployment meist selfservice). Ggf. Region wechseln (`France Central` / `Sweden Central`). **Nicht** auf „Global Standard" ausweichen, um Quota-Probleme zu umgehen — das kann außerhalb der EU routen. |
 | TTS-Fehler „voice not found" | `AZURE_TTS_VOICE` muss in der Region verfügbar sein. `de-DE-ConradNeural` / `de-DE-KatjaNeural` sind breit verfügbar. |
 | Antwort kommt spät / klingt roboterhaft | Für diesen Schritt normal. Latenz- und Qualitätsmessung ist Woche 2–3. |
+| Agent „hängt" / wiederholt sich endlos, wirkt aber nicht abgestürzt (kein Error im Log) | **Audio-Echo-Loop**: Das Mikro nimmt die eigene Lautsprecher-Ausgabe des Agenten auf, STT transkribiert sie als neuen User-Turn, das löst eine Interruption aus, der Bot fängt fast denselben Satz nochmal an — Loop. Im Log erkennbar an `broadcast_interruption` kurz nach `Bot started speaking`, plus User-Turns, die fast wortgleich mit dem vorherigen Bot-Turn sind. Fix: macOS → Systemeinstellungen → Ton → **Ausgabe** und **Eingabe** getrennt auf Headset stellen (nicht MacBook-Lautsprecher/-Mikro). Kabelgebundenes Headset ist zuverlässiger als Bluetooth (Latenz). |
+| Auch mit Headset: viele Bot-Antworten bleiben aus, User-Turn wird kurz nach `User stopped speaking` sofort wieder `User started speaking` (Log-Gap oft < 1 s) | `LocalAudioTransportParams(vad_analyzer=...)` wird in Pipecat ≥ 1.8 von Pydantic still verworfen — kein Feld mehr dafür am Transport. VAD muss stattdessen auf Aggregator-Ebene via `LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer())` an `LLMContextAggregatorPair` übergeben werden (siehe `pipeline.py`). Ohne das läuft Turn-Erkennung rein über Transkription + das semantische Smart-Turn-v3-Modell (Default `stop_secs=3`), das bei Sprechpausen im Satz mitunter vorzeitig „Ende" erkennt. |
+| Unbeaufsichtigter Messlauf (z. B. `synthetic_caller`) bricht nach einer langen Log-Lücke mit `EXIT 139` / Absturz ab, kurz davor `Azure TTS synthesis canceled: Codec decoding is not started within 2s` | **macOS ist zwischendurch in den Schlaf gegangen.** Beim Aufwachen wirft Azures TTS-SDK diesen Codec-Timeout, die Fehlerbehandlung im nativen SDK-Teil crasht hart. Fix: Läufe mit `caffeinate -i <command>` starten, verhindert Idle-Sleep für die Prozessdauer. |
 
 ---
 

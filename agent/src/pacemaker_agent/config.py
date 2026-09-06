@@ -27,7 +27,6 @@ class AzureConfig:
     openai_endpoint: str
     openai_key: str
     openai_deployment: str
-    openai_api_version: str
 
 
 def load_azure_config() -> AzureConfig:
@@ -38,5 +37,4 @@ def load_azure_config() -> AzureConfig:
         openai_endpoint=_require("AZURE_OPENAI_ENDPOINT"),
         openai_key=_require("AZURE_OPENAI_API_KEY"),
         openai_deployment=os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4.1-mini"),
-        openai_api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2025-01-01-preview"),
     )

@@ -38,6 +38,7 @@ def build_stack(name: str) -> StackServices:
 def _build_azure_eu() -> StackServices:
     # Importpfade nach `uv sync` gegen die installierte Pipecat-Version pruefen
     # (siehe README-Hinweis). Bei aelteren Versionen: `from pipecat.services.azure import ...`
+    import azure.cognitiveservices.speech as speechsdk
     from pipecat.services.azure.llm import AzureLLMService
     from pipecat.services.azure.stt import AzureSTTService
     from pipecat.services.azure.tts import AzureTTSService
@@ -49,11 +50,28 @@ def _build_azure_eu() -> StackServices:
         region=cfg.speech_region,
         language="de-DE",
     )
+    # Azure STT hat laut Pipecats eigenem Benchmark (stt_latency.AZURE_TTFS_P99)
+    # eine P99-Finalisierungslatenz von 1,8s -- dominanter Anteil unserer
+    # Turn-Detection-Latenz (siehe experiments/summaries/). Pipecat exponiert
+    # dafuer keinen Konstruktor-Parameter, deshalb Zugriff auf das interne
+    # SpeechConfig-Objekt: Azures serverseitige Segmentierungs-Stille-Schwelle
+    # (Default laut Microsoft-Doku ~500ms) senken, bevor _connect() den
+    # SpeechRecognizer daraus baut. Fragil ggue. Pipecat-Versionswechseln
+    # (_speech_config ist ein privates Attribut) -- bei ImportError/AttributeError
+    # nach `uv sync` hier zuerst pruefen.
+    #
+    # 200ms -> 30-Turn-Test: E2E p50 2176->1570ms, p90 2377->1817ms.
+    # 100ms getestet und verworfen: nochmal schneller (p50 1396ms), aber
+    # sichtbare Ueberfragmentierung -- "Guten Tag, hier ist Lena Fischer..."
+    # wurde in zwei separate Turns zerschnitten statt als ein Satz erkannt zu
+    # werden (bei 200ms blieb er zusammen). Schon mit sauberen TTS-Clips
+    # sichtbar, bei echter menschlicher Sprache mit mehr Pausen vermutlich
+    # staerker. Details: experiments/summaries/.
+    stt._speech_config.set_property(speechsdk.PropertyId.Speech_SegmentationSilenceTimeoutMs, "200")
     llm = AzureLLMService(
         api_key=cfg.openai_key,
         endpoint=cfg.openai_endpoint,
         model=cfg.openai_deployment,
-        api_version=cfg.openai_api_version,
     )
     tts = AzureTTSService(
         api_key=cfg.speech_key,
