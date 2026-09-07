@@ -89,11 +89,29 @@ def build_pipeline_task(
     # vom kritischen Pfad zu nehmen. Im 30-Turn-Vergleich machte das die
     # Turn-Detection-Latenz mehr als doppelt so langsam (p50 1036ms -> 2648ms)
     # statt schneller -- Mechanismus ungeklaert, siehe experiments/summaries/.
+    # Getestet und verworfen: user_turn_strategies mit
+    # LocalSmartTurnAnalyzerV3(cpu_count=4) statt Pipecat-Default (cpu_count=1),
+    # in der Annahme, die lokale ONNX-Inferenz sei CPU-bound (Testrechner hat
+    # 8 Kerne). 30-Turn-Vergleich zeigte keinen Effekt auf die
+    # Turn-Detection-Latenz (p50 476ms -> 487ms, innerhalb der Messstreuung) --
+    # kein Grund, von Pipecats Default abzuweichen. Details: experiments/summaries/.
     context_aggregator = LLMContextAggregatorPair(
         context,
         user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()),
     )
 
+    # Getestet und verworfen: ContextWindowLimiter (Sliding Window auf die letzten
+    # 15 Turns statt vollem Verlauf, Modul mittlerweile entfernt). Idee war, das
+    # mit jedem Turn wachsende Prompt-Volumen zu kappen -- Azure hat dafuer keine
+    # Server-Einstellung ("ChatHistory" in Azure AI Foundry betrifft nur den
+    # dortigen Test-Chat, nicht unser Deployment). Ergebnis: Zwar weniger
+    # Prompt-Tokens (30-Turn-Test: 1759 -> 993 beim letzten Turn), aber **schlechter**
+    # statt besser, weil das Kappen den Prompt-Prefix bei jedem Turn veraendert und
+    # damit Azures automatisches Prompt-Caching zerstoert (Log zeigte vorher
+    # "cache read input tokens: 1664", danach keine Cache-Treffer mehr). E2E p50
+    # 1570ms -> 1770ms, LLM-TTFB p50 444ms -> 546ms. Gecachte Tokens sind
+    # offenbar deutlich billiger/schneller verarbeitet als weniger, aber frische
+    # Tokens. Details: experiments/summaries/2026-09-07-latenz-ansaetze-*.md.
     pipeline = Pipeline(
         [
             transport.input(),

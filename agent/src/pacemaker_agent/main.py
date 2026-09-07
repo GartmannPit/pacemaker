@@ -1,6 +1,6 @@
 """Einstiegspunkt. Waehlt Stack und Transport per CLI-Flag.
 
-    uv run pacemaker-agent --stack azure-eu --transport local
+uv run pacemaker-agent --stack azure-eu --transport local
 """
 
 from __future__ import annotations

@@ -29,8 +29,7 @@ def build_stack(name: str) -> StackServices:
         return _build_azure_eu()
     if name in ("baseline", "sovereign", "s2s"):
         raise NotImplementedError(
-            f"Stack '{name}' ist laut Phase-0-Plan §3 erst in Woche 3 dran. "
-            f"Aktuell nur 'azure-eu'."
+            f"Stack '{name}' ist laut Phase-0-Plan §3 erst in Woche 3 dran. Aktuell nur 'azure-eu'."
         )
     raise ValueError(f"Unbekannter Stack '{name}'. Erlaubt: {', '.join(STACKS)}")
 

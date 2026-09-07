@@ -103,7 +103,28 @@ jedem weiteren Einsatz mit echter Sprache validieren**, falls später doch gewü
 **Zwischenstand nach Optimierung:** E2E p90 1817 ms — weiterhin **FAIL** gegen das
 900-ms-Kriterium, aber von 2,6× auf ~2,0× über Budget reduziert, bei unveränderter LLM-/TTS-Latenz.
 
-### 4.3 Nebenbefunde beim Testen
+### 4.3 Zwei weitere Hebel geprüft — beide verworfen (ohne bzw. mit Testlauf)
+
+Nach 4.1/4.2 zusätzlich systematisch durchgegangen, was an ungenutzten Pipecat-Defaults noch
+Spielraum bietet:
+
+- **`LocalSmartTurnAnalyzerV3(cpu_count=4)`** statt Pipecat-Default (`cpu_count=1`) für die lokale
+  ONNX-Inferenz des Smart-Turn-Modells (Testrechner: 8 Kerne). 30-Turn-Vergleich: Turn-Detection
+  p50 476 ms → 487 ms — **kein Effekt**, innerhalb der Messstreuung (der gleichzeitig beobachtete
+  LLM-TTFB-Sprung 444→557 ms ist ebenfalls nicht auf diese Änderung zurückzuführen, da `cpu_count`
+  nur den Turn-Analyzer betrifft — reine Azure-API-Streuung zwischen zwei Einzelläufen).
+  **Zurückgerollt**, kein Grund von Pipecats Default abzuweichen.
+- **`TextAggregationMode.TOKEN`** statt `SENTENCE` für `AzureTTSService` (Pipecats Docstring
+  verspricht geringere Latenz bei „streaming providers"). Per Code-Analyse **ohne Testlauf
+  verworfen**: `SimpleTextAggregator` im TOKEN-Modus gibt jeden LLM-Stream-Chunk unaggregiert
+  weiter, was bei Azure zu einem separaten `SpeechSynthesizer`-Request **pro Chunk** führt (keine
+  durchgehende Streaming-Synthese wie bei nativ token-streamenden TTS-APIs). Erwartung:
+  abgehackte, wort-für-wort-robotische Sprache — und der Synthetic Caller kann Audioqualität
+  ohnehin nicht prüfen (Output wird verworfen, siehe `synthetic_transport.py`), ein Testlauf hätte
+  also nur die Zahl, nicht die Hörbarkeit geliefert. Höheres Qualitätsrisiko als beim
+  100ms-Segmentierungsversuch (dort nur STT-Input betroffen, hier direkt die Bot-Stimme).
+
+### 4.4 Nebenbefunde beim Testen
 
 - **macOS-Systemschlaf killt Hintergrund-Messläufe hart:** Zwei 30-Turn-Läufe schlugen mit
   `EXIT 139` (SIGSEGV) fehl, jeweils nach einer ~15-minütigen Lücke im Log. Ursache: Der Rechner
@@ -128,11 +149,22 @@ jedem weiteren Einsatz mit echter Sprache validieren**, falls später doch gewü
 
 ## 6. Nächste Schritte
 
-1. **100ms-Segmentierungsschwelle mit echter Sprache validieren** — falls das zusätzliche
-   Latenz-Delta (§4.2) den Fragmentierungs-Tradeoff wert ist.
-2. Verbleibenden Turn-Detection-Anteil (~476 ms bei 200 ms) weiter untersuchen — z. B.
-   `stop_secs`/`pre_speech_ms` des Smart-Turn-v3-Modells selbst.
-3. Auf **EU-Mess-VM** (Hetzner) migrieren, Messung wiederholen (Schritt 11–12 im Plan).
-4. **Zweiten Stack** anbinden (A oder C) für den geforderten Vergleich — aktuell nur `azure-eu`
+Priorisiert danach, was vermutlich am meisten bringt, nicht nach Aufwand:
+
+1. **Auf EU-Mess-VM (Hetzner) migrieren, Messung wiederholen** (Schritt 11–12 im Plan). Vermutlich
+   der größte verbleibende Einzelhebel: schneidet reine Netzwerk-RTT nach `germanywestcentral` auf
+   allen drei Legs (STT/LLM/TTS) ab, die vom lokalen Entwicklungsrechner aus mit reinspielt. Noch
+   nicht gezogen.
+2. **Strukturelle Grenze einordnen:** Azure STT ist laut Pipecats eigenem Benchmark
+   (`stt_latency.AZURE_TTFS_P99 = 1.8s`) der langsamste unterstützte STT-Provider (Deepgram:
+   0,35s). Selbst mit 1. optimal ausgereizt ist unklar, ob Stack B das 900-ms-p90-Kriterium
+   zuverlässig erreichen kann, ohne den STT-Provider zu wechseln — das wäre dann Stack-C-Gebiet
+   (z. B. Gladia oder self-hosted faster-whisper, beide EU-fähig).
+3. **Zweiten Stack** anbinden (A oder C) für den geforderten Vergleich — aktuell nur `azure-eu`
    implementiert, die anderen brauchen neue Provider-Accounts (siehe `stacks.py`).
-5. Barge-in-Latenz und Rollenbruch-Check (Schritt 10) nachziehen.
+4. Barge-in-Latenz und Rollenbruch-Check (Schritt 10) nachziehen.
+5. **100ms-Segmentierungsschwelle mit echter Sprache validieren** — zurückgestellt, bis klar ist,
+   wie viel Puffer nach 1./2. überhaupt noch gebraucht wird.
+
+**Erledigt und verworfen** (kein weiterer Untersuchungsbedarf, siehe §4.3): `cpu_count` am
+Smart-Turn-Analyzer, `TextAggregationMode.TOKEN` am TTS.

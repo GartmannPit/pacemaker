@@ -1,7 +1,7 @@
 """Aggregiert experiments/runs/*.jsonl zu p50/p90/p95 je Stack.
 
-    uv run python -m pacemaker_agent.metrics.aggregate               # Default: RUNS_DIR
-    uv run python -m pacemaker_agent.metrics.aggregate <anderer-pfad>
+uv run python -m pacemaker_agent.metrics.aggregate               # Default: RUNS_DIR
+uv run python -m pacemaker_agent.metrics.aggregate <anderer-pfad>
 """
 
 from __future__ import annotations
