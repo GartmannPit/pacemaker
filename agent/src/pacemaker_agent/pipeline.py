@@ -95,6 +95,16 @@ def build_pipeline_task(
     # 8 Kerne). 30-Turn-Vergleich zeigte keinen Effekt auf die
     # Turn-Detection-Latenz (p50 476ms -> 487ms, innerhalb der Messstreuung) --
     # kein Grund, von Pipecats Default abzuweichen. Details: experiments/summaries/.
+    # Getestet und verworfen (synthetisch): SmartTurnParams.stop_secs 3s -> 1.5s.
+    # Anlass war ein echter Gespraechs-Ausreisser (turn_detection_ms 3199.8ms,
+    # 4x INCOMPLETE in Folge nahe der 3s-Grenze, siehe experiments/summaries/
+    # 2026-09-07-latenz-ansaetze-*.md Nachtrag 3). 30-Turn-Synthetic-Test zeigte
+    # aber keinen Effekt (Turn-Detection p50 476ms -> 491ms, p90 unveraendert
+    # 545ms) -- saubere TTS-Clips loesen praktisch nie INCOMPLETE aus, der
+    # synthetische Test kann diesen Hebel also weder als Nutzen noch als Risiko
+    # (zu frueher Cutoff bei echten Sprechpausen) validieren. Ohne Beleg fuer
+    # einen Nutzen zurueckgerollt; echte Validierung braucht ein echtes
+    # Gespraech, nicht Synthetic-Caller-Daten.
     context_aggregator = LLMContextAggregatorPair(
         context,
         user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()),

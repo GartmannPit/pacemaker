@@ -336,3 +336,26 @@ mit echter Evidenz statt nur Code-Analyse. n=8 (ein Ausreißer) reicht nicht zum
 nächster Schritt: gezielter Vergleichstest mit gesenktem `stop_secs` (z. B. 1,5s statt 3s) gegen
 einen weiteren echten Gesprächslauf, unter Beobachtung, ob dabei legitime Sprechpausen
 fälschlich abgeschnitten werden.
+
+---
+
+## Nachtrag 4: `stop_secs=1.5s` synthetisch getestet — wie erwartet kein Effekt, zurückgerollt
+
+Direkter Test von `stop_secs` 3s → 1.5s, diesmal aber synthetisch (30-Turn-Synthetic-Caller)
+statt mit echtem Gespräch angefordert.
+
+| | stop_secs=3s (Default, Baseline §4.2) | stop_secs=1.5s (synthetisch) |
+|---|--:|--:|
+| Turn-Detection p50 / p90 | 476 / 545 ms | 491 / 545 ms |
+| E2E p50 / p90 | 1570 / 1817 ms | 1806 / 2163 ms |
+
+**Kein messbarer Effekt auf Turn-Detection** (p90 identisch, p50-Differenz innerhalb der
+Messstreuung). Der E2E-Anstieg stammt aus LLM-TTFB-Rauschen (563/857 statt 444/569 ms), nicht aus
+dieser Änderung. Bestätigt die Erwartung aus Nachtrag 2/3: Saubere TTS-Clips lösen praktisch nie
+`INCOMPLETE` aus — der synthetische Test kann diesen Hebel strukturell weder als Nutzen (schnellere
+Ausreißer-Auflösung) noch als Risiko (verfrühter Cutoff bei echten Sprechpausen) zeigen. Ohne Beleg
+für einen Nutzen **zurückgerollt** (Default 3s wiederhergestellt).
+
+**Für dieses Setting bleibt nur eine echte Validierung sinnvoll** — mit einem weiteren manuellen
+Gesprächslauf (wie in Nachtrag 3), diesmal mit `stop_secs=1.5s` gesetzt, und Beobachtung, ob dabei
+legitime Sprechpausen fälschlich abgeschnitten werden. Noch nicht durchgeführt.
