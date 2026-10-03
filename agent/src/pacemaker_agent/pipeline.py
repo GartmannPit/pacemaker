@@ -18,7 +18,7 @@ from .personas.kaltakquise_head_of_ops import SYSTEM_PROMPT
 from .stacks import build_stack
 
 
-def _build_metrics_observer(stack_name: str) -> UserBotLatencyObserver:
+def _build_metrics_observer(stack_name: str, llm_model: str) -> UserBotLatencyObserver:
     """Verdrahtet Pipecats UserBotLatencyObserver mit dem JSONL-Collector.
 
     `on_latency_measured` liefert die reine E2E-Latenz (das Kriterium aus
@@ -27,7 +27,7 @@ def _build_metrics_observer(stack_name: str) -> UserBotLatencyObserver:
     synchron im selben `BotStartedSpeakingFrame`-Handling, deshalb reicht ein
     einfacher Zwischenspeicher zur Korrelation.
     """
-    collector = MetricsCollector(stack_name)
+    collector = MetricsCollector(stack_name, llm_model=llm_model)
     observer = UserBotLatencyObserver()
     pending_e2e_ms: dict[str, float] = {}
 
@@ -134,7 +134,7 @@ def build_pipeline_task(
         ]
     )
 
-    observers = [_build_metrics_observer(stack_name)]
+    observers = [_build_metrics_observer(stack_name, services.llm_model)]
     observers.extend(extra_observers or [])
 
     return PipelineTask(

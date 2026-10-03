@@ -9,7 +9,7 @@ JSONL-Schema unten ist die Schnittstelle zu metrics/aggregate.py und bleibt
 stabil.
 
 Schema pro Zeile:
-  {"ts": ISO8601, "stack": str, "turn": int,
+  {"ts": ISO8601, "stack": str, "llm_model": str, "device": str, "turn": int,
    "e2e_ms": float,
    "turn_detection_ms": float|null,
    "llm_ttfb_ms": float|null, "tts_ttfb_ms": float|null}
@@ -18,6 +18,7 @@ Schema pro Zeile:
 from __future__ import annotations
 
 import json
+import socket
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -27,8 +28,11 @@ RUNS_DIR = _REPO_ROOT / "experiments" / "runs"
 
 
 class MetricsCollector:
-    def __init__(self, stack: str, runs_dir: Path | None = None) -> None:
+    def __init__(self, stack: str, *, llm_model: str, runs_dir: Path | None = None) -> None:
         self.stack = stack
+        self.llm_model = llm_model
+        # Geraet mitschreiben: Laeufe von Entwicklungsrechner und Mess-VM sind nicht vergleichbar.
+        self.device = socket.gethostname()
         self._turn = 0
         target = runs_dir or RUNS_DIR
         target.mkdir(parents=True, exist_ok=True)
@@ -51,6 +55,8 @@ class MetricsCollector:
         row = {
             "ts": datetime.now(UTC).isoformat(),
             "stack": self.stack,
+            "llm_model": self.llm_model,
+            "device": self.device,
             "turn": self._turn,
             "e2e_ms": round(e2e_ms, 1),
             "turn_detection_ms": None if turn_detection_ms is None else round(turn_detection_ms, 1),

@@ -22,6 +22,7 @@ class StackServices:
     stt: object
     llm: object
     tts: object
+    llm_model: str
 
 
 def build_stack(name: str) -> StackServices:
@@ -77,4 +78,6 @@ def _build_azure_eu() -> StackServices:
         region=cfg.speech_region,
         voice=cfg.tts_voice,
     )
-    return StackServices(name="azure-eu", stt=stt, llm=llm, tts=tts)
+    return StackServices(
+        name="azure-eu", stt=stt, llm=llm, tts=tts, llm_model=cfg.openai_deployment
+    )
