@@ -12,17 +12,22 @@ from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.aggregators.llm_response_universal import (
+    AssistantTurnStoppedMessage,
+    LLMAssistantAggregator,
     LLMContextAggregatorPair,
+    LLMUserAggregator,
     LLMUserAggregatorParams,
+    UserTurnMessageAddedMessage,
 )
 
 from .audio_resampler import InputAudioResampler
 from .metrics.collector import MetricsCollector
+from .metrics.transcript import TranscriptRecorder
 from .personas.kaltakquise_head_of_ops import SYSTEM_PROMPT
 from .stacks import build_stack
 
 
-def _build_metrics_observer(stack_name: str, llm_model: str) -> UserBotLatencyObserver:
+def _build_metrics_observer(collector: MetricsCollector) -> UserBotLatencyObserver:
     """Verdrahtet Pipecats UserBotLatencyObserver mit dem JSONL-Collector.
 
     `on_latency_measured` liefert die reine E2E-Latenz (das Kriterium aus
@@ -31,7 +36,6 @@ def _build_metrics_observer(stack_name: str, llm_model: str) -> UserBotLatencyOb
     synchron im selben `BotStartedSpeakingFrame`-Handling, deshalb reicht ein
     einfacher Zwischenspeicher zur Korrelation.
     """
-    collector = MetricsCollector(stack_name, llm_model=llm_model)
     observer = UserBotLatencyObserver()
     pending_e2e_ms: dict[str, float] = {}
 
@@ -73,6 +77,26 @@ def _build_metrics_observer(stack_name: str, llm_model: str) -> UserBotLatencyOb
 
     logger.info(f"Metriken werden geschrieben nach: {collector.path}")
     return observer
+
+
+def _wire_transcript(
+    context_aggregator: LLMContextAggregatorPair, transcript: TranscriptRecorder
+) -> None:
+    """Schreibt jede fertige Nutzer- und Bot-Aeusserung ins Lauf-Transkript."""
+
+    @context_aggregator.user().event_handler("on_user_turn_message_added")
+    async def _on_user_message(
+        _aggregator: LLMUserAggregator, message: UserTurnMessageAddedMessage
+    ) -> None:
+        transcript.record(role="user", text=message.content)
+
+    @context_aggregator.assistant().event_handler("on_assistant_turn_stopped")
+    async def _on_assistant_message(
+        _aggregator: LLMAssistantAggregator, message: AssistantTurnStoppedMessage
+    ) -> None:
+        transcript.record(role="assistant", text=message.content, interrupted=message.interrupted)
+
+    logger.info(f"Transkript wird geschrieben nach: {transcript.path}")
 
 
 def build_pipeline_task(
@@ -143,7 +167,15 @@ def build_pipeline_task(
     ]
     pipeline = Pipeline([p for p in processors if p is not None])
 
-    observers = [_build_metrics_observer(stack_name, services.llm_model)]
+    collector = MetricsCollector(stack_name, llm_model=services.llm_model)
+    transcript = TranscriptRecorder(
+        collector.path.parent / "transcripts" / collector.path.name,
+        stack=stack_name,
+        llm_model=services.llm_model,
+    )
+    _wire_transcript(context_aggregator, transcript)
+
+    observers = [_build_metrics_observer(collector)]
     observers.extend(extra_observers or [])
 
     return PipelineTask(
