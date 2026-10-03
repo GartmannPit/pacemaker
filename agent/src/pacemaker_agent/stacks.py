@@ -4,6 +4,9 @@ Der einzige Ort im Code, an dem konkrete Provider-SDKs vorkommen. Die Pipeline
 (pipeline.py) kennt nur STT/LLM/TTS-Objekte, nicht deren Herkunft. Neuer Stack
 => hier eine `_build_*`-Funktion ergaenzen, sonst nirgends.
 
+Speech-to-Speech-Stacks (`s2s`) haben kein separates STT/TTS: `stt` und `tts` sind
+dann None, das LLM nimmt Audio entgegen und liefert Audio.
+
 Siehe docs/phase-0-proof-of-concept.md §1.3 (Provider-Matrix).
 """
 
@@ -11,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .config import load_azure_config
+from .config import load_azure_config, load_azure_realtime_config
 
 STACKS = ("azure-eu", "baseline", "sovereign", "s2s")
 
@@ -19,18 +22,28 @@ STACKS = ("azure-eu", "baseline", "sovereign", "s2s")
 @dataclass
 class StackServices:
     name: str
-    stt: object
+    stt: object | None
     llm: object
-    tts: object
+    tts: object | None
     llm_model: str
+    # Abtastrate, die das LLM fuer Eingangsaudio erwartet, falls es Audio direkt
+    # verarbeitet (s2s). None = Pipeline-Rate unveraendert durchreichen.
+    llm_input_sample_rate: int | None = None
 
 
-def build_stack(name: str) -> StackServices:
+def build_stack(name: str, *, system_prompt: str) -> StackServices:
+    """Baut die Services eines Stacks.
+
+    `system_prompt` braucht nur s2s: Kaskadierte Stacks bekommen ihn ueber den
+    LLMContext der Pipeline, der Realtime-Service bei lokaler Turn-Erkennung nicht.
+    """
     if name == "azure-eu":
         return _build_azure_eu()
-    if name in ("baseline", "sovereign", "s2s"):
+    if name == "s2s":
+        return _build_s2s_azure(system_prompt)
+    if name in ("baseline", "sovereign"):
         raise NotImplementedError(
-            f"Stack '{name}' ist laut Phase-0-Plan §3 erst in Woche 3 dran. Aktuell nur 'azure-eu'."
+            f"Stack '{name}' ist noch nicht implementiert. Aktuell: 'azure-eu', 's2s'."
         )
     raise ValueError(f"Unbekannter Stack '{name}'. Erlaubt: {', '.join(STACKS)}")
 
@@ -80,4 +93,53 @@ def _build_azure_eu() -> StackServices:
     )
     return StackServices(
         name="azure-eu", stt=stt, llm=llm, tts=tts, llm_model=cfg.openai_deployment
+    )
+
+
+def _build_s2s_azure(system_prompt: str) -> StackServices:
+    """Azure OpenAI Realtime (Speech-to-Speech), Stack D als Referenz.
+
+    Turn-Erkennung bleibt lokal (Silero VAD + Smart Turn in pipeline.py), die
+    serverseitige Turn-Detection ist abgeschaltet. Damit beginnt die E2E-Messung am
+    selben Punkt wie beim kaskadierten Stack und ist direkt vergleichbar.
+    """
+    from pipecat.services.azure.realtime.llm import AzureRealtimeLLMService
+    from pipecat.services.openai.realtime import events
+
+    cfg = load_azure_realtime_config()
+
+    session_properties = events.SessionProperties(
+        output_modalities=["audio"],
+        audio=events.AudioConfiguration(
+            # turn_detection=False: Pipecat schickt bei lokalem Turn-Ende selbst
+            # input_audio_buffer.commit + response.create. Mit Server-VAD meldete
+            # zusaetzlich der Server Turn-Grenzen (doppelte User-Turn-Frames).
+            input=events.AudioInput(turn_detection=False),
+            output=events.AudioOutput(voice=cfg.voice),
+        ),
+        reasoning=(events.Reasoning(effort=cfg.reasoning_effort) if cfg.reasoning_effort else None),
+    )
+    llm = AzureRealtimeLLMService(
+        api_key=cfg.api_key,
+        base_url=cfg.endpoint,
+        settings=AzureRealtimeLLMService.Settings(
+            model=cfg.deployment,
+            # Direkt in die Session-Konfiguration: Bei turn_detection=False erreicht kein
+            # LLMContextFrame den Service, der System-Prompt aus dem Kontext kaeme nie an.
+            system_instruction=system_prompt,
+            session_properties=session_properties,
+        ),
+    )
+    return StackServices(
+        name="s2s",
+        stt=None,
+        llm=llm,
+        tts=None,
+        # Reasoning-Stufe mit in den Modellnamen, damit Laeufe in der Auswertung getrennt bleiben.
+        llm_model=(
+            f"{cfg.deployment} (reasoning={cfg.reasoning_effort})"
+            if cfg.reasoning_effort
+            else cfg.deployment
+        ),
+        llm_input_sample_rate=events.PCMAudioFormat().rate,
     )

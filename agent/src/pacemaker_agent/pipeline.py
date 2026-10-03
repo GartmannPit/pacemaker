@@ -1,4 +1,7 @@
-"""Pipecat-Pipeline-Aufbau. Stack-unabhaengig: bekommt fertige STT/LLM/TTS-Objekte."""
+"""Pipecat-Pipeline-Aufbau. Stack-unabhaengig: bekommt fertige STT/LLM/TTS-Objekte.
+
+Bei Speech-to-Speech-Stacks fehlen STT und TTS; das LLM verarbeitet Audio direkt.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +16,7 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMUserAggregatorParams,
 )
 
+from .audio_resampler import InputAudioResampler
 from .metrics.collector import MetricsCollector
 from .personas.kaltakquise_head_of_ops import SYSTEM_PROMPT
 from .stacks import build_stack
@@ -74,7 +78,7 @@ def _build_metrics_observer(stack_name: str, llm_model: str) -> UserBotLatencyOb
 def build_pipeline_task(
     stack_name: str, transport, *, extra_observers: list | None = None
 ) -> PipelineTask:
-    services = build_stack(stack_name)
+    services = build_stack(stack_name, system_prompt=SYSTEM_PROMPT)
 
     context = LLMContext(messages=[{"role": "system", "content": SYSTEM_PROMPT}])
     # vad_analyzer hier (Aggregator-Ebene), nicht am Transport: Pipecat >=1.8 haengt
@@ -122,17 +126,22 @@ def build_pipeline_task(
     # 1570ms -> 1770ms, LLM-TTFB p50 444ms -> 546ms. Gecachte Tokens sind
     # offenbar deutlich billiger/schneller verarbeitet als weniger, aber frische
     # Tokens. Details: experiments/summaries/2026-09-07-latenz-ansaetze-*.md.
-    pipeline = Pipeline(
-        [
-            transport.input(),
-            services.stt,
-            context_aggregator.user(),
-            services.llm,
-            services.tts,
-            transport.output(),
-            context_aggregator.assistant(),
-        ]
-    )
+    processors = [
+        transport.input(),
+        services.stt,
+        context_aggregator.user(),
+        # Nach dem User-Aggregator, damit VAD/Smart Turn weiter die Pipeline-Rate sehen.
+        (
+            InputAudioResampler(services.llm_input_sample_rate)
+            if services.llm_input_sample_rate
+            else None
+        ),
+        services.llm,
+        services.tts,
+        transport.output(),
+        context_aggregator.assistant(),
+    ]
+    pipeline = Pipeline([p for p in processors if p is not None])
 
     observers = [_build_metrics_observer(stack_name, services.llm_model)]
     observers.extend(extra_observers or [])

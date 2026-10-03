@@ -1,7 +1,8 @@
-# LLM-Modellvergleich und Azure-Deployment-Typen
+# LLM-Modellvergleich, Azure-Deployment-Typen und Realtime-Stack
 
 **Datum:** 2026-10-03
-**Stack:** `azure-eu` (Azure AI Speech STT/TTS + Azure OpenAI), Pipecat 1.8.1, Python 3.12.15
+**Stacks:** `azure-eu` (Azure AI Speech STT/TTS + Azure OpenAI) und neu `s2s` (Azure OpenAI
+Realtime, §9), Pipecat 1.8.1, Python 3.12.15
 **Messrechner:** Windows-Desktop (`DESKTOP-C60J786`), **nicht** der Mac der Messungen vom
 2026-09-06/07 und nicht die EU-Mess-VM
 **Vorgeschichte:** [`docs/2026-09-07-ueberblick-azure-eu-optimierung.md`](../../docs/2026-09-07-ueberblick-azure-eu-optimierung.md)
@@ -15,6 +16,7 @@
 2. Ändert ein anderes LLM-Modell die Latenz — konkret: Ist `gpt-4.1-nano` schneller als
    `gpt-4.1-mini`?
 3. Welchen Einfluss hat der Azure-Deployment-Typ?
+4. Ist ein Speech-to-Speech-Modell (Azure OpenAI Realtime) schneller als die Kaskade? (§9)
 
 ## 2. RTT-Check zu den Azure-Endpoints
 
@@ -133,12 +135,90 @@ ist der größere Kostenposten, ebenfalls im Cent-Bereich.
   muss er auf **`/openai/v1`** enden, sonst fällt `AzureLLMService` auf die alte datierte API
   zurück.
 
-## 9. Nächste Schritte
+## 9. Realtime-Stack (`s2s`, Stack D)
 
-1. Weiteres Nicht-Realtime-Modell (Standard oder Data Zone EU) mit gleicher Methodik messen —
-   Frage: Ist ein stärkeres Modell ohne Reasoning bei gleicher TTFB nutzbar?
-2. Realtime-Modell als eigener Stack `s2s` (eigene Pipeline, nicht über `AZURE_OPENAI_DEPLOYMENT`
-   austauschbar).
-3. Zerschnittene Clips klären (§6), bevor Absolutwerte mit früheren Messungen verglichen werden.
-4. Bei Interesse an `nano`: Rollentreue prüfen (Phase-0-Schritt 10), Läufe wiederholen, um den
-   TTS-Effekt aus §5.2 von Zufall zu trennen.
+### 9.1 Aufbau
+
+- `gpt-realtime-2.1` als **Data Zone Standard (EU)**. `gpt-realtime-mini` war nur als Global
+  Standard verfügbar und kam deshalb nicht infrage.
+- Pipecats `AzureRealtimeLLMService` über die v1-Realtime-API (`wss://…/openai/v1/realtime`).
+  Kein separates STT/TTS: Das Modell nimmt Audio entgegen und antwortet mit Audio. Stimme `cedar`.
+- **Turn-Erkennung bleibt lokal** (Silero VAD + Smart Turn wie bei `azure-eu`), serverseitige
+  Turn-Detection ist abgeschaltet (`turn_detection=False`). Pipecat schickt bei lokalem Turn-Ende
+  selbst `input_audio_buffer.commit` + `response.create`. Damit beginnt die E2E-Messung am selben
+  Punkt wie beim kaskadierten Stack — die Werte sind direkt vergleichbar.
+- Neue Konfiguration: `AZURE_OPENAI_REALTIME_ENDPOINT`, `_API_KEY` (optional, sonst
+  `AZURE_OPENAI_API_KEY`), `_DEPLOYMENT`, `_VOICE`, `_REASONING_EFFORT`. Die Reasoning-Stufe
+  wird in `llm_model` mitgeschrieben, z. B. `gpt-realtime-2.1 (reasoning=minimal)`.
+
+Beim Aufbau gelöste Probleme:
+
+| Problem | Ursache | Lösung |
+|---|---|---|
+| Realtime-API lehnt Audio ab | API nimmt PCM nur mit 24 kHz, Pipeline/VAD/Fixtures arbeiten mit 16 kHz | `audio_resampler.py`: resampelt hinter dem User-Aggregator (VAD sieht weiter 16 kHz), direkt vor dem LLM. Ausgangsseitig resampelt der Output-Transport selbst |
+| Keine einzige Bot-Antwort, nach ~50 s `keepalive ping timeout` | Der Stream-Resampler liefert anfangs leere Bytes; die API meldet leeres Audio als Fehler, und Pipecat beendet nach **jedem** API-Fehler die Empfangsschleife | Leere Frames im Resampler verwerfen |
+| Persona würde nicht greifen | Bei `turn_detection=False` erreicht kein `LLMContextFrame` den Service — der System-Prompt aus dem Kontext käme nie an | System-Prompt direkt als `system_instruction` in die Session-Konfiguration (`build_stack(..., system_prompt=...)`) |
+
+### 9.2 Ergebnisse
+
+| Stack / Modell | E2E p50 | E2E p90 | E2E p95 | Turn-Det. p50 | Antwortzeit* p50 / p90 | < 900 ms | n |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| `azure-eu` / `gpt-4.1-mini` | 1413 | 1656 | 1696 | 539 | ~874 / – | – | 44 |
+| `azure-eu` / `gpt-4.1-nano` | 1369 | 1533 | 1552 | 535 | ~834 / – | – | 44 |
+| `s2s` / `gpt-realtime-2.1` (Reasoning: Server-Default) | 1247 | 1375 | 1443 | 290 | 951 / 1085 | 2 / 45 | 45 |
+| `s2s` / `gpt-realtime-2.1` (Reasoning: `minimal`) | **1126** | **1254** | **1278** | 288 | **813 / 955** | 3 / 45 | 45 |
+
+Alle Werte in ms, alle Data Zone Standard (EU). *Antwortzeit = E2E − Turn-Detection; beim
+kaskadierten Stack LLM + TTS (+ Satz-Aggregation), bei `s2s` das Modell allein. Pipecat erfasst
+bei lokal gesteuerten Turns keine LLM-TTFB für den Realtime-Service, daher keine eigene Spalte.
+
+**Akzeptanzkriterium p90 < 900 ms: alle FAIL.** Beide Realtime-Läufe ohne Fehler.
+
+### 9.3 Befunde
+
+1. **Der Vorsprung von Realtime kommt aus der Turn-Detection, nicht aus dem Modell.** Ohne Warten
+   auf die Azure-Transkription sinkt sie von ~537 auf ~290 ms. Damit ist erstmals direkt
+   gemessen, was das Warten auf Azure STT kostet: **~245 ms pro Turn**.
+2. **Das Realtime-Modell antwortet nicht schneller als LLM + TTS der Kaskade.** Mit
+   Server-Default-Reasoning ~950 ms bis zum ersten Audio, gegenüber ~870 ms für LLM + TTS bei
+   `gpt-4.1-mini`.
+3. **`reasoning=minimal` spart ~120 ms** (Antwortzeit p50 951 → 813 ms). Erklärt einen Teil, aber
+   nicht den Großteil der Antwortzeit.
+4. **900 ms p90 sind mit keiner getesteten Azure-Variante erreichbar.** Selbst Realtime mit
+   `minimal` bräuchte bei ~290 ms Turn-Detection eine Antwortzeit von ~600 ms p90 (gemessen: 955).
+5. **Für die Kaskade folgt:** Ein schnelleres STT ist der größte verbleibende Hebel. Rechnerisch
+   (−245 ms) läge `gpt-4.1-mini` bei E2E p50 ~1170 ms — weiterhin über Budget.
+
+### 9.4 Kosten
+
+Pro Realtime-Lauf (30 Turns, 54–58 Antworten inkl. durch zerschnittene Clips abgebrochener):
+~108.000 Prompt-Tokens (davon ~36.000 Audio-Input, großteils gecacht) und ~10.000–11.000
+Completion-Tokens (davon ~7.000–7.700 Audio-Output). Nach Listenpreisen von `gpt-realtime`
+**~1 $ pro Lauf**, also rund 50-mal so teuer wie ein Lauf mit `gpt-4.1-mini`. Preise für 2.1 in
+Azure nicht verifiziert.
+
+### 9.5 Offene Punkte
+
+- **Persona nicht verifiziert:** Ob das Modell auf Deutsch und in der Rolle antwortet, ist ungeprüft
+  (kein Mitschnitt der Bot-Antworten). Nachgewiesen ist nur, dass der System-Prompt ankommt
+  (~500 Prompt-Tokens im ersten Turn). Gilt besonders für `minimal`, das die Rollentreue
+  verschlechtern könnte.
+- **Keine Nutzer-Transkription:** Ohne separates STT entsteht kein Transkript der SDR-Äußerungen.
+  Für Latenzmessung irrelevant, für späteres Scoring nötig (Realtime-Transkription oder separates
+  STT).
+- **Compliance:** Das Modell verarbeitet Rohaudio. Kein Emotions-Score, aber vor einem Einsatz im
+  Produktpfad bewusst gegen „keine Prosodie-Analyse" (`CLAUDE.md`) prüfen. Für Messläufe mit
+  synthetischen Clips unkritisch.
+
+## 10. Nächste Schritte
+
+1. **Stack A (US-Baseline) als markierten Referenzlauf** messen: Erreicht die Pipeline mit den
+   schnellsten Anbietern überhaupt < 900 ms p90? Wenn nein, liegt die Grenze in der Architektur
+   bzw. im Budget, nicht bei Azure.
+2. **Bot-Antworten mitschneiden** (Transkript pro Turn), um Sprache und Rollentreue zu prüfen —
+   Voraussetzung für eine Entscheidung zu `nano` oder `reasoning=minimal`.
+3. **STT einzeln tauschen** (EU-Anbieter mit schneller Finalisierung) — größter Hebel der Kaskade
+   laut §9.3.
+4. Zerschnittene Clips klären (§6), bevor Absolutwerte mit früheren Messungen verglichen werden.
+5. Optional: weiteres Nicht-Realtime-Modell für den Qualitätsvergleich (für die Latenz laut §5.1
+   wenig Erkenntnisgewinn).

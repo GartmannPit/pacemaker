@@ -38,3 +38,28 @@ def load_azure_config() -> AzureConfig:
         openai_key=_require("AZURE_OPENAI_API_KEY"),
         openai_deployment=os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4.1-mini"),
     )
+
+
+@dataclass(frozen=True)
+class AzureRealtimeConfig:
+    endpoint: str
+    api_key: str
+    deployment: str
+    voice: str
+    reasoning_effort: str | None
+
+
+def load_azure_realtime_config() -> AzureRealtimeConfig:
+    # Eine im Portal kopierte URL traegt oft schon `?model=<deployment>`. Den Query-Teil
+    # verwerfen: Pipecat haengt das Deployment selbst an, und so steht der Deployment-Name
+    # nur an einer Stelle (AZURE_OPENAI_REALTIME_DEPLOYMENT) -- auch fuer die Messdaten.
+    endpoint = _require("AZURE_OPENAI_REALTIME_ENDPOINT").split("?", 1)[0].rstrip("/")
+    return AzureRealtimeConfig(
+        endpoint=endpoint,
+        # Liegt das Realtime-Deployment in derselben Ressource, gilt derselbe Schluessel.
+        api_key=os.environ.get("AZURE_OPENAI_REALTIME_API_KEY") or _require("AZURE_OPENAI_API_KEY"),
+        deployment=_require("AZURE_OPENAI_REALTIME_DEPLOYMENT"),
+        voice=os.environ.get("AZURE_OPENAI_REALTIME_VOICE", "cedar"),
+        # Leer = Server-Default. Werte: minimal, low, medium, high
+        reasoning_effort=os.environ.get("AZURE_OPENAI_REALTIME_REASONING_EFFORT") or None,
+    )
