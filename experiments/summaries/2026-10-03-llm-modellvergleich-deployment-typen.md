@@ -490,6 +490,8 @@ Befunde:
 1. **Messbedingungen stabilisieren:** EU-Mess-VM (Hetzner) aufsetzen; bis dahin vor und nach
    jedem Lauf `infra/rtt-check.sh` und Läufe mit RTT-Ausreißern verwerfen.
 2. **Beste Konfiguration (E1+E2+E3+E5) mehrfach messen** (≥ 3 Läufe), um die Streuung zu kennen.
-3. `gpt-4.1-mini` mit asynchronem Filter nachmessen (Filter greift dort noch nicht, §13.4).
+3. `gpt-4.1-mini` mit asynchronem Filter nachmessen. Der Filter greift dort inzwischen
+   (Direktmessung 2026-10-04 ~21:05: Paketabstand 2,3 ms, erster Text = erstes Paket); die
+   Umstellung im Portal brauchte bei Azure offenbar längere Zeit, bis sie wirkte.
 4. Verbleibende Hebel: Eingangsfilter / Prompt Shields von Azure (prüfen, ob die synchrone
    Prüfung der Eingabe Zeit kostet), schnelleres EU-TTS als Azure (~205 ms).
