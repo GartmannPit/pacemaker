@@ -63,3 +63,25 @@ def load_azure_realtime_config() -> AzureRealtimeConfig:
         # Leer = Server-Default. Werte: minimal, low, medium, high
         reasoning_effort=os.environ.get("AZURE_OPENAI_REALTIME_REASONING_EFFORT") or None,
     )
+
+
+@dataclass(frozen=True)
+class BaselineConfig:
+    """Stack A (US-Baseline). Nur fuer markierte Referenzlaeufe mit synthetischen Clips."""
+
+    deepgram_key: str
+    openai_key: str
+    openai_model: str
+    elevenlabs_key: str
+    elevenlabs_voice_id: str
+
+
+def load_baseline_config() -> BaselineConfig:
+    return BaselineConfig(
+        deepgram_key=_require("DEEPGRAM_API_KEY"),
+        openai_key=_require("OPENAI_API_KEY"),
+        # Gleiches Modell wie im azure-eu-Referenzlauf, damit der Vergleich nur Provider misst.
+        openai_model=os.environ.get("OPENAI_MODEL", "gpt-4.1-mini"),
+        elevenlabs_key=_require("ELEVENLABS_API_KEY"),
+        elevenlabs_voice_id=_require("ELEVENLABS_VOICE_ID"),
+    )

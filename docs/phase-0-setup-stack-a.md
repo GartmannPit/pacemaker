@@ -86,11 +86,11 @@ synthetische Clips zu verwenden.
 
 1. Alle vier Werte in `agent/.env` eintragen (Vorlage: Abschnitt „Stack A" in
    `agent/.env.example`). Keys **nicht** in Chat, Commits oder Doku kopieren.
-2. Bescheid geben — dann folgt:
-   - Pipecat-Extras `deepgram`, `elevenlabs`, `openai` in `agent/pyproject.toml`, `uv sync`
-   - `_build_baseline()` in `stacks.py`
-   - Probelauf (3 Turns), dann 30-Turn-Lauf mit
-     `uv run python -m pacemaker_agent.tests.synthetic_caller --stack baseline --turns 30`
+2. Code ist vorbereitet (`_build_baseline()` in `stacks.py`, Pipecat-Extras `deepgram`,
+   `elevenlabs`, `openai` in `pyproject.toml`). Nach `uv sync`: Probelauf (3 Turns), dann
+   30-Turn-Lauf mit
+   `uv run python -m pacemaker_agent.tests.synthetic_caller --stack baseline --turns 30`.
+   Optional `OPENAI_MODEL` setzen (Default `gpt-4.1-mini`, wie im `azure-eu`-Referenzlauf).
 3. Nach Abschluss von Phase 0: Keys in allen drei Konsolen widerrufen.
 
 **Gesamtkosten Stack A** für einige Messläufe: deutlich unter 5 $ (im Wesentlichen das

@@ -1,15 +1,15 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
     "python_full_version >= '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version < '3.13' and sys_platform == 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
-    "python_full_version < '3.13' and sys_platform == 'emscripten'",
     "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version < '3.13' and sys_platform == 'win32'",
+    "python_full_version < '3.13' and sys_platform == 'emscripten'",
     "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
@@ -425,6 +425,22 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44", size = 27697, upload-time = "2022-10-25T02:36:22.414Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", size = 25335, upload-time = "2022-10-25T02:36:20.889Z" },
+]
+
+[[package]]
+name = "deepgram-sdk"
+version = "7.12.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pydantic-core" },
+    { name = "typing-extensions" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c4/70/679ed0b47a2542efcda7ca2d2a0d57ee9d5a60c19a586f08f27ddf9792d0/deepgram_sdk-7.12.0.tar.gz", hash = "sha256:f901fd1d475c1e6740372213ef4e049855de67519778dd270da97131758301cb", size = 250276, upload-time = "2026-10-02T09:49:50.23Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4d/0c/c6422ddbb232f9e0f253e83a0d1132d7119ed597fb1a17f1187c1ae4c8c0/deepgram_sdk-7.12.0-py3-none-any.whl", hash = "sha256:d8d6b7777a3aa2b3c8c154b83f8499174bb7c81ed4def164b34a2a9b0211dc8a", size = 654417, upload-time = "2026-10-02T09:49:48.695Z" },
 ]
 
 [[package]]
@@ -1065,7 +1081,7 @@ source = { editable = "." }
 dependencies = [
     { name = "loguru" },
     { name = "pandas" },
-    { name = "pipecat-ai", extra = ["azure"] },
+    { name = "pipecat-ai", extra = ["azure", "deepgram"] },
     { name = "pyaudio" },
     { name = "python-dotenv" },
 ]
@@ -1080,7 +1096,7 @@ dev = [
 requires-dist = [
     { name = "loguru", specifier = ">=0.7" },
     { name = "pandas", specifier = ">=2.2" },
-    { name = "pipecat-ai", extras = ["azure", "silero"], specifier = ">=0.0.65" },
+    { name = "pipecat-ai", extras = ["azure", "silero", "deepgram", "elevenlabs", "openai"], specifier = ">=0.0.65" },
     { name = "pyaudio", specifier = ">=0.2.14" },
     { name = "python-dotenv", specifier = ">=1.0" },
 ]
@@ -1252,6 +1268,9 @@ wheels = [
 [package.optional-dependencies]
 azure = [
     { name = "azure-cognitiveservices-speech" },
+]
+deepgram = [
+    { name = "deepgram-sdk" },
 ]
 
 [[package]]

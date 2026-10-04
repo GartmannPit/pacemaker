@@ -254,21 +254,24 @@ Die alten Läufe liegen in `experiments/runs/_fixtures-v1/`.
 
 ### 11.2 Ergebnisse
 
-Beide Läufe: Turn-Bilanz **30 / 30 / 30**, keine unterbrochene oder leere Bot-Antwort, keine Fehler.
+`mini` und Realtime: Turn-Bilanz **30 / 30 / 30**, keine unterbrochene oder leere Bot-Antwort,
+keine Fehler. `nano`: 30 / 30 / **29** — siehe Befund 8.
 
 | Stack / Modell | E2E p50 | E2E p90 | E2E p95 | max | Turn-Det. p50 | Antwortzeit* p50 / p90 | < 900 ms |
 |---|--:|--:|--:|--:|--:|--:|--:|
 | `azure-eu` / `gpt-4.1-mini` (Data Zone) | 1526 | **1632** | 1693 | 2127 | 531 | 940 / 1188 | 0 / 30 |
+| `azure-eu` / `gpt-4.1-nano` (Data Zone) | 1361 | **1628** | 1721 | 2011 | 519 | 869 / 1035 | 0 / 29 |
 | `s2s` / `gpt-realtime-2.1` (`minimal`) | **1208** | 2048 | 2330 | 2961 | 292 | 906 / 1755 | 0 / 30 |
 
-Alle Werte in ms. *Antwortzeit = E2E − Turn-Detection. Kaskade: LLM TTFB p50 424 ms,
-TTS TTFB p50 326 ms.
+Alle Werte in ms. *Antwortzeit = E2E − Turn-Detection. Kaskade: LLM TTFB p50 424 ms (`mini`)
+bzw. 415 ms (`nano`), TTS TTFB p50 326 bzw. 290 ms.
 
 Vergleich mit den verzerrten Werten (§4, §9):
 
 | | E2E p50 alt → neu | E2E p90 alt → neu |
 |---|--:|--:|
 | `gpt-4.1-mini` | 1413 → 1526 | 1656 → 1632 |
+| `gpt-4.1-nano` | 1369 → 1361 | 1533 → 1628 |
 | Realtime `minimal` | 1126 → 1208 | **1254 → 2048** |
 
 ### 11.3 Befunde
@@ -292,14 +295,25 @@ Vergleich mit den verzerrten Werten (§4, §9):
    („Hallo Frau Fischer …"), Realtime reagiert zunehmend ungeduldig bis zum angekündigten
    Gesprächsabbruch — passend zur Geduldsschwelle der Persona. Realtime-Antworten sind zudem
    länger. Für einen Qualitätsvergleich braucht es ein Skript ohne Wiederholungen.
-7. **Weiterhin kein Stack unter 900 ms p90.** Bester Wert: Kaskade mit `gpt-4.1-mini`,
-   1632 ms.
+7. **Weiterhin kein Stack unter 900 ms p90.** Beste Werte: Kaskade mit `gpt-4.1-nano` (1628 ms)
+   und `gpt-4.1-mini` (1632 ms) — gleichauf.
+8. **`nano` ist bei p90 nicht schneller als `mini`.** Der frühere Vorsprung (1533 vs. 1656 ms)
+   war Teil der Verzerrung bzw. Zufall. Im Median ist `nano` ~165 ms schneller, vor allem durch
+   etwas kürzere TTS-Zeit. Das bestätigt §5.1: Die Modellgröße ist kein relevanter Hebel.
+9. **Sporadischer TTS-Ausfall:** In Turn 8 des `nano`-Laufs lieferte Azure TTS für einen
+   normalen Satz nach 3 s kein Audio (`completed with no audio`) — die Persona blieb in diesem
+   Turn stumm, der Messwert fehlt. Für das Produkt relevant (stumme Persona im Gespräch); im
+   Auge behalten, ob es wiederkehrt.
+10. **Persona bei `nano`:** Auf Deutsch und in der Rolle, wirkt aber eintöniger — viele
+    Antworten wiederholen „wie gesagt … schicken Sie mir eine Mail". Stichprobe, keine
+    systematische Bewertung.
 
 ### 11.4 Tokenverbrauch
 
 | Lauf | Prompt-Tokens (davon gecacht) | Completion-Tokens |
 |---|--:|--:|
 | `gpt-4.1-mini` | 37.105 (25.088) | 697 |
+| `gpt-4.1-nano` | 38.972 (24.704) | 885 |
 | Realtime `minimal` | 60.616 (55.104, davon 19.328 Audio) | 8.191 (davon 6.070 Audio) |
 
 Mit sauberen Clips gibt es 30 statt 44–58 LLM-Aufrufe; der Verbrauch sinkt entsprechend

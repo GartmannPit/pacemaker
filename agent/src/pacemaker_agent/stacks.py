@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .config import load_azure_config, load_azure_realtime_config
+from .config import load_azure_config, load_azure_realtime_config, load_baseline_config
 
 STACKS = ("azure-eu", "baseline", "sovereign", "s2s")
 
@@ -41,9 +41,11 @@ def build_stack(name: str, *, system_prompt: str) -> StackServices:
         return _build_azure_eu()
     if name == "s2s":
         return _build_s2s_azure(system_prompt)
-    if name in ("baseline", "sovereign"):
+    if name == "baseline":
+        return _build_baseline()
+    if name == "sovereign":
         raise NotImplementedError(
-            f"Stack '{name}' ist noch nicht implementiert. Aktuell: 'azure-eu', 's2s'."
+            f"Stack '{name}' ist noch nicht implementiert. Aktuell: 'azure-eu', 'baseline', 's2s'."
         )
     raise ValueError(f"Unbekannter Stack '{name}'. Erlaubt: {', '.join(STACKS)}")
 
@@ -142,4 +144,40 @@ def _build_s2s_azure(system_prompt: str) -> StackServices:
             else cfg.deployment
         ),
         llm_input_sample_rate=events.PCMAudioFormat().rate,
+    )
+
+
+def _build_baseline() -> StackServices:
+    """Stack A: US-Baseline (Deepgram Nova-3 + OpenAI + ElevenLabs Flash v2.5).
+
+    NUR Referenz fuer die technische Obergrenze, nie Produktpfad (CLAUDE.md: keine
+    EU-Datenresidenz). Ausschliesslich mit synthetischen Clips betreiben. Setup:
+    docs/phase-0-setup-stack-a.md.
+    """
+    from pipecat.services.deepgram.stt import DeepgramSTTService
+    from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
+    from pipecat.services.openai.llm import OpenAILLMService
+    from pipecat.transcriptions.language import Language
+
+    cfg = load_baseline_config()
+
+    stt = DeepgramSTTService(
+        api_key=cfg.deepgram_key,
+        mip_opt_out=True,  # Testaudio nicht fuer Deepgrams Modelltraining freigeben
+        settings=DeepgramSTTService.Settings(model="nova-3", language=Language.DE),
+    )
+    llm = OpenAILLMService(
+        api_key=cfg.openai_key,
+        settings=OpenAILLMService.Settings(model=cfg.openai_model),
+    )
+    tts = ElevenLabsTTSService(
+        api_key=cfg.elevenlabs_key,
+        settings=ElevenLabsTTSService.Settings(
+            voice=cfg.elevenlabs_voice_id,
+            model="eleven_flash_v2_5",
+            language=Language.DE,
+        ),
+    )
+    return StackServices(
+        name="baseline", stt=stt, llm=llm, tts=tts, llm_model=f"openai/{cfg.openai_model}"
     )
