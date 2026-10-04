@@ -161,10 +161,25 @@ def _build_baseline() -> StackServices:
 
     cfg = load_baseline_config()
 
+    # Turn-Ende bei Deepgram (Smoke-Tests 2026-10-04): Pipecat beendet den Turn, sobald Smart
+    # Turn COMPLETE meldet UND ein finalisiertes Transkript da ist ODER die STT-Sicherheitsfrist
+    # (aus ttfs_p99_latency) abgelaufen ist. Mit Pipecats Default (DEEPGRAM_TTFS_P99) lief die
+    # Frist ab, bevor Deepgrams Finalize-Antwort ankam (gemessen 0,35-0,9 s von hier aus) --
+    # die Persona bekam nur die erste Haelfte der Aeusserung, der Rest startete einen
+    # Schein-Turn und brach die LLM-Anfrage ab. Daher:
+    # - ttfs_p99_latency=1.0: Frist nur als Sicherheitsnetz; normalerweise endet der Turn
+    #   sofort mit dem finalisierten Transkript, das verzoegert nichts.
+    # - endpointing=False: Deepgram schliesst Segmente nicht schon nach ~10 ms Stille ab;
+    #   der Rest der Aeusserung kommt finalisiert auf Pipecats Finalize beim VAD-Stopp.
     stt = DeepgramSTTService(
         api_key=cfg.deepgram_key,
         mip_opt_out=True,  # Testaudio nicht fuer Deepgrams Modelltraining freigeben
-        settings=DeepgramSTTService.Settings(model="nova-3", language=Language.DE),
+        ttfs_p99_latency=1.0,
+        settings=DeepgramSTTService.Settings(
+            model="nova-3",
+            language=Language.DE,
+            endpointing=False,
+        ),
     )
     llm = OpenAILLMService(
         api_key=cfg.openai_key,

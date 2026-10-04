@@ -224,7 +224,7 @@ Azure nicht verifiziert.
 
 ## 10. Nächste Schritte
 
-1. **Stack A (US-Baseline) als markierten Referenzlauf** messen: Erreicht die Pipeline mit den
+1. ~~**Stack A (US-Baseline) als markierten Referenzlauf** messen~~ — erledigt, siehe §12: Erreicht die Pipeline mit den
    schnellsten Anbietern überhaupt < 900 ms p90? Wenn nein, liegt die Grenze in der Architektur
    bzw. im Budget, nicht bei Azure.
 2. ~~Bot-Antworten mitschneiden~~ — erledigt 2026-10-04 (§11.1).
@@ -318,3 +318,68 @@ Vergleich mit den verzerrten Werten (§4, §9):
 
 Mit sauberen Clips gibt es 30 statt 44–58 LLM-Aufrufe; der Verbrauch sinkt entsprechend
 (Realtime grob ~0,6 $ pro Lauf).
+
+## 12. Stack A — US-Baseline (2026-10-04, Referenz, nicht EU-konform)
+
+> **Nur Referenz.** Deepgram, OpenAI und ElevenLabs verarbeiten in den USA. Ausschließlich
+> synthetische Test-Clips, keine echten Stimmen. Nie Produktpfad (`CLAUDE.md`).
+
+### 12.1 Aufbau
+
+Deepgram Nova-3 (`de`, `mip_opt_out`) → OpenAI `gpt-4.1-mini` (direkt, gleiches Modell wie
+`azure-eu`) → ElevenLabs Flash v2.5. Setup: [`docs/phase-0-setup-stack-a.md`](../../docs/phase-0-setup-stack-a.md).
+
+| Problem im Probelauf | Ursache | Lösung |
+|---|---|---|
+| ElevenLabs liefert kein Audio, nach 3 Fehlschlägen wird der Dienst stillgelegt | HTTP 402: *„Free users cannot use library voices via the API"* — gewählte Stimme stammt aus der Community-Bibliothek | Für die Messung vorinstallierte Stimme „Eric" (`cjVigY5qzO86Huf0OWal`), nur per Umgebungsvariable für den Lauf. Spricht über Flash v2.5 Deutsch, ist aber englischsprachig angelegt |
+| Persona bekommt nur die erste Hälfte der Äußerung, Rest startet einen Schein-Turn, LLM-Anfrage wird abgebrochen (3 Clips → 5 Turns, unplausible LLM-TTFB 7–18 ms) | Pipecat beendet den Turn bei Smart-Turn-COMPLETE + Transkript, sobald die STT-Sicherheitsfrist (aus Pipecats Default `DEEPGRAM_TTFS_P99`) abgelaufen ist. Deepgrams Finalize-Antwort brauchte von hier 0,35–0,9 s — länger als die Frist | `ttfs_p99_latency=1.0` (Frist nur noch Sicherheitsnetz; der Turn endet sofort mit dem finalisierten Transkript) und `endpointing=False` (keine Teil-Finals nach ~10 ms Stille). Danach 5/5/5 bzw. 30/30/30 |
+
+### 12.2 Ergebnisse
+
+Turn-Bilanz **30 / 30 / 30**, keine unterbrochene Antwort, keine Fehler.
+
+| Stack | E2E p50 | E2E p90 | E2E p95 | max | Turn-Det. p50 | LLM TTFB p50 / p90 | TTS TTFB p50 / p90 |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| **A — US-Baseline** | **1224** | **1501** | 1800 | 1908 | **414** | 600 / 756 | **140 / 165** |
+| `azure-eu` / `gpt-4.1-mini` | 1526 | 1632 | 1693 | 2127 | 531 | **424 / 494** | 326 / 452 |
+| `azure-eu` / `gpt-4.1-nano` | 1361 | 1628 | 1721 | 2011 | 519 | 415 / 477 | 290 / 468 |
+| `s2s` Realtime `minimal` | 1208 | 2048 | 2330 | 2961 | 292 | – | – |
+
+Alle Werte in ms, alle mit bereinigten Clips (§11). **Akzeptanzkriterium p90 < 900 ms: alle FAIL**,
+auch Stack A (kein einziger Turn unter 900 ms, Minimum 1071 ms).
+
+### 12.3 Befunde
+
+1. **900 ms p90 sind mit dieser Pipeline-Architektur nicht erreichbar — unabhängig vom
+   Anbieter.** Selbst die schnellsten US-Anbieter liegen bei 1501 ms p90. Die Grenze liegt in der
+   Architektur (Turn-Erkennung + LLM + TTS nacheinander), nicht bei Azure.
+2. **EU-Aufpreis gegenüber der US-Referenz: ~130 ms p90** (1632 vs. 1501 ms) bzw. ~300 ms p50.
+   Für die Phase-0-Frage „Was kostet EU-Datenresidenz?" ist das die bezifferte Antwort
+   (`phase-0-proof-of-concept.md` §2, Compliance-Kriterium).
+3. **Wo Stack A schneller ist:**
+   - **TTS:** ElevenLabs 140 ms vs. Azure 326 ms p50 — größter Einzelvorteil (~185 ms).
+   - **Turn-Detection:** 414 vs. 531 ms (~115 ms) — Deepgram finalisiert schneller als Azure STT.
+4. **Wo Stack A langsamer ist: LLM.** OpenAI direkt (US) 600 ms vs. Azure OpenAI EU 424 ms p50 —
+   die Strecke in die USA kostet ~175 ms. Für ein EU-Produkt ist Azure OpenAI EU hier sogar der
+   bessere Baustein.
+5. **Rechnerische Bestkombination** aus gemessenen Bausteinen: Turn-Detection ~414 (schnelles STT)
+   + LLM ~424 (Azure EU) + TTS ~140 (schnelles TTS) ≈ **~1000 ms p50** plus Pipeline-Overhead —
+   weiterhin über 900 ms, und das im Median, nicht im p90.
+6. **Verbleibender großer Block ist die Turn-Erkennung** (~290–530 ms je nach Stack). Darin
+   stecken VAD-Stopp (200 ms), Smart-Turn-Inferenz und das Warten aufs Transkript. Selbst ohne
+   STT-Wartezeit (Realtime) bleiben ~290 ms.
+7. **STT-Qualität Deepgram:** Vereinzelt doppelte Wörter („Kost Kosten", „nächste nächste") und
+   „Brand" statt „Brandt" — inhaltlich unkritisch, für Scoring aber relevant.
+
+### 12.4 Konsequenz für Phase 0
+
+Das Akzeptanzkriterium „≥ 1 EU-Stack mit p90 < 900 ms" ist mit kaskadierter Architektur und
+heutigen Anbietern nicht erfüllbar — auch nicht mit US-Anbietern. Optionen (Entscheidung offen):
+
+- **Architektur-Hebel prüfen:** LLM-Anfrage spekulativ schon auf Zwischentranskripte starten,
+  VAD-Stopp/Smart-Turn feiner einstellen, kurze Bestätigungslaute („Mhm") aus einem Cache
+  sofort abspielen (verkürzt die wahrgenommene, nicht die gemessene Latenz — Definition klären).
+- **EU-Bausteine mischen:** schnelleres EU-STT + Azure OpenAI EU + schnelleres EU-TTS. Laut §12.3
+  liegt das Potenzial bei rund 300–400 ms gegenüber `azure-eu`.
+- **Budget überprüfen:** Ob 900 ms p90 die richtige Schwelle für ein Trainingsszenario ist —
+  ggf. mit echten Testgesprächen bewerten, ab welcher Latenz das Gespräch unnatürlich wirkt.
