@@ -383,3 +383,73 @@ heutigen Anbietern nicht erfüllbar — auch nicht mit US-Anbietern. Optionen (E
   liegt das Potenzial bei rund 300–400 ms gegenüber `azure-eu`.
 - **Budget überprüfen:** Ob 900 ms p90 die richtige Schwelle für ein Trainingsszenario ist —
   ggf. mit echten Testgesprächen bewerten, ab welcher Latenz das Gespräch unnatürlich wirkt.
+
+## 13. Pipeline-Optimierung (2026-10-04)
+
+Ziel: mit Eingriffen an der Pipeline das 900-ms-Kriterium erreichen, ohne die Schwelle zu
+ändern (Begründung der Schwelle: [`docs/2026-10-04-recherche-latenzbudget.md`](../../docs/2026-10-04-recherche-latenzbudget.md)).
+Alle Läufe `azure-eu`, 30 Turns, bereinigte Clips, Turn-Bilanz jeweils 30/30/30.
+
+### 13.1 Zerlegung der Antwortzeit (Ausgangslage `gpt-4.1-mini`)
+
+| Abschnitt (ab Turn-Ende) | p50 | p90 |
+|---|--:|--:|
+| → erstes LLM-Paket | 426 | 495 |
+| erstes Paket → erster Satz fertig (TTS startet) | 176 | 217 |
+| TTS-Start → erstes Audio | 330 | 457 |
+
+Davor ~531 ms Turn-Erkennung. Die vorher nicht zugeordneten ~245 ms (E2E − Turn − LLM − TTS)
+waren die Zeit bis zum ersten vollständigen Satz.
+
+### 13.2 Experimente
+
+| # | Änderung | Ort |
+|---|---|---|
+| E1 | Persona beginnt jeden Redebeitrag mit einem kurzen Satz aus 1–4 Wörtern („Hm, nee." / „Moment mal." / „Ach so.") | `personas/kaltakquise_head_of_ops.py` |
+| E2 | Azure-Inhaltsfilter im Streaming-Modus **„Asynchronous Filter"** statt Default | Azure-Portal (Foundry classic → Guardrails + controls → Content filters → Output filter → Streaming mode), Filter `Asynchronus_Filtering` |
+| E3 | Azure-STT-Segmentierung 200 → **100 ms** | `stacks.py` (`AZURE_STT_SEGMENTATION_MS`, neuer Default 100) |
+
+### 13.3 Ergebnisse
+
+| Lauf | E2E p50 | E2E p90 | Turn | → LLM | → Satz | → Audio | Wörter 1. Satz |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| Referenz `mini` | 1526 | 1632 | 531 | 426 | 176 | 330 | 10 |
+| Referenz `nano` | 1361 | 1628 | 519 | 418 | 140 | 293 | 8 |
+| `mini` + E1 | 1378 | 1537 | 521 | 439 | 193 | 216 | 2 |
+| `mini` + E1 + E3 | 1328 | 1556 | 399 | 417 | 178 | 283 | 5 |
+| **`nano` + E1 + E2 + E3** | **1043** | **1153** | 391 | 408 | **14** | 205 | 2 |
+| US-Baseline (Stack A, §12) | 1224 | 1501 | 414 | 604 | 64 | 144 | 9 |
+
+Alle Werte in ms (Teilschritte p50). Bester Lauf: kein Turn < 900 ms, Minimum 938 ms, Maximum 1896 ms.
+
+### 13.4 Befunde
+
+1. **E2 (asynchroner Inhaltsfilter) ist der größte Einzelhebel.** Direktmessung gegen die API
+   (`gpt-4.1-nano`, je 4 Anfragen): Standardfilter erster Text 593 ms, alle Textpakete auf einmal
+   (Abstand 0,2 ms); asynchroner Filter erster Text **327 ms**, Token für Token (Abstand 2,8 ms).
+   Im Default-Modus hält Azure die komplette Antwort bis zur Filterprüfung zurück. Pipecats
+   „LLM TTFB" misst dabei das erste, **leere** Paket und verschleiert diese Wartezeit.
+2. **E1 wirkt über die kürzere TTS-Zeit** (330 → 216 ms bei 2 statt 10 Wörtern), nicht über
+   schnelleres Schreiben — solange der Filter puffert, kommt der Text ohnehin auf einmal. Erst
+   zusammen mit E2 fällt auch die Wartezeit bis zum ersten Satz weg (176 → 14 ms).
+3. **E3 spart ~120 ms Turn-Erkennung** (521 → 399 ms). Alle 30 Nutzer-Äußerungen kamen
+   vollständig an. Die 2026-09 beobachtete Zerstückelung bei 100 ms lag an den alten
+   Zwei-Satz-Clips.
+4. **Der EU-Stack ist jetzt schneller als die US-Referenz** (p90 1153 vs. 1501 ms) — obwohl die
+   US-Referenz die schnelleren STT/TTS-Anbieter hat. Ein Teil der Referenz-Werte ist aber nicht
+   optimiert (E1/E2 wurden dort nicht angewendet; OpenAI direkt puffert ohnehin nicht).
+5. **Bis 900 ms p90 fehlen ~250 ms.** Verbleibende Blöcke (p50): Turn-Erkennung ~390, LLM bis
+   erstes Paket ~410, TTS ~205.
+6. **`gpt-4.1-mini` noch ohne E2 gemessen:** Der asynchrone Filter ist laut Portal zugeordnet,
+   wirkte bei der Direktmessung aber noch nicht (auch nicht per Header `x-policy-id`). Vermutlich
+   Verzögerung bei Azure; erneut prüfen.
+7. **Persona mit E1:** natürlich und variiert („Hm, ja. Ich hab ehrlich gesagt keine drei
+   Minuten …", „Naja. Das ist bei uns intern geregelt …"). Vereinzelt unpassend („Ja, und? Kein
+   Ding, danke für den Anruf."). Stichprobe, keine systematische Bewertung.
+
+### 13.5 Compliance-Hinweis zu E2
+
+Im asynchronen Modus kann problematischer Inhalt ausgeliefert werden, bevor der Filter ihn
+markiert; das Filtersignal kommt spätestens nach ~1.000 Zeichen. Für eine Trainings-Persona mit
+festem System-Prompt vertretbar; vor dem Produktpfad bewusst entscheiden und ggf. eine
+Behandlung des nachträglichen Filtersignals (`finish_reason: content_filter`) einbauen.

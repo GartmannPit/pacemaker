@@ -12,6 +12,7 @@ Siehe docs/phase-0-proof-of-concept.md §1.3 (Provider-Matrix).
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 from .config import load_azure_config, load_azure_realtime_config, load_baseline_config
@@ -76,13 +77,21 @@ def _build_azure_eu() -> StackServices:
     # nach `uv sync` hier zuerst pruefen.
     #
     # 200ms -> 30-Turn-Test: E2E p50 2176->1570ms, p90 2377->1817ms.
-    # 100ms getestet und verworfen: nochmal schneller (p50 1396ms), aber
-    # sichtbare Ueberfragmentierung -- "Guten Tag, hier ist Lena Fischer..."
-    # wurde in zwei separate Turns zerschnitten statt als ein Satz erkannt zu
-    # werden (bei 200ms blieb er zusammen). Schon mit sauberen TTS-Clips
-    # sichtbar, bei echter menschlicher Sprache mit mehr Pausen vermutlich
-    # staerker. Details: experiments/summaries/.
-    stt._speech_config.set_property(speechsdk.PropertyId.Speech_SegmentationSilenceTimeoutMs, "200")
+    # 100ms (2026-10-04, Default): Turn-Detection p50 521->399ms. Die frueher
+    # beobachtete "Ueberfragmentierung" lag an den Zwei-Satz-Test-Clips; mit
+    # bereinigten Clips kamen alle 30 Aeusserungen vollstaendig an. Turn-Grenzen
+    # entscheiden VAD + Smart Turn, nicht die STT-Segmente; Azure liefert
+    # Zwischentranskripte, die Pipecats Stop-Strategie bis zum letzten Final
+    # warten lassen. Mit echter Sprache (mehr Pausen) noch zu validieren.
+    # Ueberschreibbar per AZURE_STT_SEGMENTATION_MS fuer Experimente.
+    stt._speech_config.set_property(
+        speechsdk.PropertyId.Speech_SegmentationSilenceTimeoutMs,
+        os.environ.get("AZURE_STT_SEGMENTATION_MS", "100"),
+    )
+    # Azure-OpenAI-Deployments brauchen den Inhaltsfilter im Streaming-Modus
+    # "Asynchronous Filter" (Azure-Portal, nicht im Code). Im Default-Modus puffert
+    # Azure die komplette Antwort bis zur Filterpruefung: erster Text ~265 ms spaeter
+    # (gpt-4.1-nano, Direktmessung 2026-10-04). Siehe experiments/summaries/ §13.
     llm = AzureLLMService(
         api_key=cfg.openai_key,
         endpoint=cfg.openai_endpoint,
