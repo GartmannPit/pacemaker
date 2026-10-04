@@ -1,0 +1,44 @@
+#cloud-config
+# Cloud-Init fuer die EU-Mess-VM (Hetzner Cloud). Beim Anlegen des Servers unter
+# "Cloud config" einfuegen. Anleitung: infra/hetzner-setup.md
+#
+# Richtet ein: Benutzer `pacemaker` mit SSH-Key (kein Passwort), Root-Login aus,
+# Firewall nur SSH, Systempakete fuer den Agent, uv, Repo-Klon.
+# Secrets (agent/.env) kommen NICHT hierher, sondern danach per scp.
+
+users:
+  - name: pacemaker
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: true
+    ssh_authorized_keys:
+      # Oeffentlicher Teil von ~/.ssh/pacemaker_hetzner auf dem Entwicklungsrechner
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMTjTf22l2phGZ+/IYIDB+jksk8Xg/JmVPHJqNjPERtx pacemaker-hetzner
+
+package_update: true
+package_upgrade: true
+packages:
+  - git
+  - build-essential
+  - portaudio19-dev # pyaudio (Abhaengigkeit des Agents) baut dagegen
+  - ufw
+  - unattended-upgrades
+
+write_files:
+  - path: /etc/ssh/sshd_config.d/99-pacemaker.conf
+    content: |
+      PasswordAuthentication no
+      PermitRootLogin no
+      KbdInteractiveAuthentication no
+
+runcmd:
+  - systemctl restart ssh
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 22/tcp
+  - ufw --force enable
+  - sudo -u pacemaker bash -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
+  - sudo -u pacemaker git clone https://github.com/GartmannPit/pacemaker.git /home/pacemaker/pacemaker
+  - sudo -u pacemaker bash -c 'cd /home/pacemaker/pacemaker/agent && ~/.local/bin/uv sync'
+  - touch /home/pacemaker/cloud-init-fertig
