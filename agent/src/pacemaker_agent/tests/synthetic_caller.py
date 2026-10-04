@@ -19,7 +19,11 @@ import asyncio
 from pathlib import Path
 
 from loguru import logger
-from pipecat.frames.frames import BotStartedSpeakingFrame, BotStoppedSpeakingFrame
+from pipecat.frames.frames import (
+    BotStartedSpeakingFrame,
+    BotStoppedSpeakingFrame,
+    UserStoppedSpeakingFrame,
+)
 from pipecat.observers.base_observer import BaseObserver, FramePushed
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.processors.frame_processor import FrameDirection
@@ -32,21 +36,49 @@ from .synthetic_transport import SyntheticTransport
 FIXTURES = Path(__file__).resolve().parents[3] / "fixtures" / "audio"
 
 
-class _BotIdleSignal(BaseObserver):
-    """Meldet per asyncio.Event, wann der Bot NICHT spricht -- Taktgeber fuer den naechsten Clip."""
+# Der Bot gilt erst als fertig, wenn er so lange am Stueck still ist. Antworten kommen in
+# Schueben (TTS satzweise, Realtime-Audio in Paketen); die Luecken dazwischen loesen kurz
+# BotStoppedSpeaking aus. Ohne Wartezeit startete der naechste Clip mitten in der Antwort
+# und wirkte als Barge-in (2026-10-03 bei s2s beobachtet).
+BOT_SETTLE_SECS = 1.0
+
+
+class _TurnObserver(BaseObserver):
+    """Taktgeber fuer den naechsten Clip und Zaehler der erkannten User-Turns."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.bot_idle = asyncio.Event()
-        self.bot_idle.set()
+        self._bot_idle = asyncio.Event()
+        self._bot_idle.set()
+        self._user_turn_frame_ids: set[int] = set()
+
+    @property
+    def user_turns(self) -> int:
+        return len(self._user_turn_frame_ids)
 
     async def on_push_frame(self, data: FramePushed) -> None:
         if data.direction != FrameDirection.DOWNSTREAM:
             return
         if isinstance(data.frame, BotStartedSpeakingFrame):
-            self.bot_idle.clear()
+            self._bot_idle.clear()
         elif isinstance(data.frame, BotStoppedSpeakingFrame):
-            self.bot_idle.set()
+            self._bot_idle.set()
+        elif isinstance(data.frame, UserStoppedSpeakingFrame):
+            # Derselbe Frame passiert mehrere Prozessoren -- ueber die ID nur einmal zaehlen.
+            self._user_turn_frame_ids.add(data.frame.id)
+
+    async def wait_bot_settled(self) -> None:
+        """Wartet, bis der Bot BOT_SETTLE_SECS am Stueck nicht gesprochen hat."""
+        while True:
+            await self._bot_idle.wait()
+            try:
+                await asyncio.wait_for(self._wait_bot_started(), timeout=BOT_SETTLE_SECS)
+            except TimeoutError:
+                return
+
+    async def _wait_bot_started(self) -> None:
+        while self._bot_idle.is_set():
+            await asyncio.sleep(0.05)
 
 
 async def _run(stack: str, turns: int) -> Path:
@@ -58,8 +90,8 @@ async def _run(stack: str, turns: int) -> Path:
         )
 
     transport = SyntheticTransport()
-    bot_idle = _BotIdleSignal()
-    task = build_pipeline_task(stack, transport, extra_observers=[bot_idle])
+    turn_observer = _TurnObserver()
+    task = build_pipeline_task(stack, transport, extra_observers=[turn_observer])
 
     runner = PipelineRunner()
     run_task = asyncio.create_task(runner.run(task))
@@ -68,17 +100,33 @@ async def _run(stack: str, turns: int) -> Path:
     async def feed() -> None:
         for i in range(turns):
             clip = clips[i % len(clips)]
-            await bot_idle.bot_idle.wait()
+            await turn_observer.wait_bot_settled()
             logger.info(f"Turn {i + 1}/{turns}: {clip.name}")
             await transport.input().feed_clip(clip)
             await asyncio.sleep(0.3)  # kurze Luft, bis Turn-Detection reagiert
-        await bot_idle.bot_idle.wait()  # letzte Antwort noch abwarten
+        await turn_observer.wait_bot_settled()  # letzte Antwort noch abwarten
         await task.stop_when_done()
 
     await asyncio.gather(feed(), run_task)
 
     latest = sorted(RUNS_DIR.glob(f"*-{stack}.jsonl"))[-1]
+    _check_turn_accounting(turns, turn_observer.user_turns, latest)
     return latest
+
+
+def _check_turn_accounting(clips_fed: int, user_turns: int, jsonl_path: Path) -> None:
+    """Jeder Clip soll genau einen User-Turn mit genau einem Messwert ergeben.
+
+    Abweichungen verzerren die Latenzverteilung: Zerfaellt ein Clip in mehrere Turns,
+    fehlen gerade die Messwerte langsamer Antworten (der naechste Teil unterbricht sie).
+    """
+    with jsonl_path.open(encoding="utf-8") as fh:
+        measurements = sum(1 for _ in fh)
+    summary = f"Clips {clips_fed} | erkannte User-Turns {user_turns} | Messwerte {measurements}"
+    if user_turns == clips_fed == measurements:
+        logger.info(f"Turn-Bilanz sauber: {summary}")
+    else:
+        logger.warning(f"Turn-Bilanz abweichend -- Messung ggf. verzerrt: {summary}")
 
 
 def main() -> None:

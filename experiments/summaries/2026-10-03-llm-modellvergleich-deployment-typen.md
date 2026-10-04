@@ -1,10 +1,15 @@
 # LLM-Modellvergleich, Azure-Deployment-Typen und Realtime-Stack
 
-**Datum:** 2026-10-03
+**Datum:** 2026-10-03, Neumessung mit bereinigten Test-Clips 2026-10-04 (§11)
 **Stacks:** `azure-eu` (Azure AI Speech STT/TTS + Azure OpenAI) und neu `s2s` (Azure OpenAI
 Realtime, §9), Pipecat 1.8.1, Python 3.12.15
 **Messrechner:** Windows-Desktop (`DESKTOP-C60J786`), **nicht** der Mac der Messungen vom
 2026-09-06/07 und nicht die EU-Mess-VM
+> **Vorbehalt (2026-10-04):** Alle Läufe in §4–§9 liefen mit Test-Clips, die in mehrere
+> Turns zerfielen (§6). Dadurch fehlten gerade die Messwerte langsamer Antworten — beim
+> Realtime-Stack bis zu 22 % der Turns. **Belastbar sind die Werte aus §11.** Die älteren Werte
+> bleiben untereinander vergleichbar und zur Nachvollziehbarkeit stehen.
+
 **Vorgeschichte:** [`docs/2026-09-07-ueberblick-azure-eu-optimierung.md`](../../docs/2026-09-07-ueberblick-azure-eu-optimierung.md)
 
 ---
@@ -111,9 +116,16 @@ Hälften. Ergebnis: 44–45 LLM-Aufrufe bzw. Messpunkte statt 30 pro Lauf.
   Clips, gleiches Verhalten in allen Läufen).
 - Für **Absolutwerte** und den Vergleich mit den Mac-Zahlen vom 2026-09-07 (dort laut Überblick
   ~100 % vollständige Turns) eingeschränkt aussagekräftig.
-- Ursache offen: anderer Rechner oder neu synthetisierte Fixtures mit längeren Satzpausen.
-- Bestätigt die Beobachtung vom 2026-09-07, dass 200 ms Segmentierungs-Timeout an echten
-  Satzgrenzen bereits trennt.
+- ~~Ursache offen~~ **Ursache geklärt (2026-10-04):** Die Azure-TTS-Clips enthielten an der
+  Satzgrenze bis zu **1060 ms** Pause (alter Opener) — weit über der VAD-Stopp-Schwelle von
+  200 ms. Smart Turn wertete den ersten Satz dann zu Recht als vollständig.
+- **Verzerrung größer als zunächst angenommen:** Beginnt der zweite Teil, bevor die Persona auf
+  den ersten geantwortet hat, entsteht für den ersten Teil kein Messwert. Es fallen also gerade
+  langsame Antworten heraus — p90 wird zu günstig. Erkannte User-Turns ohne Messwert:
+  `mini`/`nano` je 2 von 46 (4 %), Realtime 13 von 58 (22 %) bzw. 9 von 54 (17 %). Bei
+  Realtime mehr, weil die Turn-Erkennung ohne STT nicht auf ein Transkript wartet und früher
+  schneidet.
+- Behoben und neu gemessen in §11.
 
 ## 7. Tokenverbrauch
 
@@ -215,10 +227,80 @@ Azure nicht verifiziert.
 1. **Stack A (US-Baseline) als markierten Referenzlauf** messen: Erreicht die Pipeline mit den
    schnellsten Anbietern überhaupt < 900 ms p90? Wenn nein, liegt die Grenze in der Architektur
    bzw. im Budget, nicht bei Azure.
-2. **Bot-Antworten mitschneiden** (Transkript pro Turn), um Sprache und Rollentreue zu prüfen —
-   Voraussetzung für eine Entscheidung zu `nano` oder `reasoning=minimal`.
+2. ~~Bot-Antworten mitschneiden~~ — erledigt 2026-10-04 (§11.1).
 3. **STT einzeln tauschen** (EU-Anbieter mit schneller Finalisierung) — größter Hebel der Kaskade
    laut §9.3.
-4. Zerschnittene Clips klären (§6), bevor Absolutwerte mit früheren Messungen verglichen werden.
+4. ~~Zerschnittene Clips klären~~ — erledigt 2026-10-04 (§6, §11).
 5. Optional: weiteres Nicht-Realtime-Modell für den Qualitätsvergleich (für die Latenz laut §5.1
    wenig Erkenntnisgewinn).
+6. **Tail-Latenz des Realtime-Stacks** untersuchen (§11.3): Ausreißer von 1,8–3,0 s, gehäuft
+   im letzten Drittel des Gesprächs. Wiederholungslauf, um Zufall von wachsendem Kontext zu
+   trennen.
+
+## 11. Neumessung mit bereinigten Test-Clips (2026-10-04)
+
+### 11.1 Änderungen an der Messkette
+
+| Änderung | Datei | Zweck |
+|---|---|---|
+| Jeder Clip ist genau **ein Satz**, echte Umlaute, keine Komma-Pause nach vollständigem Satzteil | `tests/generate_fixtures.py` | Kein Zerfall in mehrere Turns. Nebenbei: „Dreißig Sekunden: …" wurde von Azure STT als „30 neue Vertriebler" erkannt und ist ersetzt |
+| **Pausenprüfung** beim Erzeugen: Abbruch, wenn die längste interne Pause ≥ `VAD_STOP_SECS` (200 ms) ist | `tests/generate_fixtures.py` | Problem kann nicht unbemerkt zurückkehren. Neue Clips: max. 50–120 ms. Gegenprobe alter Opener: 1060 ms |
+| Synthetischer Ausgang spielt Audio **in Echtzeit** ab | `tests/synthetic_transport.py` | Vorher war der Bot nach Sekundenbruchteilen „fertig", Pipecat gab den Text aber im Sprechtempo frei — der nächste Clip markierte Antworten als unterbrochen und kürzte sie im Gesprächsverlauf. E2E-Messung (bis erstes Audio) davon unberührt |
+| Nächster Clip erst nach **1 s ununterbrochener Bot-Stille** | `tests/synthetic_caller.py` | Lücken zwischen Antwort-Schüben (Realtime) lösen keinen Clip mehr aus |
+| **Turn-Bilanz** am Ende jedes Laufs (Clips / erkannte Turns / Messwerte), Warnung bei Abweichung | `tests/synthetic_caller.py` | Verzerrung wird sofort sichtbar |
+| **Transkript** pro Lauf (`experiments/runs/transcripts/`) | `metrics/transcript.py`, `pipeline.py` | Sprache und Rollentreue prüfbar |
+
+Die alten Läufe liegen in `experiments/runs/_fixtures-v1/`.
+
+### 11.2 Ergebnisse
+
+Beide Läufe: Turn-Bilanz **30 / 30 / 30**, keine unterbrochene oder leere Bot-Antwort, keine Fehler.
+
+| Stack / Modell | E2E p50 | E2E p90 | E2E p95 | max | Turn-Det. p50 | Antwortzeit* p50 / p90 | < 900 ms |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| `azure-eu` / `gpt-4.1-mini` (Data Zone) | 1526 | **1632** | 1693 | 2127 | 531 | 940 / 1188 | 0 / 30 |
+| `s2s` / `gpt-realtime-2.1` (`minimal`) | **1208** | 2048 | 2330 | 2961 | 292 | 906 / 1755 | 0 / 30 |
+
+Alle Werte in ms. *Antwortzeit = E2E − Turn-Detection. Kaskade: LLM TTFB p50 424 ms,
+TTS TTFB p50 326 ms.
+
+Vergleich mit den verzerrten Werten (§4, §9):
+
+| | E2E p50 alt → neu | E2E p90 alt → neu |
+|---|--:|--:|
+| `gpt-4.1-mini` | 1413 → 1526 | 1656 → 1632 |
+| Realtime `minimal` | 1126 → 1208 | **1254 → 2048** |
+
+### 11.3 Befunde
+
+1. **Die Verzerrung hat den Realtime-Stack massiv geschönt.** p90 steigt von 1254 auf
+   **2048 ms**. Bei der Kaskade bleibt p90 praktisch gleich (1656 → 1632) — dort fehlten nur
+   4 % der Messwerte.
+2. **Realtime ist im Median schneller, im p90 deutlich langsamer.** p50 1208 vs. 1526 ms, aber
+   p90 2048 vs. 1632 ms. Das Akzeptanzkriterium ist p90 — dort liegt die **Kaskade vorn**.
+3. **Realtime hat einen schweren Tail.** Fünf von 30 Antworten brauchen 1,8–3,0 s (Turns 12,
+   21, 23, 27, 30), nicht an bestimmte Clips gebunden, gehäuft im letzten Drittel. Mögliche
+   Ursachen: Schwankung auf Serverseite (Data Zone), wachsender Audio-Kontext. Bei n = 30
+   bestimmen drei Werte das p90 — Wiederholungslauf nötig.
+4. **Die Kaskade ist stabil.** `gpt-4.1-mini` streut kaum (p90 − p50 ≈ 100 ms), auch über die
+   Messung mit verzerrten Clips hinweg.
+5. **Der Turn-Detection-Vorteil von Realtime ist echt** (292 vs. 531 ms, pro Messung erfasst),
+   wird aber vom Antwort-Tail mehr als aufgezehrt.
+6. **Persona:** In beiden Läufen alle 30 Antworten vollständig im Transkript, auf Deutsch und in
+   der Rolle (Stichprobe von je 6 Antworten gelesen, keine systematische Bewertung). Auffällig:
+   Die Clips wiederholen sich alle 10 Turns. `gpt-4.1-mini` begrüßt beim zweiten Opener erneut
+   („Hallo Frau Fischer …"), Realtime reagiert zunehmend ungeduldig bis zum angekündigten
+   Gesprächsabbruch — passend zur Geduldsschwelle der Persona. Realtime-Antworten sind zudem
+   länger. Für einen Qualitätsvergleich braucht es ein Skript ohne Wiederholungen.
+7. **Weiterhin kein Stack unter 900 ms p90.** Bester Wert: Kaskade mit `gpt-4.1-mini`,
+   1632 ms.
+
+### 11.4 Tokenverbrauch
+
+| Lauf | Prompt-Tokens (davon gecacht) | Completion-Tokens |
+|---|--:|--:|
+| `gpt-4.1-mini` | 37.105 (25.088) | 697 |
+| Realtime `minimal` | 60.616 (55.104, davon 19.328 Audio) | 8.191 (davon 6.070 Audio) |
+
+Mit sauberen Clips gibt es 30 statt 44–58 LLM-Aufrufe; der Verbrauch sinkt entsprechend
+(Realtime grob ~0,6 $ pro Lauf).

@@ -74,13 +74,21 @@ class SyntheticInputTransport(BaseInputTransport):
 
 
 class SyntheticOutputTransport(BaseOutputTransport):
-    """Verwirft Audio -- nur Frame-Timing zaehlt fuer die Latenzmessung."""
+    """Verwirft Audio, spielt es aber in Echtzeit "ab" wie ein Lautsprecher.
+
+    Ohne Echtzeit-Takt war der Bot nach Sekundenbruchteilen "fertig", waehrend Pipecat
+    den Antworttext weiter im Sprechtempo freigab. Der naechste Clip markierte die
+    Antwort dann als unterbrochen und kuerzte sie im Gespraechsverlauf (2026-10-04).
+    Die E2E-Messung endet beim ersten Audio-Frame und ist davon unberuehrt.
+    """
 
     async def start(self, frame: StartFrame) -> None:
         await super().start(frame)
         await self.set_transport_ready(frame)
 
     async def write_audio_frame(self, frame: OutputAudioRawFrame) -> bool:
+        bytes_per_second = frame.sample_rate * frame.num_channels * 2  # 16-bit PCM
+        await asyncio.sleep(len(frame.audio) / bytes_per_second)
         return True
 
 
