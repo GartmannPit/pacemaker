@@ -5,8 +5,12 @@ Bei Speech-to-Speech-Stacks fehlen STT und TTS; das LLM verarbeitet Audio direkt
 
 from __future__ import annotations
 
+import asyncio
+import os
+
 from loguru import logger
 from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.observers.user_bot_latency_observer import LatencyBreakdown, UserBotLatencyObserver
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -135,7 +139,14 @@ def build_pipeline_task(
     # Gespraech, nicht Synthetic-Caller-Daten.
     context_aggregator = LLMContextAggregatorPair(
         context,
-        user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()),
+        user_params=LLMUserAggregatorParams(
+            # stop_secs: Stille, bis Silero das Sprechende meldet (Pipecat-Default 0.2 s).
+            # Steckt vollstaendig in der Turn-Erkennung. Per PACEMAKER_VAD_STOP_SECS
+            # ueberschreibbar fuer Experimente.
+            vad_analyzer=SileroVADAnalyzer(
+                params=VADParams(stop_secs=float(os.environ.get("PACEMAKER_VAD_STOP_SECS", "0.2")))
+            )
+        ),
     )
 
     # Getestet und verworfen: ContextWindowLimiter (Sliding Window auf die letzten
@@ -178,7 +189,7 @@ def build_pipeline_task(
     observers = [_build_metrics_observer(collector)]
     observers.extend(extra_observers or [])
 
-    return PipelineTask(
+    task = PipelineTask(
         pipeline,
         params=PipelineParams(
             allow_interruptions=True,  # Barge-in / Unterbrechbarkeit
@@ -187,3 +198,18 @@ def build_pipeline_task(
         ),
         observers=observers,
     )
+
+    if services.warm_up is not None:
+        warm_up = services.warm_up
+
+        background: set[asyncio.Task] = set()
+
+        @task.event_handler("on_pipeline_started")
+        async def _on_pipeline_started(_task: PipelineTask, _frame) -> None:
+            # Im Hintergrund: der Start soll nicht auf Azure warten. Referenz halten,
+            # sonst kann der Task vor dem Ende eingesammelt werden.
+            warm_task = asyncio.create_task(warm_up())
+            background.add(warm_task)
+            warm_task.add_done_callback(background.discard)
+
+    return task

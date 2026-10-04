@@ -13,7 +13,10 @@ Siehe docs/phase-0-proof-of-concept.md §1.3 (Provider-Matrix).
 from __future__ import annotations
 
 import os
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+
+from loguru import logger
 
 from .config import load_azure_config, load_azure_realtime_config, load_baseline_config
 
@@ -30,6 +33,8 @@ class StackServices:
     # Abtastrate, die das LLM fuer Eingangsaudio erwartet, falls es Audio direkt
     # verarbeitet (s2s). None = Pipeline-Rate unveraendert durchreichen.
     llm_input_sample_rate: int | None = None
+    # Optional: baut Verbindungen vor dem ersten Turn auf (Kaltstart vermeiden).
+    warm_up: Callable[[], Awaitable[None]] | None = None
 
 
 def build_stack(name: str, *, system_prompt: str) -> StackServices:
@@ -102,8 +107,32 @@ def _build_azure_eu() -> StackServices:
         region=cfg.speech_region,
         voice=cfg.tts_voice,
     )
+
+    async def warm_up() -> None:
+        # Erster Turn war in jedem Lauf ~1,7-1,9 s statt ~1,1 s: LLM-TTFB ~1000 statt ~410 ms
+        # (Kaltstart). Daher vor dem ersten Turn TTS-Verbindung oeffnen und eine
+        # 1-Token-Anfrage an das LLM schicken (gleicher Client, also gleicher Verbindungspool).
+        try:
+            speechsdk.Connection.from_speech_synthesizer(tts._speech_synthesizer).open(True)
+        except Exception as e:  # nur Optimierung, nie den Start blockieren
+            logger.warning(f"TTS-Aufwaermen fehlgeschlagen: {e}")
+        try:
+            await llm._client.chat.completions.create(
+                model=cfg.openai_deployment,
+                messages=[{"role": "user", "content": "Hallo"}],
+                max_completion_tokens=1,
+            )
+        except Exception as e:
+            logger.warning(f"LLM-Aufwaermen fehlgeschlagen: {e}")
+        logger.info("Stack aufgewaermt (TTS-Verbindung + LLM)")
+
     return StackServices(
-        name="azure-eu", stt=stt, llm=llm, tts=tts, llm_model=cfg.openai_deployment
+        name="azure-eu",
+        stt=stt,
+        llm=llm,
+        tts=tts,
+        llm_model=cfg.openai_deployment,
+        warm_up=warm_up if os.environ.get("PACEMAKER_WARM_UP", "1") == "1" else None,
     )
 
 

@@ -453,3 +453,43 @@ Im asynchronen Modus kann problematischer Inhalt ausgeliefert werden, bevor der 
 markiert; das Filtersignal kommt spätestens nach ~1.000 Zeichen. Für eine Trainings-Persona mit
 festem System-Prompt vertretbar; vor dem Produktpfad bewusst entscheiden und ggf. eine
 Behandlung des nachträglichen Filtersignals (`finish_reason: content_filter`) einbauen.
+
+### 13.6 Weitere Experimente und Messstabilität (2026-10-04 abends)
+
+| Uhrzeit | Lauf (`nano`, E1–E3 als Basis) | E2E p50 | E2E p90 | Turn | LLM | TTS |
+|---|---|--:|--:|--:|--:|--:|
+| 20:23 | E1+E2+E3 | 1043 | 1153 | 391 | 408 | 205 |
+| 20:32 | + E4: VAD-Stopp 200 → 100 ms | 1167 | 1756 | 431 | 450 | 217 |
+| 20:42 | + E5: Aufwärmen beim Start (Lauf 1) | 1538 | 1841 | 412 | 588 | 388 |
+| 20:50 | + E5: Aufwärmen (Lauf 2) | 1648 | 2178 | 473 | 682 | 456 |
+
+**Netzwerk-RTT zu Azure** (`infra/rtt-check.sh`, 20 Samples): 2026-10-03 STT/TTS ~23 ms;
+**2026-10-04 18:58 UTC: STT 48, TTS 64, Azure OpenAI 84 ms** — zwei- bis viermal so hoch.
+
+Befunde:
+
+1. **Die Läufe ab 20:32 sind nicht verwertbar.** LLM und TTS werden gleichzeitig und stetig
+   langsamer, unabhängig von der jeweiligen Änderung; die gestiegene Netzwerklaufzeit der
+   Entwicklungsleitung erklärt das. E4 und E5 sind damit **offen**, nicht widerlegt.
+2. **E4 (VAD 100 ms) vermutlich ohne Nutzen:** Die Turn-Erkennung sank nicht (391 → 431 ms) —
+   bei `azure-eu` bestimmt das Warten auf das finale Azure-Transkript das Turn-Ende, nicht die
+   VAD. Default bleibt 200 ms (`PACEMAKER_VAD_STOP_SECS` für Experimente).
+3. **E5 (Aufwärmen) wirkt auf den ersten Turn:** LLM-TTFB im ersten Turn 449 / 641 ms statt
+   ~1000 ms ohne Aufwärmen (Kaltstart in allen früheren Läufen). Bleibt aktiv
+   (`PACEMAKER_WARM_UP=0` schaltet ab). Effekt auf p90 unter stabilen Bedingungen nachmessen.
+4. **Korrektur zu §2:** Die VM-Migration war dort als „kein Haupthebel" eingestuft (−50 ms bei
+   stabiler Leitung). Der Abend zeigt: Die Entwicklungsleitung schwankt so stark, dass sie
+   Optimierungen von 100–300 ms überdeckt. Die EU-Mess-VM ist damit **Voraussetzung für
+   belastbare Vergleiche**, nicht nur Latenzhebel.
+5. **Bester belastbarer Wert bleibt E1+E2+E3 mit `nano`: p90 1153 ms** (20:23, Netzwerkzustand
+   zu dem Zeitpunkt nicht gemessen — mit Vorbehalt, Wiederholung unter stabilen Bedingungen
+   nötig).
+
+### 13.7 Nächste Schritte
+
+1. **Messbedingungen stabilisieren:** EU-Mess-VM (Hetzner) aufsetzen; bis dahin vor und nach
+   jedem Lauf `infra/rtt-check.sh` und Läufe mit RTT-Ausreißern verwerfen.
+2. **Beste Konfiguration (E1+E2+E3+E5) mehrfach messen** (≥ 3 Läufe), um die Streuung zu kennen.
+3. `gpt-4.1-mini` mit asynchronem Filter nachmessen (Filter greift dort noch nicht, §13.4).
+4. Verbleibende Hebel: Eingangsfilter / Prompt Shields von Azure (prüfen, ob die synchrone
+   Prüfung der Eingabe Zeit kostet), schnelleres EU-TTS als Azure (~205 ms).
