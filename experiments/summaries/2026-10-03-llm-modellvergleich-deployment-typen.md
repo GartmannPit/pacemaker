@@ -540,10 +540,69 @@ Befunde:
 5. **Kein auffälliger Erstturn-Nachteil mit Aufwärmen:** Erster Turn liegt in der normalen
    Verteilung; p90 mit/ohne Turn 1 gleich. Kausal belegt ist das nicht — ein Vergleichslauf
    ohne Aufwärmen auf der VM fehlt *(präzisiert 2026-10-07)*.
-6. **Azure-OpenAI-Endpoint ~28 ms RTT** von der VM (Speech ~5 ms): Ressource vermutlich nicht in
-   Frankfurt — offen.
+6. **Azure-OpenAI-Endpoint ~28 ms RTT** von der VM (Speech ~5 ms). *(Geklärt 2026-10-07: Der
+   Endpoint löst auf `…swedencentral.cloudapp.azure.com` auf — die Ressource liegt in Sweden
+   Central. Siehe [EU-Compliance-Faktenblatt](../../docs/phase-0-eu-compliance.md).)*
 
 Einschränkungen (siehe [Einordnung der Projektbewertung](../../docs/2026-10-07-einordnung-projektbewertung.md)):
 Messung endet beim ersten Audio, häufig dem kurzen Einstieg — „Zeit bis zum Inhalt" noch nicht
 erfasst. Reihenfolge immer `mini` vor `nano`. Saubere synthetische Clips mit Wiederholung alle
 10 Turns.
+
+## 15. TTS-Randstille und kurzer Einstieg — Messreihe mit neuer Messkette (2026-10-07)
+
+Erste Messreihe mit Run-Manifest und Turn-Protokoll (Schritt A des
+[überarbeiteten Plans](../../docs/2026-10-07-pruefung-kritik-naechste-schritte.md)).
+EU-Mess-VM, `gpt-4.1-nano`, asynchroner Filter, Segmentierung 100 ms, Aufwärmen, VAD 200 ms.
+Drei Varianten × drei Wiederholungen à 30 Turns, **Reihenfolge gegenbalanciert**
+(A-B-C, C-B-A, A-B-C).
+
+### 15.1 Befund aus dem Turn-Protokoll: Azure-TTS-Randstille
+
+Der erste Funktionstest der neuen Messkette zeigte: Erstes Audio nach ~0,9 s, Beginn des
+Hauptsatzes aber erst nach **2,3–2,8 s**. Ursache per Direktmessung auf der VM: Azure-TTS fügt an
+jede Anfrage Stille an.
+
+| Satz | Audio mit Pipecat-SSML | davon Stille hinten | mit `Leading-/Tailing-exact` 0 ms |
+|---|--:|--:|--:|
+| „Ach so." | 1820 ms | 1300 ms | 450 ms |
+| „Hm, nein." | 1820 ms | 990 ms | 788 ms |
+| „Moment mal." | 1820 ms | 1110 ms | 712 ms |
+
+Pipecat vertont satzweise mit je einer Anfrage und setzt nur die Satzgrenzen-Stille *innerhalb*
+einer Anfrage (20 ms). Dadurch lag **zwischen allen Sätzen einer Antwort gut 1 s Pause** — auch
+eine Frage der Natürlichkeit, nicht nur der Latenz. Behebung: Leading-/Tailing-exact 0 ms
+(`stacks.py`, `AZURE_TTS_EDGE_SILENCE_MS`, Default 0, `azure` = Azure-Standard).
+
+### 15.2 Ergebnisse
+
+„Inhaltsbeginn" ist ein **technischer Näherungswert**: ohne Einstieg das erste Audio; mit
+Einstieg der Beginn des Hauptsatzes, sofern der erste Satz höchstens vier Wörter hat (sonst
+enthält bereits der erste Satz Inhalt, z. B. „Naja, das ist bei uns intern geregelt."). Ob das
+Gesagte inhaltlich passt, bleibt manuelle Bewertung.
+
+| Variante | Randstille | Einstieg | erstes Audio p50 / p90 | p90 je Lauf | **Inhaltsbeginn p50 / p90** | erstes Audio < 900 ms |
+|---|---|---|--:|---|--:|--:|
+| A | 0 ms | ja | 892 / 1116 | 1085, 1003, 1305 | 1466 / 1808 | 46 / 90 |
+| **B** | **0 ms** | **nein** | **976 / 1148** | 1058, 1231, 1152 | **976 / 1148** | 25 / 90 |
+| C | Azure | ja | 919 / 1140 | 1142, 1203, 959 | 1796 / 2560 | 38 / 90 |
+
+Werte in ms, gepoolt über je 90 Turns (siehe Hinweis zum Pooling in `aggregate.py`). Alle neun
+Läufe 30/30 beantwortet, LLM-Text in allen Läufen streamend (asynchroner Filter bestätigt).
+
+### 15.3 Befunde
+
+1. **Der kurze Einstieg (E1) bringt keinen Nutzen mehr.** Beim ersten Audio nur ~80 ms (p50) bzw.
+   ~30 ms (p90) — innerhalb der Lauf-Streuung. Der Inhalt kommt mit Einstieg aber **~500–650 ms
+   später**. Mit gepuffertem Filter und langer TTS-Zeit (§13) hat E1 Wartezeit überbrückt; nach
+   E2 und der Stille-Behebung kostet er nur noch Zeit bis zum Inhalt. **Default deshalb aus**
+   (`PACEMAKER_SHORT_OPENER=0`), gemäß vorab vereinbartem Abbruchkriterium.
+2. **Die Randstille-Behebung wirkt:** bei gleichem Einstieg (A vs. C) Inhaltsbeginn −330 ms (p50),
+   −750 ms (p90). Sie betrifft jede mehrsätzige Antwort.
+3. **Referenz jetzt Variante B:** erstes Audio = Inhaltsbeginn, p50 ~980 ms, **p90 1058–1231 ms
+   je Lauf**. Kriterium p90 < 900 ms weiterhin um ~150–330 ms verfehlt.
+4. **Messkette bewährt:** Der Funktionstest deckte zwei Fehler im eigenen Turn-Protokoll und den
+   Randstille-Effekt auf, der mit „erstes Audio" allein unsichtbar gewesen wäre.
+
+Einschränkungen: nur `nano`; saubere synthetische Clips mit Wiederholung alle 10 Turns; der
+Inhaltsbeginn ist eine technische Näherung ohne inhaltliche Bewertung.
