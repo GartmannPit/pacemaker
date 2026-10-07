@@ -85,3 +85,22 @@ def load_baseline_config() -> BaselineConfig:
         elevenlabs_key=_require("ELEVENLABS_API_KEY"),
         elevenlabs_voice_id=_require("ELEVENLABS_VOICE_ID"),
     )
+
+
+@dataclass(frozen=True)
+class TuningConfig:
+    """Stellschrauben der Pipeline, die per Umgebungsvariable fuer Experimente
+    ueberschrieben werden koennen. Einzige Quelle der Defaults -- das Run-Manifest
+    schreibt genau diese Werte mit."""
+
+    stt_segmentation_ms: int  # Azure-STT-Segmentierungsstille (azure-eu)
+    vad_stop_secs: float  # Stille, bis Silero das Sprechende meldet
+    warm_up: bool  # Verbindungen vor dem ersten Turn aufbauen
+
+
+def load_tuning_config() -> TuningConfig:
+    return TuningConfig(
+        stt_segmentation_ms=int(os.environ.get("AZURE_STT_SEGMENTATION_MS", "100")),
+        vad_stop_secs=float(os.environ.get("PACEMAKER_VAD_STOP_SECS", "0.2")),
+        warm_up=os.environ.get("PACEMAKER_WARM_UP", "1") == "1",
+    )

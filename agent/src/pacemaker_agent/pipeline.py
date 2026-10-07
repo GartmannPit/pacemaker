@@ -6,7 +6,6 @@ Bei Speech-to-Speech-Stacks fehlen STT und TTS; das LLM verarbeitet Audio direkt
 from __future__ import annotations
 
 import asyncio
-import os
 
 from loguru import logger
 from pipecat.audio.vad.silero import SileroVADAnalyzer
@@ -25,7 +24,9 @@ from pipecat.processors.aggregators.llm_response_universal import (
 )
 
 from .audio_resampler import InputAudioResampler
+from .config import load_tuning_config
 from .metrics.collector import MetricsCollector
+from .metrics.run_manifest import write_manifest
 from .metrics.transcript import TranscriptRecorder
 from .personas.kaltakquise_head_of_ops import SYSTEM_PROMPT
 from .stacks import build_stack
@@ -104,9 +105,14 @@ def _wire_transcript(
 
 
 def build_pipeline_task(
-    stack_name: str, transport, *, extra_observers: list | None = None
+    stack_name: str, transport, *, run_id: str, extra_observers: list | None = None
 ) -> PipelineTask:
+    """Baut die Pipeline und schreibt das Run-Manifest (metrics/run_manifest.py).
+
+    `run_id` verbindet Metrikdatei, Transkript, Turn-Protokoll und Manifest eines Laufs.
+    """
     services = build_stack(stack_name, system_prompt=SYSTEM_PROMPT)
+    tuning = load_tuning_config()
 
     context = LLMContext(messages=[{"role": "system", "content": SYSTEM_PROMPT}])
     # vad_analyzer hier (Aggregator-Ebene), nicht am Transport: Pipecat >=1.8 haengt
@@ -142,10 +148,8 @@ def build_pipeline_task(
         user_params=LLMUserAggregatorParams(
             # stop_secs: Stille, bis Silero das Sprechende meldet (Pipecat-Default 0.2 s).
             # Steckt vollstaendig in der Turn-Erkennung. Per PACEMAKER_VAD_STOP_SECS
-            # ueberschreibbar fuer Experimente.
-            vad_analyzer=SileroVADAnalyzer(
-                params=VADParams(stop_secs=float(os.environ.get("PACEMAKER_VAD_STOP_SECS", "0.2")))
-            )
+            # ueberschreibbar fuer Experimente (config.TuningConfig).
+            vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=tuning.vad_stop_secs))
         ),
     )
 
@@ -178,7 +182,14 @@ def build_pipeline_task(
     ]
     pipeline = Pipeline([p for p in processors if p is not None])
 
-    collector = MetricsCollector(stack_name, llm_model=services.llm_model)
+    write_manifest(
+        run_id,
+        stack=stack_name,
+        llm_model=services.llm_model,
+        tuning=tuning,
+        system_prompt=SYSTEM_PROMPT,
+    )
+    collector = MetricsCollector(stack_name, llm_model=services.llm_model, run_id=run_id)
     transcript = TranscriptRecorder(
         collector.path.parent / "transcripts" / collector.path.name,
         stack=stack_name,

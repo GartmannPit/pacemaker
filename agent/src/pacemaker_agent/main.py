@@ -10,6 +10,7 @@ import asyncio
 
 from loguru import logger
 
+from .metrics.run_manifest import new_run_id
 from .pipeline import build_pipeline_task
 from .stacks import STACKS
 
@@ -45,7 +46,7 @@ async def _run(stack: str, transport_kind: str) -> None:
     from pipecat.pipeline.runner import PipelineRunner
 
     transport = _build_transport(transport_kind)
-    task = build_pipeline_task(stack, transport)
+    task = build_pipeline_task(stack, transport, run_id=new_run_id(stack))
     logger.info(f"Pacemaker-Agent startet | stack={stack} transport={transport_kind}")
     await PipelineRunner().run(task)
 

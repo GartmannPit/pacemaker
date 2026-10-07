@@ -12,13 +12,17 @@ Siehe docs/phase-0-proof-of-concept.md §1.3 (Provider-Matrix).
 
 from __future__ import annotations
 
-import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from loguru import logger
 
-from .config import load_azure_config, load_azure_realtime_config, load_baseline_config
+from .config import (
+    load_azure_config,
+    load_azure_realtime_config,
+    load_baseline_config,
+    load_tuning_config,
+)
 
 STACKS = ("azure-eu", "baseline", "sovereign", "s2s")
 
@@ -91,7 +95,7 @@ def _build_azure_eu() -> StackServices:
     # Ueberschreibbar per AZURE_STT_SEGMENTATION_MS fuer Experimente.
     stt._speech_config.set_property(
         speechsdk.PropertyId.Speech_SegmentationSilenceTimeoutMs,
-        os.environ.get("AZURE_STT_SEGMENTATION_MS", "100"),
+        str(load_tuning_config().stt_segmentation_ms),
     )
     # Azure-OpenAI-Deployments brauchen den Inhaltsfilter im Streaming-Modus
     # "Asynchronous Filter" (Azure-Portal, nicht im Code). Im Default-Modus puffert
@@ -132,7 +136,7 @@ def _build_azure_eu() -> StackServices:
         llm=llm,
         tts=tts,
         llm_model=cfg.openai_deployment,
-        warm_up=warm_up if os.environ.get("PACEMAKER_WARM_UP", "1") == "1" else None,
+        warm_up=warm_up if load_tuning_config().warm_up else None,
     )
 
 

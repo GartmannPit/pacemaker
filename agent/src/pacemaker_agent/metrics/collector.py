@@ -2,8 +2,11 @@
 
 Gespeist von Pipecats eingebautem `UserBotLatencyObserver`
 (`pipecat.observers.user_bot_latency_observer`), verdrahtet in pipeline.py.
-Der Observer misst `e2e_ms` direkt (VAD-Sprechende-erkannt -> erstes Bot-Audio,
-das Latenzbudget-Kriterium aus CLAUDE.md) und liefert zusaetzlich eine
+Der Observer misst `e2e_ms` direkt: geschaetztes Sprechende (VAD-Erkennung minus
+`stop_secs`) -> erstes Bot-Audio, das Latenzbudget-Kriterium aus CLAUDE.md. Achtung:
+das erste Audio ist oft nur der kurze Einstieg der Persona; die Zeit bis zum
+Hauptsatz und der Status je Aeusserung stehen im Turn-Protokoll (turn_ledger.py).
+Zusaetzlich liefert er eine
 Breakdown pro Zyklus: Turn-Detection-Overhead sowie TTFB pro Service. Das
 JSONL-Schema unten ist die Schnittstelle zu metrics/aggregate.py und bleibt
 stabil.
@@ -28,7 +31,9 @@ RUNS_DIR = _REPO_ROOT / "experiments" / "runs"
 
 
 class MetricsCollector:
-    def __init__(self, stack: str, *, llm_model: str, runs_dir: Path | None = None) -> None:
+    def __init__(
+        self, stack: str, *, llm_model: str, run_id: str, runs_dir: Path | None = None
+    ) -> None:
         self.stack = stack
         self.llm_model = llm_model
         # Geraet mitschreiben: Laeufe von Entwicklungsrechner und Mess-VM sind nicht vergleichbar.
@@ -36,8 +41,7 @@ class MetricsCollector:
         self._turn = 0
         target = runs_dir or RUNS_DIR
         target.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-        self._path = target / f"{stamp}-{stack}.jsonl"
+        self._path = target / f"{run_id}.jsonl"
 
     @property
     def path(self) -> Path:
