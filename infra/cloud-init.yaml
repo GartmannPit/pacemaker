@@ -21,6 +21,7 @@ package_upgrade: true
 packages:
   - git
   - build-essential
+  - python3-dev # Python.h fuer den pyaudio-Build
   - portaudio19-dev # pyaudio (Abhaengigkeit des Agents) baut dagegen
   - ufw
   - unattended-upgrades
