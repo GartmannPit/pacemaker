@@ -79,7 +79,7 @@ Phase 0 misst **drei bis vier** Stacks. Der US-Baseline-Stack dient nur als Refe
 
 ### 1.5 Latenz-Definitionen (damit alle dasselbe messen)
 
-- **E2E-Antwortzeit:** Zeitpunkt, an dem der VAD das Ende der Nutzeräußerung erkennt → Zeitpunkt des ersten ausgehenden Audio-Chunks der Persona. **Das ist die Zielmetrik.**
+- **E2E-Antwortzeit:** geschätztes Ende der Nutzeräußerung (Zeitpunkt der VAD-Erkennung minus `stop_secs`, so misst Pipecats `UserBotLatencyObserver`; präzisiert 2026-10-07) → Zeitpunkt des ersten ausgehenden Audio-Chunks der Persona. **Das ist die Zielmetrik.** Ergänzend erfasst: Beginn des Hauptsatzes (erstes Wort nach dem ersten Satzende) und ein Status je angebotener Äußerung, damit Ausfälle nicht aus den Quantilen fallen.
 - **Teillatenzen:** STT-Endpointing, STT-Finalisierung, LLM-TTFT (time to first token), TTS-TTFB (time to first byte). Werden pro Turn mitgeloggt, um Engpässe zu lokalisieren.
 - **Barge-in-Latenz:** Nutzer beginnt zu sprechen → Persona-Audio verstummt.
 - **Reporting:** p50 / p90 / p95 über alle Turns eines Laufs, getrennt nach Stack. Mindestens 30 Turns synthetisch + ~15 Minuten manuelles Gespräch pro Gründer und Stack.

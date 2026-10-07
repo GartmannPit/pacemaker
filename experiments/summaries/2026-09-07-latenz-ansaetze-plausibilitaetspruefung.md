@@ -19,10 +19,14 @@ umsetzbar**, unabhängig davon, wie gut die Idee an sich ist. Sie wären erst be
 
 ## 1. Paralleles Streaming statt sequentiell
 
-**Verdict: ⚠️ Teilweise bereits vorhanden, Kernidee bereits getestet und widerlegt**
+**Verdict: ⚠️ Teilweise bereits vorhanden.** *(Korrigiert 2026-10-07: ursprünglich „Kernidee bereits getestet und widerlegt". Das traf nicht zu — siehe Korrekturhinweise in diesem Abschnitt.)*
 
 - „TTS startet sofort mit erstem Token" = `TextAggregationMode.TOKEN`. Genau das haben wir am
   2026-09-06 per Code-Analyse geprüft und **verworfen** (siehe Baseline-Doku §4.3): Azure hat
+  *(Korrektur 2026-10-07: gilt nur für den von Pipecat genutzten SSML-Weg. Microsoft
+  dokumentiert Text-Streaming-TTS über den WebSocket-v2-Endpoint mit
+  `SpeechSynthesisRequestInputType.TextStream`; beim TOKEN-Modus fand nur eine Codeanalyse
+  statt.)*
   keine echte Token-Streaming-Synthese, jeder Chunk löst einen eigenen `SpeechSynthesizer`-Request
   aus → erwartbar abgehackte Sprache statt eines Latenzgewinns.
 - „LLM beginnt Token-Stream parallel zu STT, sobald 2-3 Worte erkannt" = im Kern das, was wir mit
@@ -38,6 +42,10 @@ umsetzbar**, unabhängig davon, wie gut die Idee an sich ist. Sie wären erst be
 
 **Fazit:** Die zwei konkreten Hebel hinter diesem Punkt (früher an LLM, früher an TTS) haben wir
 bereits mit echten Zahlen getestet — beide mit negativem statt dem behaupteten positiven Ergebnis.
+*(Korrektur 2026-10-07: `wait_for_transcript=False` gibt nur den Turn früher frei; ein vorab
+gestarteter, später gegen das finale Transkript verifizierter LLM-Aufruf ist etwas anderes und
+wurde nicht getestet. Der TOKEN-Modus wurde nur per Codeanalyse bewertet. Beide Hebel sind
+damit offen, nicht widerlegt.)*
 Ohne neue Evidenz, die unsere eigenen Messungen widerlegt, ist der behauptete Gewinn
 („~300–400 ms") nicht plausibel für diesen Stack.
 
@@ -197,7 +205,7 @@ braucht etwas Vorlauf-Audio vor Sprachbeginn für gute Erkennungsgenauigkeit (si
 
 | # | Ansatz | Verdict | Grund |
 |---|---|---|---|
-| 1 | Paralleles Streaming | ❌ | Beide Kernhebel bereits getestet, Ergebnis negativ (§4.1, §4.3) |
+| 1 | Paralleles Streaming | ⚠️ | *(korrigiert 2026-10-07)* Spekulativer LLM-Start nicht getestet; TOKEN-TTS nur per Codeanalyse; Azure TextStream existiert — offen |
 | 2 | Speculative Decoding | ❌ | Kein Modellzugriff über Azure Managed API |
 | 3 | VAD aggressiv tunen | ⚠️ | Größtenteils schon umgesetzt; `SmartTurnParams` als einziger offener Rest |
 | 4 | Kleineres/quantisiertes LLM | ❌ | Bereits Mini-Modell, Quantisierung nicht verfügbar |

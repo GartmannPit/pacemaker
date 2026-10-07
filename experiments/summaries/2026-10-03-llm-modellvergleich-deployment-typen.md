@@ -350,10 +350,14 @@ auch Stack A (kein einziger Turn unter 900 ms, Minimum 1071 ms).
 
 ### 12.3 Befunde
 
-1. **900 ms p90 sind mit dieser Pipeline-Architektur nicht erreichbar — unabhängig vom
-   Anbieter.** Selbst die schnellsten US-Anbieter liegen bei 1501 ms p90. Die Grenze liegt in der
-   Architektur (Turn-Erkennung + LLM + TTS nacheinander), nicht bei Azure.
-2. **EU-Aufpreis gegenüber der US-Referenz: ~130 ms p90** (1632 vs. 1501 ms) bzw. ~300 ms p50.
+1. **Mit den damals getesteten Konfigurationen wurden 900 ms p90 nicht erreicht — auch nicht
+   mit den schnellsten US-Anbietern** (1501 ms p90). *(Korrigiert 2026-10-07: ursprünglich
+   „unabhängig vom Anbieter nicht erreichbar"; das war überdehnt — wenige Stunden später lag
+   p90 bei 1153 ms, §13.)*
+2. **Beobachteter Unterschied der beiden Stacks: ~130 ms p90** (1632 vs. 1501 ms) bzw. ~300 ms
+   p50. *(Korrigiert 2026-10-07: ursprünglich „EU-Aufpreis". STT, TTS, Routing und
+   Einstellungen unterscheiden sich zugleich — ein isolierter Effekt der EU-Datenresidenz lässt
+   sich daraus nicht ableiten.)*
    Für die Phase-0-Frage „Was kostet EU-Datenresidenz?" ist das die bezifferte Antwort
    (`phase-0-proof-of-concept.md` §2, Compliance-Kriterium).
 3. **Wo Stack A schneller ist:**
@@ -433,8 +437,9 @@ Alle Werte in ms (Teilschritte p50). Bester Lauf: kein Turn < 900 ms, Minimum 93
    schnelleres Schreiben — solange der Filter puffert, kommt der Text ohnehin auf einmal. Erst
    zusammen mit E2 fällt auch die Wartezeit bis zum ersten Satz weg (176 → 14 ms).
 3. **E3 spart ~120 ms Turn-Erkennung** (521 → 399 ms). Alle 30 Nutzer-Äußerungen kamen
-   vollständig an. Die 2026-09 beobachtete Zerstückelung bei 100 ms lag an den alten
-   Zwei-Satz-Clips.
+   vollständig an. Die 2026-09 beobachtete Zerstückelung bei 100 ms ist damit für saubere
+   Ein-Satz-Clips widerlegt; für echte Sprache mit Denkpausen und Korrekturen ist sie offen
+   *(präzisiert 2026-10-07)*.
 4. **Der EU-Stack ist jetzt schneller als die US-Referenz** (p90 1153 vs. 1501 ms) — obwohl die
    US-Referenz die schnelleren STT/TTS-Anbieter hat. Ein Teil der Referenz-Werte ist aber nicht
    optimiert (E1/E2 wurden dort nicht angewendet; OpenAI direkt puffert ohnehin nicht).
@@ -470,7 +475,9 @@ Befunde:
 
 1. **Die Läufe ab 20:32 sind nicht verwertbar.** LLM und TTS werden gleichzeitig und stetig
    langsamer, unabhängig von der jeweiligen Änderung; die gestiegene Netzwerklaufzeit der
-   Entwicklungsleitung erklärt das. E4 und E5 sind damit **offen**, nicht widerlegt.
+   Entwicklungsleitung ist ein plausibler Mitverursacher; TCP-RTT trennt aber nicht Last bei
+   Azure, Warteschlangen und Verbindungseffekte — die Ursache ist nicht vollständig
+   nachgewiesen *(präzisiert 2026-10-07)*. E4 und E5 sind damit **offen**, nicht widerlegt.
 2. **E4 (VAD 100 ms) vermutlich ohne Nutzen:** Die Turn-Erkennung sank nicht (391 → 431 ms) —
    bei `azure-eu` bestimmt das Warten auf das finale Azure-Transkript das Turn-Ende, nicht die
    VAD. Default bleibt 200 ms (`PACEMAKER_VAD_STOP_SECS` für Experimente).
@@ -517,17 +524,22 @@ einzeln ausgewertet (nicht gepoolt).
 
 Befunde:
 
-1. **RTT stabil** (Speech 4,8–6,2 ms, OpenAI 28–29 ms). Streuung zwischen Läufen stammt aus den
-   Diensten, nicht aus dem Netz.
+1. **RTT vor und nach jedem Lauf stabil** (Speech 4,8–6,2 ms, OpenAI 28–29 ms).
+   Netzwerkeffekte innerhalb eines Laufs schließt das nicht aus; Dienstlast, Scheduling und
+   Stichprobenstreuung sind mögliche Ursachen der Streuung *(präzisiert 2026-10-07)*.
 2. **Streuung gleicher Konfiguration: p90 ±50–100 ms** (Spannweite `mini` 97 ms, `nano` 192 ms).
-   Einzelläufe reichen nicht, um Effekte unter ~150 ms zu belegen.
+   Effekte in dieser Größenordnung brauchen mehrere Läufe; die Nachweisbarkeit hängt von
+   Versuchsanordnung und Stichprobe ab, eine feste Grenze ist das nicht
+   *(präzisiert 2026-10-07)*.
 3. **`nano` bei gleicher Konfiguration durchgehend schneller als `mini`:** p50 ~150 ms, p90
    20–310 ms. Haupttreiber TTS (105–128 vs. 159–220 ms, vermutlich kürzere Einstiege), LLM nur
    10–30 ms. Korrigiert §5.1/§11.3 Befund 8, soweit sie „kein Modellvorteil" nahelegten — unter
    den damaligen Bedingungen (gepufferter Filter, Laptop) war keiner messbar.
 4. **`nano`: p50 ~900 ms, p90 1014–1206 ms, bis 16/30 Turns < 900 ms.** Kriterium p90 < 900 ms
    weiterhin verfehlt (~100–300 ms).
-5. **Aufwärmen wirkt:** Erster Turn liegt in der normalen Verteilung; p90 mit/ohne Turn 1 gleich.
+5. **Kein auffälliger Erstturn-Nachteil mit Aufwärmen:** Erster Turn liegt in der normalen
+   Verteilung; p90 mit/ohne Turn 1 gleich. Kausal belegt ist das nicht — ein Vergleichslauf
+   ohne Aufwärmen auf der VM fehlt *(präzisiert 2026-10-07)*.
 6. **Azure-OpenAI-Endpoint ~28 ms RTT** von der VM (Speech ~5 ms): Ressource vermutlich nicht in
    Frankfurt — offen.
 

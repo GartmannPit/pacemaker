@@ -92,7 +92,7 @@ Mikro-Pausen vermutlich stärker. Müsste vor Wiederaufnahme mit echter Sprache 
 |---|---|---|---|
 | `wait_for_transcript=False` | STT-Finalisierung vom kritischen Pfad nehmen | Turn-Detection p50 1036→2648ms (schlechter!) | Mechanismus ungeklärt, Richtung eindeutig negativ |
 | `LocalSmartTurnAnalyzerV3(cpu_count=4)` | Mehr Kerne für ONNX-Inferenz | Turn-Detection p50 476→487ms | Kein Effekt, innerhalb Messstreuung |
-| TTS `TextAggregationMode.TOKEN` | Satzweise durch tokenweise Synthese ersetzen | Nicht getestet (Code-Analyse reicht) | Azure hat kein echtes Token-Streaming — ein `SpeechSynthesizer`-Request pro Chunk, hohes Risiko für abgehackte Bot-Stimme |
+| TTS `TextAggregationMode.TOKEN` | Satzweise durch tokenweise Synthese ersetzen | Nicht getestet (Code-Analyse reicht) | Über den von Pipecat genutzten SSML-Weg ein `SpeechSynthesizer`-Request pro Chunk, hohes Risiko für abgehackte Bot-Stimme. *(Korrektur 2026-10-07: Azure bietet Text-Streaming-TTS über WebSocket v2 / TextStream — als eigener Versuch offen.)* |
 | ChatHistory-Sliding-Window (15 Turns) | Wachsenden Prompt begrenzen | Prompt-Tokens 1759→993, aber E2E p50 1570→1770ms (schlechter!) | Zerstört Azures automatisches Prompt-Caching (Cache-Treffer 1664→0) — gecachte Tokens sind günstiger als weniger, aber frische |
 | `SmartTurnParams.stop_secs` 3s→1.5s (synthetisch) | Tail-Latenz bei Fehlklassifikation senken | Turn-Detection p50 476→491ms, p90 unverändert | Saubere TTS-Clips lösen kaum `INCOMPLETE` aus — synthetisch nicht validierbar, weder Nutzen noch Cutoff-Risiko |
 

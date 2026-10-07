@@ -21,8 +21,10 @@ Strategie: `Pacemaker.md`. Phasenpläne: `docs/`. Aktuelle Phase: **Phase 0 — 
 - **Keine Emotionserkennung.** Keine Prosodie-, Stimmlagen- oder Stress-Analyse, kein
   Emotions-Score. Scoring nur über Gesprächsinhalt und -struktur. (EU-AI-Act Art. 5, am
   Arbeitsplatz verbotene Praxis.) Auch nicht „nur zum Testen" einbauen.
-- **Latenzbudget.** E2E-Antwortzeit (VAD erkennt Sprechende-hört-auf → erstes Audio der
-  Persona): **p90 < 900 ms**, Ziel p50 < 700 ms.
+- **Latenzbudget.** E2E-Antwortzeit (geschätztes Sprechende = VAD-Erkennung minus `stop_secs`
+  → erstes Audio der Persona): **p90 < 900 ms**, Ziel p50 < 700 ms. Das erste Audio ist oft nur
+  ein kurzer Einstieg; „Beginn des Hauptsatzes" und Status je Äußerung stehen daneben im
+  Turn-Protokoll (`metrics/turn_ledger.py`).
 - **KI-Transparenz.** Die KI-Natur des Gesprächspartners ist im Produkt jederzeit erkennbar.
 - **Web-only.** Browser + WebRTC. Keine native App, keine Client-Installation.
 
