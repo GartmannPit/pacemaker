@@ -495,3 +495,43 @@ Befunde:
    Umstellung im Portal brauchte bei Azure offenbar längere Zeit, bis sie wirkte.
 4. Verbleibende Hebel: Eingangsfilter / Prompt Shields von Azure (prüfen, ob die synchrone
    Prüfung der Eingabe Zeit kostet), schnelleres EU-TTS als Azure (~205 ms).
+
+## 14. Messreihe auf der EU-Mess-VM (2026-10-07)
+
+Erste Messung unter stabilen Netzwerkbedingungen. Hetzner Cloud (Deutschland), `infra/messreihe.sh`:
+`mini` und `nano` abwechselnd, je 3 Läufe à 30 Turns, RTT vor und nach jedem Lauf. Gleiche
+Konfiguration für beide: E1 (kurzer Einstieg), E2 (asynchroner Inhaltsfilter, bei beiden per
+Direktmessung bestätigt), E3 (Segmentierung 100 ms), E5 (Aufwärmen), VAD 200 ms.
+
+| Lauf | p50 | p90 | p95 | max | 1. Turn | < 900 ms | Turn | LLM | TTS | RTT Speech / OpenAI |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| `mini`-1 | 1119 | 1317 | 1394 | 1648 | 1223 | 2 | 380 | 402 | 220 | 4,8 / 28,3 |
+| `nano`-1 | 924 | 1103 | 1170 | 1407 | 931 | 12 | 347 | 355 | 128 | 4,8 / 28,9 |
+| `mini`-2 | 1068 | 1324 | 1374 | 1628 | 1273 | 4 | 359 | 372 | 209 | 4,8 / 28,2 |
+| `nano`-2 | 892 | 1014 | 1071 | 1146 | 990 | 16 | 360 | 367 | 105 | 5,0 / 28,0 |
+| `mini`-3 | 1043 | 1227 | 1237 | 1689 | 1070 | 9 | 361 | 377 | 159 | 6,2 / 29,0 |
+| `nano`-3 | 899 | 1206 | 1230 | 1387 | 979 | 15 | 352 | 365 | 124 | 4,8 / 28,2 |
+
+Werte in ms, Teilschritte p50. Alle Läufe Turn-Bilanz 30/30/30, keine Ausfälle. Jeder Lauf
+einzeln ausgewertet (nicht gepoolt).
+
+Befunde:
+
+1. **RTT stabil** (Speech 4,8–6,2 ms, OpenAI 28–29 ms). Streuung zwischen Läufen stammt aus den
+   Diensten, nicht aus dem Netz.
+2. **Streuung gleicher Konfiguration: p90 ±50–100 ms** (Spannweite `mini` 97 ms, `nano` 192 ms).
+   Einzelläufe reichen nicht, um Effekte unter ~150 ms zu belegen.
+3. **`nano` bei gleicher Konfiguration durchgehend schneller als `mini`:** p50 ~150 ms, p90
+   20–310 ms. Haupttreiber TTS (105–128 vs. 159–220 ms, vermutlich kürzere Einstiege), LLM nur
+   10–30 ms. Korrigiert §5.1/§11.3 Befund 8, soweit sie „kein Modellvorteil" nahelegten — unter
+   den damaligen Bedingungen (gepufferter Filter, Laptop) war keiner messbar.
+4. **`nano`: p50 ~900 ms, p90 1014–1206 ms, bis 16/30 Turns < 900 ms.** Kriterium p90 < 900 ms
+   weiterhin verfehlt (~100–300 ms).
+5. **Aufwärmen wirkt:** Erster Turn liegt in der normalen Verteilung; p90 mit/ohne Turn 1 gleich.
+6. **Azure-OpenAI-Endpoint ~28 ms RTT** von der VM (Speech ~5 ms): Ressource vermutlich nicht in
+   Frankfurt — offen.
+
+Einschränkungen (siehe [Einordnung der Projektbewertung](../../docs/2026-10-07-einordnung-projektbewertung.md)):
+Messung endet beim ersten Audio, häufig dem kurzen Einstieg — „Zeit bis zum Inhalt" noch nicht
+erfasst. Reihenfolge immer `mini` vor `nano`. Saubere synthetische Clips mit Wiederholung alle
+10 Turns.

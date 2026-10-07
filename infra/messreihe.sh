@@ -6,7 +6,7 @@
 #   nohup bash infra/messreihe.sh 3 gpt-4.1-mini gpt-4.1-nano > experiments/runs/messreihe.log 2>&1 &
 #
 # Ergebnisse: experiments/runs/*.jsonl (Metriken, Feld llm_model unterscheidet die Deployments),
-# experiments/runs/<datum>-rtt.jsonl (RTT je Lauf, mit Feld "phase": vorher/nachher).
+# experiments/runs/rtt/<datum>-rtt.jsonl (RTT je Lauf, mit Feld "phase": vorher/nachher).
 set -euo pipefail
 
 REPS="${1:-3}"
@@ -17,8 +17,8 @@ MODELS=("${@:-gpt-4.1-mini gpt-4.1-nano}")
 cd "$(dirname "$0")/.."
 UV="${UV:-$HOME/.local/bin/uv}"
 RUNS="experiments/runs"
-RTT_LOG="$RUNS/$(date -u +%Y-%m-%d)-rtt.jsonl"
-mkdir -p "$RUNS"
+RTT_LOG="$RUNS/rtt/$(date -u +%Y-%m-%d)-rtt.jsonl"  # eigener Ordner: aggregate.py liest alle *.jsonl in runs/
+mkdir -p "$RUNS/rtt"
 
 rtt() {
   bash infra/rtt-check.sh 10 2>/dev/null | sed "s/}\$/,\"phase\":\"$1\",\"run\":\"$2\"}/" >> "$RTT_LOG"
