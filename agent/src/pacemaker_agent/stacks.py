@@ -116,7 +116,9 @@ def _build_azure_eu() -> StackServices:
     edge_silence_ms = load_tuning_config().tts_edge_silence_ms
     sentence_tag = "<mstts:silence type='Sentenceboundary' value='20ms' />"
 
-    class _AzureTTSWithEdgeSilence(AzureTTSService):
+    # Name muss "TTSService" enthalten: pipeline.py ordnet die TTFB-Werte daran zu
+    # (mit dem frueheren Namen fehlte tts_ttfb_ms in allen Laeufen ab e327b1c).
+    class EdgeSilenceAzureTTSService(AzureTTSService):
         def _construct_ssml(self, text: str) -> str:
             ssml = super()._construct_ssml(text)
             if edge_silence_ms is None or sentence_tag not in ssml:
@@ -127,7 +129,7 @@ def _build_azure_eu() -> StackServices:
             )
             return ssml.replace(sentence_tag, sentence_tag + edge, 1)
 
-    tts = _AzureTTSWithEdgeSilence(
+    tts = EdgeSilenceAzureTTSService(
         api_key=cfg.speech_key,
         region=cfg.speech_region,
         voice=cfg.tts_voice,
