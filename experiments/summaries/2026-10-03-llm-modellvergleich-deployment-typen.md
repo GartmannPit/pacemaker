@@ -625,3 +625,19 @@ Lokaler Transport, `gpt-4.1-nano`, Konfiguration wie Variante B. Befunde aus dem
   gegenprüfen.
 - **Turn-Erkennung 3,2 s** bei einer zögerlichen echten Äußerung (Smart Turn wartet bis zum
   3-s-Limit) — bestätigt den Bedarf der Robustheitsprobe (Schritt C).
+
+**Zweiter Probelauf** (Headset, `gpt-4.1-mini`, Lauf `20261007T203643Z-azure-eu`):
+
+- **Kein Echo** mehr.
+- **Rollentreue deutlich besser:** Die Persona reagiert auf den Inhalt („Unser Tool ist ziemlich
+  schlecht" → „dann spar ich mir den Rest"), bleibt in der Rolle und beendet das Gespräch, als der
+  Anrufer offen unseriös wird — Geduldsschwelle wie im Prompt. Ob das am Modell (`mini` statt
+  `nano`) oder am fehlenden Echo liegt, trennt dieser Lauf nicht.
+- **Vorzeitiges Turn-Ende bei Pitch-Pausen:** 4 von 9 Persona-Antworten leer und unterbrochen.
+  Kurze Pausen innerhalb eines längeren Pitches beendeten den Turn; die Persona begann zu
+  antworten und wurde von der Fortsetzung abgebrochen, bevor Audio kam. Die Äußerung kam
+  zerstückelt im Verlauf an. Barge-in selbst funktionierte. Verdacht: 100-ms-Segmentierung plus
+  Smart Turn bei echter Sprache — **Priorität für die Robustheitsprobe** (Segmentierung
+  100/200/300 ms, VAD-Stopp).
+- Latenz (Laptop, nicht mit VM vergleichbar): erstes Audio 1174–1424 ms; Turn 360–503,
+  LLM 361–496, TTS 339–387 ms.
