@@ -87,8 +87,8 @@ def _build_azure_eu() -> StackServices:
     #
     # 200ms -> 30-Turn-Test: E2E p50 2176->1570ms, p90 2377->1817ms.
     # 100ms (2026-10-04, Default): Turn-Detection p50 521->399ms. Die frueher
-    # beobachtete "Ueberfragmentierung" lag an den Zwei-Satz-Test-Clips; mit
-    # bereinigten Clips kamen alle 30 Aeusserungen vollstaendig an. Turn-Grenzen
+    # beobachtete "Ueberfragmentierung" ist fuer saubere Ein-Satz-Clips widerlegt
+    # (alle 30 Aeusserungen kamen vollstaendig an), fuer echte Sprache offen. Turn-Grenzen
     # entscheiden VAD + Smart Turn, nicht die STT-Segmente; Azure liefert
     # Zwischentranskripte, die Pipecats Stop-Strategie bis zum letzten Final
     # warten lassen. Mit echter Sprache (mehr Pausen) noch zu validieren.
@@ -106,7 +106,28 @@ def _build_azure_eu() -> StackServices:
         endpoint=cfg.openai_endpoint,
         model=cfg.openai_deployment,
     )
-    tts = AzureTTSService(
+    # Azure-TTS fuegt an jede Anfrage Stille an (gemessen 2026-10-07: ~0,1 s vorn,
+    # ~1-1,3 s hinten; "Ach so." = 1820 ms Audio statt 450 ms). Pipecat vertont satzweise
+    # mit je einer Anfrage und setzt nur die Satzgrenzen-Stille innerhalb einer Anfrage
+    # (20 ms) -- dadurch entstand zwischen allen Saetzen einer Antwort gut 1 s Pause, und
+    # der Hauptsatz kam erst ~2,3-2,8 s nach dem Sprechende. Daher Leading-/Tailing-exact
+    # setzen. Ueberschreibt Pipecats privates _construct_ssml (fragil ggue.
+    # Pipecat-Versionswechseln). AZURE_TTS_EDGE_SILENCE_MS=azure schaltet ab.
+    edge_silence_ms = load_tuning_config().tts_edge_silence_ms
+    sentence_tag = "<mstts:silence type='Sentenceboundary' value='20ms' />"
+
+    class _AzureTTSWithEdgeSilence(AzureTTSService):
+        def _construct_ssml(self, text: str) -> str:
+            ssml = super()._construct_ssml(text)
+            if edge_silence_ms is None or sentence_tag not in ssml:
+                return ssml
+            edge = (
+                f"<mstts:silence type='Leading-exact' value='{edge_silence_ms}ms' />"
+                f"<mstts:silence type='Tailing-exact' value='{edge_silence_ms}ms' />"
+            )
+            return ssml.replace(sentence_tag, sentence_tag + edge, 1)
+
+    tts = _AzureTTSWithEdgeSilence(
         api_key=cfg.speech_key,
         region=cfg.speech_region,
         voice=cfg.tts_voice,
