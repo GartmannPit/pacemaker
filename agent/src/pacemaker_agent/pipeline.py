@@ -28,7 +28,7 @@ from .config import load_tuning_config
 from .metrics.collector import MetricsCollector
 from .metrics.run_manifest import write_manifest
 from .metrics.transcript import TranscriptRecorder
-from .personas.kaltakquise_head_of_ops import SYSTEM_PROMPT
+from .personas.kaltakquise_head_of_ops import system_prompt
 from .stacks import build_stack
 
 
@@ -111,10 +111,11 @@ def build_pipeline_task(
 
     `run_id` verbindet Metrikdatei, Transkript, Turn-Protokoll und Manifest eines Laufs.
     """
-    services = build_stack(stack_name, system_prompt=SYSTEM_PROMPT)
     tuning = load_tuning_config()
+    prompt = system_prompt(short_opener=tuning.short_opener)
+    services = build_stack(stack_name, system_prompt=prompt)
 
-    context = LLMContext(messages=[{"role": "system", "content": SYSTEM_PROMPT}])
+    context = LLMContext(messages=[{"role": "system", "content": prompt}])
     # vad_analyzer hier (Aggregator-Ebene), nicht am Transport: Pipecat >=1.8 haengt
     # VAD-basierte Turn-Start-Erkennung an LLMUserAggregatorParams, nicht mehr an
     # TransportParams. Ohne das laeuft Turn-Erkennung nur ueber Transkription +
@@ -187,7 +188,7 @@ def build_pipeline_task(
         stack=stack_name,
         llm_model=services.llm_model,
         tuning=tuning,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=prompt,
     )
     collector = MetricsCollector(stack_name, llm_model=services.llm_model, run_id=run_id)
     transcript = TranscriptRecorder(

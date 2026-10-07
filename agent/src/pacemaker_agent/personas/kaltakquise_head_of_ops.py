@@ -45,6 +45,19 @@ VERHALTEN
 Sprich jetzt als Markus Brandt. Der Anrufer hat sich gerade gemeldet.
 """
 
+# Kurzer Einstieg (Experiment E1, 2026-10-04): verkuerzt die Zeit bis zum ersten Audio, aber
+# nicht zwingend bis zum Inhalt (Turn-Protokoll, 2026-10-07). Abschaltbar fuer Vergleiche.
+OPENER_RULE = """\
+- Beginne jeden Redebeitrag mit einem sehr kurzen eigenen Satz aus ein bis vier Woertern,
+  wie man am Telefon spontan reagiert ("Hm, nein." / "Moment mal." / "Ach so." / "Ja, und?"
+  / "Naja."). Variiere ihn, wiederhole nicht dieselbe Formel. Erst danach kommt der Inhalt.
+"""
+assert OPENER_RULE in SYSTEM_PROMPT
+
+
+def system_prompt(*, short_opener: bool) -> str:
+    return SYSTEM_PROMPT if short_opener else SYSTEM_PROMPT.replace(OPENER_RULE, "")
+
 
 @dataclass
 class PersonaState:

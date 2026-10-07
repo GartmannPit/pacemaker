@@ -99,11 +99,13 @@ class TuningConfig:
     # Stille am Anfang/Ende jeder Azure-TTS-Anfrage in ms; None = Azure-Standard
     # (~0,1 s vorn, ~1-1,3 s hinten, gemessen 2026-10-07)
     tts_edge_silence_ms: int | None
+    short_opener: bool  # Persona beginnt mit kurzem Einstieg ("Hm, nee.")
 
 
 def load_tuning_config() -> TuningConfig:
     edge_silence = os.environ.get("AZURE_TTS_EDGE_SILENCE_MS", "0")
     return TuningConfig(
+        short_opener=os.environ.get("PACEMAKER_SHORT_OPENER", "1") == "1",
         stt_segmentation_ms=int(os.environ.get("AZURE_STT_SEGMENTATION_MS", "100")),
         vad_stop_secs=float(os.environ.get("PACEMAKER_VAD_STOP_SECS", "0.2")),
         warm_up=os.environ.get("PACEMAKER_WARM_UP", "1") == "1",
