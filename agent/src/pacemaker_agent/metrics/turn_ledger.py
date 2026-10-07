@@ -41,6 +41,7 @@ from pipecat.frames.frames import (
     VADUserStoppedSpeakingFrame,
 )
 from pipecat.observers.base_observer import BaseObserver, FramePushed
+from pipecat.processors.frame_processor import FrameDirection
 from pipecat.transports.base_output import BaseOutputTransport
 
 from .collector import RUNS_DIR
@@ -128,20 +129,27 @@ def summarize(u: UtteranceEvents) -> dict:
     }
 
 
+# Spanne der ersten 10 Textdeltas einer Antwort. Gepuffert (Azure-Inhaltsfilter im
+# Default-Modus) kommt alles in einem Schub (Direktmessung: ~0,2 ms Abstand, < 5 ms
+# Spanne); gestreamt verteilen sich die Deltas ueber Dutzende ms. Einzelne Abstaende
+# taugen nicht als Kriterium: auch gestreamte Deltas kommen oft gebuendelt an
+# (Smoke-Test 2026-10-07: Median-Abstand 0,7 ms bei aktivem asynchronem Filter).
+_BUFFERED_SPAN_MS = 15.0
+
+
 def text_delivery(utterances: list[UtteranceEvents]) -> dict:
-    """Beobachteter LLM-Auslieferungsmodus: gepuffert (alle Deltas auf einmal, z. B.
-    Azure-Inhaltsfilter im Default-Modus) oder streamend (Token fuer Token)."""
-    gaps = [
-        (b - a) * 1000
+    """Beobachteter LLM-Auslieferungsmodus: gepuffert oder streamend."""
+    spans = [
+        (u.text_deltas[min(9, len(u.text_deltas) - 1)] - u.text_deltas[0]) * 1000
         for u in utterances
-        for a, b in zip(u.text_deltas[:10], u.text_deltas[1:10], strict=False)
+        if len(u.text_deltas) >= 5
     ]
-    if not gaps:
-        return {"text_delivery": "unbekannt", "median_delta_gap_ms": None}
-    median = statistics.median(gaps)
+    if not spans:
+        return {"text_delivery": "unbekannt", "median_delta_span_ms": None}
+    median = statistics.median(spans)
     return {
-        "text_delivery": "gepuffert" if median < 1.0 else "streamend",
-        "median_delta_gap_ms": round(median, 2),
+        "text_delivery": "gepuffert" if median < _BUFFERED_SPAN_MS else "streamend",
+        "median_delta_span_ms": round(median, 1),
     }
 
 
@@ -185,6 +193,12 @@ class TurnLedger(BaseObserver):
             # Hoerbeginn: Text-Frames, die der Output-Transport im Abspieltakt freigibt
             if isinstance(data.source, BaseOutputTransport) and self._first_sight(data):
                 u.words.append((now, frame.text))
+            return
+        # Pipecat broadcastet Turn-, Bot- und Unterbrechungs-Ereignisse in beide
+        # Richtungen als zwei Frames mit eigener ID -- nur die Downstream-Kopie zaehlen
+        # (sonst ergibt jeder Clip zwei Turn-Enden, Smoke-Test 2026-10-07). Fehler
+        # laufen meist upstream und werden in beiden Richtungen erfasst.
+        if not isinstance(frame, ErrorFrame) and data.direction != FrameDirection.DOWNSTREAM:
             return
         if not isinstance(
             frame,

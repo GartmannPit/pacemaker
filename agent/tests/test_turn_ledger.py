@@ -76,8 +76,9 @@ def test_summarize_measures_from_vad_speech_end() -> None:
 
 
 def test_text_delivery_detects_buffering() -> None:
-    buffered = [_utterance(text_deltas=[1.0, 1.0001, 1.0002, 1.0003])]
-    streaming = [_utterance(text_deltas=[1.0, 1.003, 1.006, 1.009])]
+    buffered = [_utterance(text_deltas=[1.0 + i * 0.0002 for i in range(19)])]
+    # gestreamt, aber gebuendelt: viele Abstaende < 1 ms, Spanne trotzdem ~50 ms
+    streaming = [_utterance(text_deltas=[1.0, 1.0005, 1.001, 1.02, 1.0205, 1.04, 1.0405, 1.05])]
     assert text_delivery(buffered)["text_delivery"] == "gepuffert"
     assert text_delivery(streaming)["text_delivery"] == "streamend"
 
