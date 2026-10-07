@@ -605,4 +605,23 @@ Läufe 30/30 beantwortet, LLM-Text in allen Läufen streamend (asynchroner Filte
    Randstille-Effekt auf, der mit „erstes Audio" allein unsichtbar gewesen wäre.
 
 Einschränkungen: nur `nano`; saubere synthetische Clips mit Wiederholung alle 10 Turns; der
-Inhaltsbeginn ist eine technische Näherung ohne inhaltliche Bewertung.
+Inhaltsbeginn ist eine technische Näherung ohne inhaltliche Bewertung. In allen Läufen dieser
+Reihe fehlt der Teilwert `tts_ttfb_ms` (Namensfehler der TTS-Unterklasse, behoben in
+`a34b866`); erstes Audio, Inhaltsbeginn und Turn-Protokoll sind davon nicht betroffen.
+
+### 15.4 Erster eigener Probelauf (Pit, lokal, 2026-10-07)
+
+Lokaler Transport, `gpt-4.1-nano`, Konfiguration wie Variante B. Befunde aus dem Transkript:
+
+- **Echo:** Das Mikrofon nahm die Persona auf; ihre Satzanfänge kamen als Nutzeräußerungen zurück
+  („Hallo Herr Gartmann, ich hab …" → „Hallo, Herr Gartmann. Ich hab."), die Persona unterbrach
+  sich dadurch selbst. Der lokale Transport hat keine Echounterdrückung → Headset mit eigenem
+  Mikrofon als Eingabegerät Pflicht; im Browser übernimmt WebRTC die Echounterdrückung.
+- **Persona geht nicht auf Inhalt ein:** Auf eine absurde Provokation („… Crack und Kokain
+  verkaufen") folgte ein Standard-Einwand („wir haben schon ein System … schicken Sie mir eine
+  Mail"). Mitursache vermutlich die Echo-Fetzen im Verlauf; zusätzlich ist `nano` möglicherweise
+  zu schwach für inhaltliches Eingehen. Folgerung für den Rollentreue-Test (Schritt B):
+  **unerwartete und provozierende Äußerungen** aufnehmen, nicht nur Vertriebssätze; `mini`
+  gegenprüfen.
+- **Turn-Erkennung 3,2 s** bei einer zögerlichen echten Äußerung (Smart Turn wartet bis zum
+  3-s-Limit) — bestätigt den Bedarf der Robustheitsprobe (Schritt C).
