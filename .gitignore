@@ -189,6 +189,10 @@ experiments/runs/*
 agent/fixtures/audio/*.wav
 agent/fixtures/audio/*.mp3
 
+# Echte Sprachaufnahmen (Robustheitsprobe) -- personenbezogen, nie ins Repo,
+# siehe docs/phase-0-robustheitsprobe-aufnahmen.md
+agent/fixtures/robust/
+
 # Aufgezeichnete Gesprächsmitschnitte / Transkripte aus lokalen Läufen
 *.recording.wav
 transcripts/
