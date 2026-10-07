@@ -1,5 +1,9 @@
 # Nächste Schritte Phase 0
 
+> **Überholt** durch [Prüfung der Kritik — überarbeiteter Plan](./2026-10-07-pruefung-kritik-naechste-schritte.md) §4.
+> Insbesondere fehlten hier die übrigen Muss-Kriterien des Phase-0-Plans, und der Browser ist
+> dort „Kann", nicht Voraussetzung der Abnahme.
+
 **Stand:** 2026-10-07
 **Grundlage:** [Ergebnisse und Messreihe auf der EU-Mess-VM](../experiments/summaries/2026-10-03-llm-modellvergleich-deployment-typen.md) §14,
 [unabhängige Projektbewertung](./2026-10-07-unabhaengige-projektbewertung.md) und
