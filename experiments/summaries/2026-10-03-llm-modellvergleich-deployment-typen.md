@@ -782,3 +782,40 @@ Audio zurückhalten bis Mindeststille mit gemeinsamem Abbruchpfad.
 
 Einschränkungen wie §16 (ein Sprecher, gezielt schwierige Aufnahmen, nur `nano`, frische
 Sitzungen; 156 Sitzungen = 26 Aufnahmen × 6).
+
+## 18. Kurze Antworten: VAD-Sprechbeginn (2026-10-08)
+
+**Problem (§16, Befund 5):** „OK." (R19, 0,27 s) wurde in allen Sitzungen erst nach 3,2–3,6 s
+beantwortet; die VAD erkannte gar keinen Sprechbeginn.
+
+**Ursache (offline, Silero-Trace auf R19–R21):** Die VAD meldet Sprechbeginn erst, wenn
+Sprachkonfidenz ≥ 0,7 **und** Lautstärke ≥ 0,6 für `start_secs` (Pipecat-Default 0,2 s)
+anhalten. Die Konfidenz liegt bei R19 schon ab ~1,12 s über 0,7, die Lautstärke (gleitendes
+400-ms-Fenster mit Glättung) erreicht 0,6 aber erst bei ~1,22 s — danach folgen weniger als
+0,2 s Sprache. Der Pegel der Aufnahme ist nicht die Ursache: dreifach verstärkt bleibt der
+Fehler. Offline lösen ihn `min_volume` 0,4 oder `start_secs` 0,1.
+
+**Messung (VM, nano, 26 Aufnahmen, je zwei gegenbalancierte Durchgänge,
+`experiments/runs/robust-vadstart/`):**
+
+| Variante (Start s / Mindestlautstärke) | zerfallen | R19 erstes Audio ab Clip-Ende | gleiche 10 Clips: erstes Audio p50 / p90 |
+|---|--:|--:|--:|
+| 0,2 / 0,6 (bisher; n = 104) | 60/104 (58 %) | 3216–3260 ms (Fallback) | 938 / 1264 |
+| **0,1 / 0,6** | 28/52 (54 %) | **1395–1404 ms** | 941 / 1285 |
+| 0,2 / 0,4 | 30/52 (58 %) | 1328–1415 ms | 954 / 1410 |
+
+Vorab-Kriterium (R19 überall mit VAD-Basis; Zerfall höchstens +3/52; p50 gleicher Clips
+höchstens +50 ms) erfüllen beide Varianten.
+
+**Entscheidung: `start_secs` 0,1 ist neuer Default** (`PACEMAKER_VAD_START_SECS`) — gleiche p90
+wie bisher, während `min_volume` 0,4 das p90 um ~150 ms verschlechtert. Der geringere Zerfall
+(28 vs. 30) liegt im Rauschen. **Nicht getestet:** Fehlstarts durch kurze Laute („mhm",
+Husten) während die Persona spricht — gehört in die Barge-in-Tests (Schritt B).
+
+**Neuer Befund — Einwort-Antworten warten ~1 s auf das Turn-Ende:** Mit erkanntem Sprechbeginn
+endet der Turn bei „OK." (R19) und „Verstehe." (R20, schon vorher) erst ~990–1060 ms nach
+Sprechende statt ~350 ms: Smart Turn stuft das einzelne Wort als unvollständig ein, das Turn-Ende
+kommt über die Zeitgrenze der Stop-Strategie. Erstes Audio daher ~1,4–1,7 s. Mit
+Audiomerkmalen allein ist das nicht zu entscheiden; im Gesprächskontext (Persona hat eine Frage
+gestellt) wäre „OK." eindeutig abgeschlossen — Argument für eine Turn-Erkennung am Text mit
+Kontext (Empfehlung für den Architekturumbau, siehe Ergebnisdokument Phase 0).

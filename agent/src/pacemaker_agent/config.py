@@ -95,9 +95,11 @@ class TuningConfig:
 
     stt_segmentation_ms: int  # Azure-STT-Segmentierungsstille (azure-eu)
     vad_stop_secs: float  # Stille, bis Silero das Sprechende meldet
-    # Sprechbeginn: so lange Konfidenz UND Lautstaerke ueber Schwelle. Mit den Pipecat-
-    # Defaults (0.2 s / 0.6) verpasst die VAD sehr kurze Antworten ("OK.", R19): die
-    # Lautstaerke (gleitendes 400-ms-Fenster) erreicht 0.6 erst spaet (Summary §18).
+    # Sprechbeginn: so lange Konfidenz UND Lautstaerke ueber Schwelle. Default 0.1 s seit
+    # 2026-10-08: Mit dem Pipecat-Default 0.2 s verpasst die VAD sehr kurze Antworten ("OK.",
+    # R19), weil die Lautstaerke (gleitendes 400-ms-Fenster) 0.6 erst spaet erreicht --
+    # Antwort erst nach ~3,2 s ueber den Transkript-Fallback. Zerfall und Latenz unveraendert
+    # (Summary §18). Offen: Fehlstarts durch kurze Laute ("mhm") -> Barge-in-Tests.
     vad_start_secs: float
     vad_min_volume: float
     warm_up: bool  # Verbindungen vor dem ersten Turn aufbauen
@@ -116,7 +118,7 @@ def load_tuning_config() -> TuningConfig:
         short_opener=os.environ.get("PACEMAKER_SHORT_OPENER", "0") == "1",
         stt_segmentation_ms=int(os.environ.get("AZURE_STT_SEGMENTATION_MS", "100")),
         vad_stop_secs=float(os.environ.get("PACEMAKER_VAD_STOP_SECS", "0.2")),
-        vad_start_secs=float(os.environ.get("PACEMAKER_VAD_START_SECS", "0.2")),
+        vad_start_secs=float(os.environ.get("PACEMAKER_VAD_START_SECS", "0.1")),
         vad_min_volume=float(os.environ.get("PACEMAKER_VAD_MIN_VOLUME", "0.6")),
         warm_up=os.environ.get("PACEMAKER_WARM_UP", "1") == "1",
         tts_edge_silence_ms=None if edge_silence == "azure" else int(edge_silence),
