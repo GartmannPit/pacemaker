@@ -105,7 +105,12 @@ def _wire_transcript(
 
 
 def build_pipeline_task(
-    stack_name: str, transport, *, run_id: str, extra_observers: list | None = None
+    stack_name: str,
+    transport,
+    *,
+    run_id: str,
+    extra_observers: list | None = None,
+    manifest_extra: dict | None = None,
 ) -> PipelineTask:
     """Baut die Pipeline und schreibt das Run-Manifest (metrics/run_manifest.py).
 
@@ -189,6 +194,7 @@ def build_pipeline_task(
         llm_model=services.llm_model,
         tuning=tuning,
         system_prompt=prompt,
+        extra=manifest_extra,
     )
     collector = MetricsCollector(stack_name, llm_model=services.llm_model, run_id=run_id)
     transcript = TranscriptRecorder(

@@ -21,13 +21,19 @@ Schema pro Zeile:
 from __future__ import annotations
 
 import json
+import os
 import socket
 from datetime import UTC, datetime
 from pathlib import Path
 
 # .../agent/src/pacemaker_agent/metrics/collector.py -> parents[4] == Repo-Wurzel
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-RUNS_DIR = _REPO_ROOT / "experiments" / "runs"
+# PACEMAKER_RUNS_DIR lenkt alle Ergebnisse eines Laufs (Metriken, Manifest, Turn-Protokoll,
+# Transkript) in einen anderen Ordner, z. B. experiments/runs/robust fuer die
+# Robustheitsprobe -- damit sie nicht in die Latenz-Auswertung von experiments/runs einfliesst.
+RUNS_DIR = Path(os.environ.get("PACEMAKER_RUNS_DIR") or _REPO_ROOT / "experiments" / "runs")
+if not RUNS_DIR.is_absolute():
+    RUNS_DIR = _REPO_ROOT / RUNS_DIR
 
 
 class MetricsCollector:

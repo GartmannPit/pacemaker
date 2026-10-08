@@ -24,10 +24,9 @@ from pathlib import Path
 from typing import Any
 
 from ..config import TuningConfig
-from .collector import RUNS_DIR
+from .collector import _REPO_ROOT, RUNS_DIR
 
 MANIFEST_DIR = RUNS_DIR / "manifests"
-_REPO_ROOT = RUNS_DIR.parents[1]
 _FIXTURES = _REPO_ROOT / "agent" / "fixtures" / "audio"
 
 
