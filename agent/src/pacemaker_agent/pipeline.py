@@ -155,7 +155,14 @@ def build_pipeline_task(
             # stop_secs: Stille, bis Silero das Sprechende meldet (Pipecat-Default 0.2 s).
             # Steckt vollstaendig in der Turn-Erkennung. Per PACEMAKER_VAD_STOP_SECS
             # ueberschreibbar fuer Experimente (config.TuningConfig).
-            vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=tuning.vad_stop_secs))
+            # start_secs/min_volume: PACEMAKER_VAD_START_SECS / PACEMAKER_VAD_MIN_VOLUME.
+            vad_analyzer=SileroVADAnalyzer(
+                params=VADParams(
+                    stop_secs=tuning.vad_stop_secs,
+                    start_secs=tuning.vad_start_secs,
+                    min_volume=tuning.vad_min_volume,
+                )
+            )
         ),
     )
 

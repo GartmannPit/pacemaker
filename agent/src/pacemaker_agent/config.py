@@ -95,6 +95,11 @@ class TuningConfig:
 
     stt_segmentation_ms: int  # Azure-STT-Segmentierungsstille (azure-eu)
     vad_stop_secs: float  # Stille, bis Silero das Sprechende meldet
+    # Sprechbeginn: so lange Konfidenz UND Lautstaerke ueber Schwelle. Mit den Pipecat-
+    # Defaults (0.2 s / 0.6) verpasst die VAD sehr kurze Antworten ("OK.", R19): die
+    # Lautstaerke (gleitendes 400-ms-Fenster) erreicht 0.6 erst spaet (Summary §18).
+    vad_start_secs: float
+    vad_min_volume: float
     warm_up: bool  # Verbindungen vor dem ersten Turn aufbauen
     # Stille am Anfang/Ende jeder Azure-TTS-Anfrage in ms; None = Azure-Standard
     # (~0,1 s vorn, ~1-1,3 s hinten, gemessen 2026-10-07)
@@ -111,6 +116,8 @@ def load_tuning_config() -> TuningConfig:
         short_opener=os.environ.get("PACEMAKER_SHORT_OPENER", "0") == "1",
         stt_segmentation_ms=int(os.environ.get("AZURE_STT_SEGMENTATION_MS", "100")),
         vad_stop_secs=float(os.environ.get("PACEMAKER_VAD_STOP_SECS", "0.2")),
+        vad_start_secs=float(os.environ.get("PACEMAKER_VAD_START_SECS", "0.2")),
+        vad_min_volume=float(os.environ.get("PACEMAKER_VAD_MIN_VOLUME", "0.6")),
         warm_up=os.environ.get("PACEMAKER_WARM_UP", "1") == "1",
         tts_edge_silence_ms=None if edge_silence == "azure" else int(edge_silence),
     )

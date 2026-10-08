@@ -6,7 +6,8 @@ Frage: Endet der Turn dort, wo die Aufnahme als zusammenhaengende Aeusserung ged
 oder antwortet die Persona schon an einer Denkpause? Bewertet wird nur, was an Text ankommt
 und wann (keine Stimm- oder Emotionsanalyse, CLAUDE.md).
 
-Varianten werden nach (STT-Segmentierung, VAD-Stopp) gruppiert. Je Variante:
+Varianten werden nach (STT-Segmentierung, VAD-Stopp, VAD-Start, VAD-Mindestlautstaerke)
+gruppiert; aeltere Manifeste ohne Start/Lautstaerke zaehlen mit den Defaults 0.2/0.6. Je Variante:
 - zerfallen:        mehr als ein Turn-Ende fuer die Aufnahme (Turn-Protokoll). Strukturelle
                     Abweichung von der Sollgrenze; sagt nichts ueber den Inhalt.
 - Ausgabe vor Fortsetzung (Naeherung): unterbrochene Persona-Antwort **mit** Transkripttext --
@@ -78,7 +79,12 @@ def load_sessions(runs_dir: Path, references: dict[str, str]) -> list[dict]:
             {
                 "run_id": run_id,
                 "clip": clip,
-                "variant": (config["stt_segmentation_ms"], config.get("vad_stop_secs")),
+                "variant": (
+                    config["stt_segmentation_ms"],
+                    config.get("vad_stop_secs"),
+                    config.get("vad_start_secs", 0.2),
+                    config.get("vad_min_volume", 0.6),
+                ),
                 "split": turn["status"] == "zerfallen",
                 "status": turn["status"],
                 "n_turn_ends": turn["n_turn_ends"],
@@ -102,14 +108,14 @@ def report(sessions: list[dict]) -> None:
     by_var: dict[tuple, list[dict]] = defaultdict(list)
     for s in sessions:
         by_var[s["variant"]].append(s)
-    variants = sorted(by_var, key=lambda v: (v[0], v[1] or 0))
+    variants = sorted(by_var, key=lambda v: tuple(x or 0 for x in v))
 
     def label(v: tuple) -> str:
-        return f"seg {v[0]} / VAD {v[1]}"
+        return f"seg {v[0]} / VAD {v[1]}/{v[2]}/{v[3]}"
 
-    print("Je Variante (Segmentierung ms / VAD-Stopp s), alle Sitzungen")
+    print("Je Variante (Segmentierung ms / VAD Stopp s/Start s/Min.-Lautst.), alle Sitzungen")
     print(
-        f"{'Variante':20s} {'Sitz.':>5s} {'zerfallen':>13s} {'Ausgabe vor Forts.':>19s} "
+        f"{'Variante':28s} {'Sitz.':>5s} {'zerfallen':>13s} {'Ausgabe vor Forts.':>19s} "
         f"{'n Lat.':>6s} {'1. Audio p50/p90':>17s} {'Turn-Ende p50/p90':>18s} "
         f"{'ohne VAD-Basis':>15s} {'Wortabd.':>8s}"
     )
@@ -124,7 +130,7 @@ def report(sessions: list[dict]) -> None:
         te = [r["turn_end_ms"] for r in timed if r["turn_end_ms"] is not None]
         cov = [r["coverage"] for r in rows if r["coverage"] is not None]
         print(
-            f"{label(v):20s} {len(rows):5d} {len(split):4d} ({len(split) / len(rows):4.0%}) "
+            f"{label(v):28s} {len(rows):5d} {len(split):4d} ({len(split) / len(rows):4.0%}) "
             f"{out_before:6d} von {len(split):3d}      {len(timed):6d} "
             f"{_fmt(quantile(fa, 0.5)):>8s} / {_fmt(quantile(fa, 0.9)):>6s} "
             f"{_fmt(quantile(te, 0.5)):>8s} / {_fmt(quantile(te, 0.9)):>6s} "
@@ -138,7 +144,7 @@ def report(sessions: list[dict]) -> None:
         )
         for s in sorted(untimed_all, key=lambda s: (s["clip"], s["variant"])):
             from_clip = _fmt(s["first_audio_from_clip_ms"])
-            print(f"  {s['clip']:5s} {label(s['variant']):20s} {from_clip} ms")
+            print(f"  {s['clip']:5s} {label(s['variant']):28s} {from_clip} ms")
 
     # Fairer Geschwindigkeitsvergleich: dieselben Clips in allen Varianten
     clean_clips = {
@@ -154,18 +160,18 @@ def report(sessions: list[dict]) -> None:
         for v in variants:
             fa = [r["first_audio_ms"] for r in by_var[v] if r["clip"] in clean_clips]
             p50, p90 = _fmt(quantile(fa, 0.5)), _fmt(quantile(fa, 0.9))
-            print(f"  {label(v):20s} n={len(fa):3d}  {p50} / {p90}")
+            print(f"  {label(v):28s} n={len(fa):3d}  {p50} / {p90}")
 
     print("\nZerfall je Clip (Sitzungen zerfallen / gesamt)")
     clips = sorted({s["clip"] for s in sessions})
-    print(f"{'Clip':5s} " + " ".join(f"{label(v):>20s}" for v in variants))
+    print(f"{'Clip':5s} " + " ".join(f"{label(v):>28s}" for v in variants))
     for clip in clips:
         cells = []
         for v in variants:
             rows = [r for r in by_var[v] if r["clip"] == clip]
             cells.append(f"{sum(r['split'] for r in rows)}/{len(rows)}")
         if any(not c.startswith("0/") for c in cells):
-            print(f"{clip:5s} " + " ".join(f"{c:>20s}" for c in cells))
+            print(f"{clip:5s} " + " ".join(f"{c:>28s}" for c in cells))
 
 
 def main() -> None:
