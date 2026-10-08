@@ -8,8 +8,18 @@ from __future__ import annotations
 import asyncio
 
 from loguru import logger
+from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
+from pipecat.frames.frames import (
+    BotStartedSpeakingFrame,
+    BotStoppedSpeakingFrame,
+    EndWorkerFrame,
+    FunctionCallResultProperties,
+    TTSSpeakFrame,
+    UserStartedSpeakingFrame,
+)
+from pipecat.observers.base_observer import BaseObserver, FramePushed
 from pipecat.observers.user_bot_latency_observer import LatencyBreakdown, UserBotLatencyObserver
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -22,14 +32,19 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMUserAggregatorParams,
     UserTurnMessageAddedMessage,
 )
+from pipecat.utils.types import NOT_GIVEN
 
 from .audio_resampler import InputAudioResampler
 from .config import load_tuning_config
 from .metrics.collector import MetricsCollector
 from .metrics.run_manifest import write_manifest
 from .metrics.transcript import TranscriptRecorder
-from .personas.kaltakquise_head_of_ops import system_prompt
+from .personas.kaltakquise_head_of_ops import HANGUP_TOOL, HANGUP_TOOL_NAME, system_prompt
 from .stacks import build_stack
+
+# Werkzeuge nur fuer Kaskaden-Stacks; der Realtime-Stack bekommt den Prompt ueber
+# system_instruction und ist fuer Werkzeuge nicht geprueft.
+_STACKS_WITH_TOOLS = {"azure-eu", "baseline"}
 
 
 def _build_metrics_observer(collector: MetricsCollector) -> UserBotLatencyObserver:
@@ -104,6 +119,55 @@ def _wire_transcript(
     logger.info(f"Transkript wird geschrieben nach: {transcript.path}")
 
 
+class _HangupController(BaseObserver):
+    """Persona legt auf (Werkzeug `auflegen`): Abschied sprechen, danach Gespraech beenden.
+
+    Das Ende folgt erst, wenn der Abschied ohne Unterbrechung ausgegeben wurde (Sprechbeginn
+    und -ende am Ausgabe-Transport). Spricht der Anrufer vorher oder dazwischen, laeuft das
+    Gespraech weiter -- sonst legte die Persona stumm oder mitten im Satz auf (synthetische
+    Tests 2026-10-08: eine Unterbrechung verwarf bzw. kappte den Abschied, das Ende kam
+    trotzdem durch).
+    """
+
+    def __init__(self, transcript: TranscriptRecorder) -> None:
+        super().__init__()
+        self._transcript = transcript
+        self._task: PipelineTask | None = None
+        self._pending = False
+        self._spoken = False
+        self._seen: set[int] = set()
+
+    def attach(self, task: PipelineTask) -> None:
+        self._task = task
+
+    async def hangup(self, params) -> None:
+        farewell = str(params.arguments.get("abschiedssatz", "")).strip() or "Auf Wiederhoeren."
+        logger.info(f"Persona legt auf: {farewell!r}")
+        await params.result_callback(
+            {"status": "aufgelegt"}, properties=FunctionCallResultProperties(run_llm=False)
+        )
+        self._transcript.record(role="event", text="auflegen")
+        self._pending, self._spoken = True, False
+        await params.llm.push_frame(TTSSpeakFrame(farewell))
+
+    async def on_push_frame(self, data: FramePushed) -> None:
+        if not self._pending or data.frame.id in self._seen:
+            return
+        self._seen.add(data.frame.id)
+        frame = data.frame
+        if isinstance(frame, BotStartedSpeakingFrame):
+            self._spoken = True
+        elif isinstance(frame, BotStoppedSpeakingFrame) and self._spoken:
+            self._pending = False
+            self._transcript.record(role="event", text="aufgelegt")
+            if self._task is not None:
+                await self._task.queue_frame(EndWorkerFrame(reason="persona_aufgelegt"))
+        elif isinstance(frame, UserStartedSpeakingFrame):
+            self._pending = False
+            logger.info("Abschied unterbrochen -- Gespraech laeuft weiter")
+            self._transcript.record(role="event", text="auflegen_unterbrochen")
+
+
 def build_pipeline_task(
     stack_name: str,
     transport,
@@ -120,7 +184,11 @@ def build_pipeline_task(
     prompt = system_prompt(short_opener=tuning.short_opener)
     services = build_stack(stack_name, system_prompt=prompt)
 
-    context = LLMContext(messages=[{"role": "system", "content": prompt}])
+    use_tools = stack_name in _STACKS_WITH_TOOLS
+    context = LLMContext(
+        messages=[{"role": "system", "content": prompt}],
+        tools=[FunctionSchema(**HANGUP_TOOL)] if use_tools else NOT_GIVEN,
+    )
     # vad_analyzer hier (Aggregator-Ebene), nicht am Transport: Pipecat >=1.8 haengt
     # VAD-basierte Turn-Start-Erkennung an LLMUserAggregatorParams, nicht mehr an
     # TransportParams. Ohne das laeuft Turn-Erkennung nur ueber Transkription +
@@ -210,8 +278,11 @@ def build_pipeline_task(
         llm_model=services.llm_model,
     )
     _wire_transcript(context_aggregator, transcript)
-
     observers = [_build_metrics_observer(collector)]
+    hangup = _HangupController(transcript) if use_tools else None
+    if hangup is not None:
+        services.llm.register_function(HANGUP_TOOL_NAME, hangup.hangup)
+        observers.append(hangup)
     observers.extend(extra_observers or [])
 
     task = PipelineTask(
@@ -223,6 +294,8 @@ def build_pipeline_task(
         ),
         observers=observers,
     )
+    if hangup is not None:
+        hangup.attach(task)
 
     if services.warm_up is not None:
         warm_up = services.warm_up

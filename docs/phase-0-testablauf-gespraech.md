@@ -141,3 +141,22 @@ Plan sieht zusätzlich Gründer-Gespräche vor (Live-Anteil).
 
 Browser/Client-Puffer, andere Sprecher und Mikrofone, echte Hintergrundgeräusche, Gesprächsdauer
 über ~6 Min. hinaus, Realtime-Stack.
+
+## Nachtrag vor den Läufen (2026-10-08, nach Funktionstests, vor jeder Messung)
+
+Funktionstests der neuen Testtreiber (lokal, je eine Sitzung, nicht ausgewertet) ergaben drei
+Anpassungen am **Aufbau**, nicht an Sollgrenzen, Mindestinfo oder Kriterien:
+
+1. **T2-Auslöser R01 → R02 statt nur R02:** Auf R02 als erste Äußerung (ohne Begrüßung) legte die
+   Persona sofort auf — dann gibt es keine Antwort, in die man hineinsprechen kann. Mit Begrüßung
+   davor ist der Fall auslösbar. (Das sofortige Auflegen ist ein Befund für T3.)
+2. **T2-Zeitbezug:** Pits Aufnahmen beginnen mit ~0,9–1,0 s Stille. Die 1,0 s gelten ab dem
+   hörbaren Beginn des Zwischenrufs, die Stille am Clipanfang wird herausgerechnet.
+3. **T1 bei vorzeitigem Auflegen:** Legt die Persona auf, laufen die restlichen Äußerungen in einer
+   neuen Sitzung weiter („Wiederanruf", ohne bisherigen Verlauf). So wird jede Äußerung angeboten;
+   jedes Auflegen wird mit Zeitpunkt als Befund (F6-Kandidat) festgehalten.
+
+Außerdem: Auflegen beendet das Gespräch nur, wenn der Abschied ohne Unterbrechung ausgegeben
+wurde; spricht der Anrufer dazwischen, läuft das Gespräch weiter (Funktionstest: sonst stummes
+bzw. abgeschnittenes Auflegen). Lokal unter Windows läuft das Einspeisen langsamer als Echtzeit
+(Timer-Auflösung); gemessen wird nur auf der Linux-VM, deren Taktung vorab geprüft wird.

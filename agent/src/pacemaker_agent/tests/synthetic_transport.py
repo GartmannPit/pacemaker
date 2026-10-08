@@ -18,6 +18,7 @@ import math
 import time
 import wave
 from array import array
+from collections.abc import Callable
 from pathlib import Path
 
 from pipecat.frames.frames import InputAudioRawFrame, OutputAudioRawFrame, StartFrame
@@ -32,8 +33,7 @@ TRAILING_SILENCE_SECS = 4.0  # > Smart-Turn-v3-Default stop_secs=3, siehe base_s
 _SILENCE_RATIO = 0.05  # wie generate_fixtures: Frame still unter 5 % des lautesten Frames
 
 
-def last_voiced_sample(pcm: bytes, frame_ms: int = 10) -> int:
-    """Index des Samples, an dem der letzte hoerbare 10-ms-Frame endet."""
+def _voiced_frames(pcm: bytes, frame_ms: int) -> tuple[list[int], int]:
     samples = array("h", pcm)
     step = SAMPLE_RATE * frame_ms // 1000
     rms = [
@@ -41,10 +41,28 @@ def last_voiced_sample(pcm: bytes, frame_ms: int = 10) -> int:
         for i in range(0, len(samples) - step + 1, step)
     ]
     if not rms:
-        return 0
+        return [], step
     threshold = max(rms) * _SILENCE_RATIO
-    voiced = [i for i, value in enumerate(rms) if value >= threshold]
+    return [i for i, value in enumerate(rms) if value >= threshold], step
+
+
+def last_voiced_sample(pcm: bytes, frame_ms: int = 10) -> int:
+    """Index des Samples, an dem der letzte hoerbare 10-ms-Frame endet."""
+    voiced, step = _voiced_frames(pcm, frame_ms)
     return (voiced[-1] + 1) * step if voiced else 0
+
+
+def voice_onset_secs(wav_path: Path) -> float:
+    """Sekunden Stille vor dem ersten hoerbaren Frame eines Clips."""
+    with wave.open(str(wav_path), "rb") as wav_file:
+        pcm = wav_file.readframes(wav_file.getnframes())
+    return first_voiced_sample(pcm) / SAMPLE_RATE
+
+
+def first_voiced_sample(pcm: bytes, frame_ms: int = 10) -> int:
+    """Index des Samples, an dem der erste hoerbare 10-ms-Frame beginnt."""
+    voiced, step = _voiced_frames(pcm, frame_ms)
+    return voiced[0] * step if voiced else 0
 
 
 class SyntheticInputTransport(BaseInputTransport):
@@ -58,17 +76,29 @@ class SyntheticInputTransport(BaseInputTransport):
         # bevor start()/set_transport_ready() ueberhaupt gelaufen ist (dann
         # existiert die interne _audio_in_queue noch nicht).
         self.ready = asyncio.Event()
+        # (Beginn, Ende) des hoerbaren Teils des zuletzt eingespeisten Clips, Unix-Zeit --
+        # Bezugspunkte fuer vorzeitige Audioausgabe und Barge-in (Testablauf F3/F5).
+        self.last_voice_span: tuple[float | None, float | None] = (None, None)
 
     async def start(self, frame: StartFrame) -> None:
         await super().start(frame)
         await self.set_transport_ready(frame)
         self.ready.set()
 
-    async def feed_clip(self, wav_path: Path) -> float | None:
+    async def feed_clip(
+        self,
+        wav_path: Path,
+        stop_silence: asyncio.Event | None = None,
+        on_voice_end: Callable[[float | None, float | None], None] | None = None,
+    ) -> float | None:
         """Speist einen WAV-Clip plus Stille-Nachlauf ein (real-time gepaced).
 
         Liefert den Zeitpunkt (Unix-Zeit), zu dem das letzte hoerbare Audio des Clips
         eingespeist war -- das Sprechende als Referenz unabhaengig von der VAD.
+
+        `stop_silence` bricht den Stille-Nachlauf ab (Barge-in: der Zwischenruf folgt,
+        waehrend die Persona noch spricht). `on_voice_end(start, ende)` meldet den hoerbaren
+        Bereich, sobald der Clip eingespeist ist -- vor dem Nachlauf.
         """
         chunk_frames = int(SAMPLE_RATE * CHUNK_MS / 1000)
 
@@ -81,7 +111,9 @@ class SyntheticInputTransport(BaseInputTransport):
             pcm = wav_file.readframes(wav_file.getnframes())
 
         speech_end_sample = last_voiced_sample(pcm)
+        speech_start_sample = first_voiced_sample(pcm)
         speech_end_ts: float | None = None
+        speech_start_ts: float | None = None
         bytes_per_chunk = chunk_frames * 2
         for offset in range(0, len(pcm), bytes_per_chunk):
             data = pcm[offset : offset + bytes_per_chunk]
@@ -90,13 +122,22 @@ class SyntheticInputTransport(BaseInputTransport):
                 InputAudioRawFrame(audio=data, sample_rate=SAMPLE_RATE, num_channels=1)
             )
             chunk_start = offset // 2
+            if speech_start_ts is None and chunk_start + chunk_frames > speech_start_sample:
+                speech_start_ts = (
+                    pushed_at + max(0, speech_start_sample - chunk_start) / SAMPLE_RATE
+                )
             if speech_end_ts is None and chunk_start + chunk_frames >= speech_end_sample:
                 speech_end_ts = pushed_at + (speech_end_sample - chunk_start) / SAMPLE_RATE
             await asyncio.sleep(CHUNK_MS / 1000)
+        self.last_voice_span = (speech_start_ts, speech_end_ts)
+        if on_voice_end is not None:
+            on_voice_end(speech_start_ts, speech_end_ts)
 
         silence_chunk = b"\x00\x00" * chunk_frames  # 16-bit mono Stille
         silent_chunks = int(TRAILING_SILENCE_SECS * 1000 / CHUNK_MS)
         for _ in range(silent_chunks):
+            if stop_silence is not None and stop_silence.is_set():
+                break
             await self.push_audio_frame(
                 InputAudioRawFrame(audio=silence_chunk, sample_rate=SAMPLE_RATE, num_channels=1)
             )
