@@ -641,3 +641,65 @@ Lokaler Transport, `gpt-4.1-nano`, Konfiguration wie Variante B. Befunde aus dem
   100/200/300 ms, VAD-Stopp).
 - Latenz (Laptop, nicht mit VM vergleichbar): erstes Audio 1174–1424 ms; Turn 360–503,
   LLM 361–496, TTS 339–387 ms.
+
+## 16. Robustheitsprobe mit echter Sprache (2026-10-08)
+
+Aufnahmen von Pit (Einwilligung, Aufnahmeliste: [`docs/phase-0-robustheitsprobe-aufnahmen.md`](../../docs/phase-0-robustheitsprobe-aufnahmen.md)):
+21 gesteuerte Äußerungen (R01–R21: Denkpausen, Selbstkorrekturen, spätes „nicht", mehrere
+Fragen, Zahlen) und 5 spontane (S01–S05, 11–42 s). Gemessene Pausen innerhalb der Äußerungen
+bis 1,7 s (gesteuert) bzw. 1,5 s (spontan) — länger als die Regieanweisungen.
+
+Aufbau: EU-Mess-VM, `gpt-4.1-nano`, Referenzkonfiguration (§15 Variante B); jede Aufnahme in
+**eigener Sitzung** (`synthetic_caller --fixtures fixtures/robust --fresh`); Segmentierung
+100 / 200 / 300 ms; zwei gegenbalancierte Durchgänge → 156 Sitzungen
+(`infra/robustheitsreihe.sh`, Auswertung `metrics/robustness.py`). Ergebnisse unter
+`experiments/runs/robust/` (gitignored).
+
+### 16.1 Ergebnisse
+
+| Segmentierung | zerfallen | davon Persona hörbar unterbrochen | nur still verworfen | nicht zerfallen: erstes Audio p50 / p90 | Turn-Ende p50 / p90 |
+|---|--:|--:|--:|--:|--:|
+| **100 ms** | 30/52 (58 %) | 26 | 4 | **944 / 1266** | 356 / 531 |
+| 200 ms | 29/52 (56 %) | 25 | 4 | 1237 / 1636 | 439 / 616 |
+| 300 ms | 28/52 (54 %) | 25 | 3 | 1331 / 3834 | 565 / 1058 |
+
+Werte in ms. „Hörbar unterbrochen" = die Persona hatte bereits zu sprechen begonnen, als die
+Fortsetzung kam (Transkript: unterbrochene Antwort mit Text).
+
+Zerfallen in allen sechs Durchläufen je Aufnahme: R03, R05, R08, R10, R11, R12, R14, R15, R17,
+S01, S02, S03, S05; R01 in 5 von 6; S04 nur bei 100/200 ms.
+
+Beispiele (Segmentierung 100 ms):
+
+| Clip | erstes Fragment | Persona | Fortsetzung |
+|---|---|---|---|
+| R03 | „Es hängt bei uns." | „Ja, das ist verständlich," | „Ehrlich gesagt, davon ab, wer gerade Zeit fürs Coaching hat." |
+| R10 | „Ach, das müssen Sie mit Ihrem Chef." | „Ja, genau," | „Nicht abstimmen, das liegt doch sicher in Ihrem Budget." |
+| R11 | „Die Mail habe ich glaube ich schon geschickt." | „Danke, das hatte ich schon" | „Oder auch nicht. Ich prüf das gleich noch mal." |
+| R12 | „Ja, das kann ich verstehen." | „Entschuldigung, ich glaube," | „Darf ich trotzdem …" (zerfällt dreimal) |
+
+### 16.2 Befunde
+
+1. **Gut die Hälfte echter, pausenreicher Äußerungen zerfällt — unabhängig von der
+   Segmentierung.** Ursache ist die Turn-Erkennung (VAD-Stopp 200 ms + Smart Turn wertet das
+   Fragment als abgeschlossen), nicht die STT-Segmentierung.
+2. **In ~9 von 10 Fällen hörbar:** Die Persona beginnt zu sprechen und wird von der Fortsetzung
+   unterbrochen. Teils bestätigt sie dabei eine Bedeutung, die die Fortsetzung umkehrt (R10).
+3. **Die Information geht nicht verloren:** Die Antwort nach der Fortsetzung sieht beide Teile.
+   Der Schaden ist das Dazwischenreden, nicht fehlender Inhalt. (Die Kennzahl
+   „Vollständigkeit der ersten Nachricht" in `robustness.py` überzeichnet deshalb den
+   Informationsverlust.)
+4. **100 ms Segmentierung bestätigt:** bei nicht zerfallenen Äußerungen deutlich am schnellsten,
+   ohne mehr Zerfall als 200/300 ms. Die offene Frage aus §13.4/§15 ist damit für diese
+   Stichprobe beantwortet.
+5. **Nicht jeder Zerfall ist falsch** — nach „Okay." und 1,7 s Stille (R14) würde auch ein Mensch
+   antworten. Klar falsch sind grammatisch unvollständige Fragmente (R03, R08, R10) und
+   Fortsetzungen, die die Bedeutung umkehren (R05, R10, R11).
+6. **Zielkonflikt:** Schnelle Antworten (900 ms) und kein Dazwischenreden bei Denkpausen ziehen
+   in entgegengesetzte Richtungen. Kandidaten: längerer VAD-Stopp (kostet Latenz bei jedem Turn),
+   Vollständigkeitsprüfung am Transkript (fängt unvollständige Fragmente), Audio zurückhalten bis
+   zu einer Mindeststille.
+
+Einschränkungen: ein Sprecher, ein Mikrofon; Pausen länger als im Drehbuch vorgesehen; nur
+`nano`; frische Sitzung je Aufnahme (die Persona antwortet wie auf den ersten Satz eines Anrufs —
+inhaltliche Angemessenheit hier nicht bewertbar, gehört zum Rollentreue-Test).
