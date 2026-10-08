@@ -99,7 +99,8 @@ class TuningConfig:
     # 2026-10-08: Mit dem Pipecat-Default 0.2 s verpasst die VAD sehr kurze Antworten ("OK.",
     # R19), weil die Lautstaerke (gleitendes 400-ms-Fenster) 0.6 erst spaet erreicht --
     # Antwort erst nach ~3,2 s ueber den Transkript-Fallback. Zerfall und Latenz unveraendert
-    # (Summary §18). Offen: Fehlstarts durch kurze Laute ("mhm") -> Barge-in-Tests.
+    # (Summary §18). VORLAEUFIGER KANDIDAT, kein endgueltiger Default: Fehlstarts durch
+    # Hoerersignale ("mhm") und Geraeusche sind noch nicht geprueft (Barge-in-Tests).
     vad_start_secs: float
     vad_min_volume: float
     warm_up: bool  # Verbindungen vor dem ersten Turn aufbauen

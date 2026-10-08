@@ -807,10 +807,15 @@ Fehler. Offline lösen ihn `min_volume` 0,4 oder `start_secs` 0,1.
 Vorab-Kriterium (R19 überall mit VAD-Basis; Zerfall höchstens +3/52; p50 gleicher Clips
 höchstens +50 ms) erfüllen beide Varianten.
 
-**Entscheidung: `start_secs` 0,1 ist neuer Default** (`PACEMAKER_VAD_START_SECS`) — gleiche p90
+**Entscheidung: `start_secs` 0,1 ist vorläufiger Kandidat** und als solcher im Code voreingestellt (`PACEMAKER_VAD_START_SECS`); endgültiger Default erst nach den Barge-in-/Hörersignal-Tests — gleiche p90
 wie bisher, während `min_volume` 0,4 das p90 um ~150 ms verschlechtert. Der geringere Zerfall
 (28 vs. 30) liegt im Rauschen. **Nicht getestet:** Fehlstarts durch kurze Laute („mhm",
 Husten) während die Persona spricht — gehört in die Barge-in-Tests (Schritt B).
+
+Kennzahl des Kriteriums: erstes Audio p50 auf derselben Clipmenge (10 Clips, in allen Varianten
+nicht zerfallen und mit VAD-Basis; R19 gehört nicht dazu und verzerrt den Vergleich daher nicht).
+**Nicht geprüft:** kritische Inhaltsfehler (Negation R09, korrigierte Zahl R05, fehlende Frage
+R12/S03) — dafür fehlen freigegebene Mindestinfo-Annotationen.
 
 **Neuer Befund — Einwort-Antworten warten ~1 s auf das Turn-Ende:** Mit erkanntem Sprechbeginn
 endet der Turn bei „OK." (R19) und „Verstehe." (R20, schon vorher) erst ~990–1060 ms nach
