@@ -732,3 +732,53 @@ Nicht zulässig: „Gut die Hälfte realer Verkaufsgespräche zerfällt."
 Sollgrenzen und kritische Mindestinfo je tatsächlich gesprochener Variante, sowie die Klärung,
 ob Smart Turn (audiobasierte Endpunkterkennung) mit dem Prosodie-Verbot in `CLAUDE.md` vereinbar
 ist (siehe Einordnung §2.3).
+
+## 17. VAD-Stopp-Kurve mit echter Sprache (2026-10-08)
+
+Aufbau wie §16 (EU-Mess-VM, `gpt-4.1-nano`, Referenzkonfiguration, 26 Aufnahmen je in eigener
+Sitzung, zwei gegenbalancierte Durchgänge), aber Segmentierung fest 100 ms und **VAD-Stopp
+0,2 / 0,4 / 0,6 s** (`PARAM=PACEMAKER_VAD_STOP_SECS`, `infra/robustheitsreihe.sh`). 156
+Sitzungen, Ergebnisse unter `experiments/runs/robust-vad/` (gitignored, lokal und auf der VM).
+Reproduzierbar: `uv run python -m pacemaker_agent.metrics.robustness experiments/runs/robust-vad`.
+
+Vorab festgelegtes Kriterium ([Einordnung](../../docs/2026-10-08-einordnung-pruefung-robustheitsprobe.md) §3):
+Ein längerer VAD-Stopp gilt nur als Gewinn, wenn der Zerfall deutlich sinkt und die Latenz
+derselben Clips nicht stärker steigt als gerechtfertigt — sonst zurück zu 0,2 s.
+
+### 17.1 Ergebnisse
+
+| VAD-Stopp | zerfallen | davon Ausgabe vor Fortsetzung (Näherung) | nicht zerfallen mit VAD-Basis: n | erstes Audio p50 / p90 | Turn-Ende p50 / p90 |
+|---|--:|--:|--:|--:|--:|
+| **0,2 s** | 30/52 (58 %) | 26 von 30 | 20 | 1023 / 1440 | 350 / 536 |
+| 0,4 s | 32/52 (62 %) | 28 von 32 | 18 | 1076 / 1368 | 477 / 675 |
+| 0,6 s | 30/52 (58 %) | 24 von 30 | 20 | 1306 / 1489 | 679 / 720 |
+
+**Gleiche Clips** (8: R02, R04, R06, R07, R16, R18, R20, R21; je n = 16), erstes Audio p50 / p90:
+**926 / 1324** (0,2 s), 1074 / 1383 (0,4 s), 1289 / 1502 (0,6 s).
+
+**R19 („OK.")** ohne VAD-Basis in allen Varianten: erstes Audio ab Clip-Ende 3147–3560 ms.
+
+Je Clip: Bei 0,6 s zerfallen R05 und S02 nicht mehr, dafür R09 (ab 0,4 s) und R13 (bei 0,6 s)
+neu. Alle übrigen Muster wie in §16.
+
+### 17.2 Befunde
+
+1. **Ein längerer VAD-Stopp senkt den Zerfall nicht** (30 / 32 / 30 von 52). Die Denkpausen in den
+   Aufnahmen (bis 1,7 s) liegen über allen getesteten Werten; nach Ablauf des Stopps wertet die
+   Turn-Erkennung das Fragment weiterhin als abgeschlossen. Einzelne Clips kippen in beide
+   Richtungen — kein systematischer Gewinn.
+2. **Die Latenz steigt deutlich:** gleiche Clips +148 ms (0,4 s) bzw. +363 ms (0,6 s) im Median.
+3. **Entscheidung nach Kriterium: VAD-Stopp bleibt 0,2 s.** Der Hebel ist für dieses Problem
+   ausgeschieden.
+4. **Die Referenz ist reproduzierbar:** Die 0,2-s-Variante dieser Reihe entspricht der
+   100-ms-Variante aus §16 (je 30/52 zerfallen).
+5. **R19 ist ein eigenes Problem**, unabhängig vom VAD-Stopp (3,1–3,6 s in allen Varianten). Die
+   VAD erkennt den Sprechbeginn bei der sehr kurzen, leisen Aufnahme nicht; Ursache (Start-
+   schwelle, Mindestlautstärke, Pegel der Aufnahme) noch nicht isoliert.
+
+Verbleibende Kandidaten gegen vorzeitige Turn-Enden (§16.2 Nr. 7, Prüfung §6): textbasierte
+Vollständigkeits-/Fortsetzungsprüfung, Smart-Turn-Schwelle bzw. Stop-Strategie (isoliert),
+Audio zurückhalten bis Mindeststille mit gemeinsamem Abbruchpfad.
+
+Einschränkungen wie §16 (ein Sprecher, gezielt schwierige Aufnahmen, nur `nano`, frische
+Sitzungen; 156 Sitzungen = 26 Aufnahmen × 6).
