@@ -38,7 +38,7 @@ from .audio_resampler import InputAudioResampler
 from .config import load_tuning_config
 from .metrics.collector import MetricsCollector
 from .metrics.run_manifest import write_manifest
-from .metrics.transcript import TranscriptRecorder
+from .metrics.transcript import TranscriptRecorder, TranscriptTimingObserver
 from .personas.kaltakquise_head_of_ops import HANGUP_TOOL, HANGUP_TOOL_NAME, system_prompt
 from .stacks import build_stack
 
@@ -278,7 +278,7 @@ def build_pipeline_task(
         llm_model=services.llm_model,
     )
     _wire_transcript(context_aggregator, transcript)
-    observers = [_build_metrics_observer(collector)]
+    observers = [_build_metrics_observer(collector), TranscriptTimingObserver(transcript)]
     hangup = _HangupController(transcript) if use_tools else None
     if hangup is not None:
         services.llm.register_function(HANGUP_TOOL_NAME, hangup.hangup)
