@@ -115,6 +115,10 @@ class SyntheticInputTransport(BaseInputTransport):
         speech_end_ts: float | None = None
         speech_start_ts: float | None = None
         bytes_per_chunk = chunk_frames * 2
+        # Absolute Taktung: jedes Paket zu seinem Sollzeitpunkt. Mit relativem sleep() lief
+        # das Einspeisen auf der VM ~5 % langsamer als die Aufnahme (Aufwand je Paket addiert
+        # sich; gemessen 2026-10-08), unter Windows wegen der Timer-Aufloesung noch langsamer.
+        clock = time.monotonic()
         for offset in range(0, len(pcm), bytes_per_chunk):
             data = pcm[offset : offset + bytes_per_chunk]
             pushed_at = time.time()
@@ -128,7 +132,8 @@ class SyntheticInputTransport(BaseInputTransport):
                 )
             if speech_end_ts is None and chunk_start + chunk_frames >= speech_end_sample:
                 speech_end_ts = pushed_at + (speech_end_sample - chunk_start) / SAMPLE_RATE
-            await asyncio.sleep(CHUNK_MS / 1000)
+            clock += CHUNK_MS / 1000
+            await asyncio.sleep(max(0.0, clock - time.monotonic()))
         self.last_voice_span = (speech_start_ts, speech_end_ts)
         if on_voice_end is not None:
             on_voice_end(speech_start_ts, speech_end_ts)
@@ -141,7 +146,8 @@ class SyntheticInputTransport(BaseInputTransport):
             await self.push_audio_frame(
                 InputAudioRawFrame(audio=silence_chunk, sample_rate=SAMPLE_RATE, num_channels=1)
             )
-            await asyncio.sleep(CHUNK_MS / 1000)
+            clock += CHUNK_MS / 1000
+            await asyncio.sleep(max(0.0, clock - time.monotonic()))
         return speech_end_ts
 
 
