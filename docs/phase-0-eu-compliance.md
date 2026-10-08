@@ -1,6 +1,6 @@
 # Phase 0 — EU-Compliance-Faktenblatt (Entwurf)
 
-**Stand:** 2026-10-07 · **Status:** Entwurf von Claude, **Prüfung der AVVs durch Pit offen**
+**Stand:** 2026-10-08 · **Status:** Entwurf von Claude, **Prüfung der AVVs durch Pit offen**
 **Bezug:** Muss-Kriterium „EU-Compliance dokumentiert" ([Phase-0-Plan](./phase-0-proof-of-concept.md) §2)
 
 > Keine Rechtsberatung. Angaben stammen aus Herstellerdokumentation und eigenen Messungen;
@@ -52,10 +52,11 @@ OpenAI direkt, ElevenLabs — USA), `gpt-realtime-2.1` (Rohaudio-Frage offen, si
 |---|---|---|
 | 1 | Microsoft-DPA für die Subscription bestätigen (Vertragsbedingungen im Azure-Portal) | Pit |
 | 2 | Hetzner-AVV im Kundenkonto abschließen | Pit |
-| 3 | Ist Azure AI Speech vom **EU Data Boundary** erfasst? Laut Microsoft ist die Liste der ausgenommenen Dienste und die Product Terms maßgeblich — **nicht geprüft** | Claude recherchiert, Pit bestätigt |
+| 3 | Ist Azure AI Speech vom **EU Data Boundary** erfasst? **Recherche 2026-10-08:** Weder Azure AI Speech noch Azure OpenAI stehen auf der Microsoft-Liste der vom EU Data Boundary ausgenommenen Dienste (Stand der Seite 2026-04-13; dort ausgenommen u. a. Azure Front Door/CDN und Sicherheitsdienste). Microsoft nennt die Product Terms als maßgebliche Quelle — **Bestätigung dort ausstehend** | Pit bestätigt in den Product Terms |
 | 4 | Missbrauchsüberwachung (30 Tage) für personenbezogene Trainingsgespräche bewerten; ggf. Antrag auf modifizierte Überwachung | Pit |
 | 5 | Ressource von Sweden Central nach Germany West Central? Compliance-neutral (beides EU), Latenz-Hebel ~20–25 ms je Anfrage (RTT von der VM 28 vs. ~5 ms) | Entscheidung nach Schritt D |
 | 6 | Realtime-Modell: Verarbeitung von Rohaudio gegen „keine Prosodieanalyse" abwägen | vor jedem Produkteinsatz |
+| 8 | **Smart Turn** (Turn-Ende-Erkennung) wertet laut Hersteller Prosodie/Intonation aus — Konflikt mit dem Wortlaut von `CLAUDE.md`; Einordnung und Optionen: [`2026-10-08-einordnung-smart-turn-prosodie.md`](./2026-10-08-einordnung-smart-turn-prosodie.md) | Pit entscheidet |
 | 7 | Löschkonzept für Audio, Transkripte, Messdaten (`experiments/runs/` auf VM und lokal) | Phase 1 |
 
 ## 5. Latenzunterschied EU-Stack gegenüber US-Referenz
@@ -77,5 +78,6 @@ Vergleich bräuchte beide optimiert und von der VM gemessen.
   [Content Streaming / Asynchronous Filter](https://learn.microsoft.com/en-us/azure/foundry/openai/concepts/content-streaming),
   [EU Data Boundary](https://learn.microsoft.com/privacy/eudb/eu-data-boundary-learn),
   [vom EU Data Boundary ausgenommene Dienste](https://learn.microsoft.com/et-ee/privacy/eudb/eu-data-boundary-excluded-services)
+- [Vom EU Data Boundary ausgenommene Dienste (englisch, Stand 2026-04-13)](https://learn.microsoft.com/en-us/privacy/eudb/eu-data-boundary-excluded-services)
 - Microsoft Q&A zur Missbrauchsüberwachung: [Abuse Monitoring and data storage](https://learn.microsoft.com/en-us/answers/questions/5780766/question-regarding-azure-direct-models-abuse-monit)
 - Eigene Messungen: DNS-Auflösung und RTT (`infra/rtt-check.sh`), 2026-10-07
