@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import random
-from pathlib import Path
 
 import azure.cognitiveservices.speech as speechsdk
 from dotenv import load_dotenv
@@ -81,7 +80,7 @@ def main() -> None:
         "",
         "Bitte **unabhängig** bewerten und `_schluessel.json` erst danach öffnen.",
         "Alle Dateien `stimme_<Code>_satz<n>.wav` anhören (Kopfhörer). Frage je Stimme:",
-        "**„Für ein Rollenspiel ausreichend natürlich?"** 1 = gar nicht · 3 = geht so · "
+        "**„Für ein Rollenspiel ausreichend natürlich?“** 1 = gar nicht · 3 = geht so · "
         "5 = wie ein echter Gesprächspartner.",
         "",
         "| Stimme | Bewertung 1–5 | Bemerkung |",

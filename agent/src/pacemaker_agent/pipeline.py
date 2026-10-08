@@ -36,6 +36,7 @@ from pipecat.utils.types import NOT_GIVEN
 
 from .audio_resampler import InputAudioResampler
 from .config import load_tuning_config
+from .metrics.barge_in import BargeInObserver
 from .metrics.collector import MetricsCollector
 from .metrics.run_manifest import write_manifest
 from .metrics.transcript import TranscriptRecorder, TranscriptTimingObserver
@@ -278,7 +279,11 @@ def build_pipeline_task(
         llm_model=services.llm_model,
     )
     _wire_transcript(context_aggregator, transcript)
-    observers = [_build_metrics_observer(collector), TranscriptTimingObserver(transcript)]
+    observers = [
+        _build_metrics_observer(collector),
+        TranscriptTimingObserver(transcript),
+        BargeInObserver(run_id),
+    ]
     hangup = _HangupController(transcript) if use_tools else None
     if hangup is not None:
         services.llm.register_function(HANGUP_TOOL_NAME, hangup.hangup)

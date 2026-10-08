@@ -100,7 +100,8 @@ def main() -> None:
     if not u["minutes"]:
         raise SystemExit(f"Keine Gespraechsdauer aus {runs_dir}/events ermittelbar.")
     print(
-        f"Verbrauch: {u['minutes']:.1f} Gespraechsminuten, STT-Sprache {u['stt_speech_secs']:.0f} s, "
+        f"Verbrauch: {u['minutes']:.1f} Gespraechsminuten, "
+        f"STT-Sprache {u['stt_speech_secs']:.0f} s, "
         f"{u['prompt_tokens']:.0f} Prompt-/{u['completion_tokens']:.0f} Completion-Tokens, "
         f"{u['tts_chars']:.0f} TTS-Zeichen"
     )
@@ -112,8 +113,9 @@ def main() -> None:
     for mdl in (model, "gpt-4.1-mini") if model != "gpt-4.1-mini" else (model,):
         c = per_minute(u, mdl)
         print(
-            f"azure-eu/{mdl}: STT {c['stt_lower']:.4f}-{c['stt_upper']:.4f} $ · LLM {c['llm']:.4f} $"
-            f" · TTS {c['tts']:.4f} $ · gesamt bis {c['total_upper']:.4f} $/Min."
+            f"azure-eu/{mdl}: STT {c['stt_lower']:.4f}-{c['stt_upper']:.4f} $ · "
+            f"LLM {c['llm']:.4f} $ · TTS {c['tts']:.4f} $ · "
+            f"gesamt bis {c['total_upper']:.4f} $/Min."
         )
     a = per_minute(u, model)
     print(
