@@ -34,7 +34,7 @@ deutsche Sprachvariation noch verschiedene Geräte ab.
 > - **Löschung:** spätestens mit Abschluss von Phase 0 auf allen Geräten; vorher jederzeit auf
 >   Wunsch.
 >
-> Datum, Unterschrift: ____________________
+> Datum, Unterschrift: Pit Gartmann, 08.10.2026
 
 Das ist eine praktische Klarstellung, keine rechtliche Bewertung.
 
