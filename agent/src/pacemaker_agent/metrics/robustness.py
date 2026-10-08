@@ -2,16 +2,26 @@
 
 uv run python -m pacemaker_agent.metrics.robustness [experiments/runs/robust]
 
-Frage: Kommt eine echte Aeusserung -- mit Denkpausen, Korrekturen, mehreren Saetzen -- als
-*eine* vollstaendige Nachricht bei der Persona an, bevor sie antwortet? Bewertet wird nur,
-was an Text ankommt und wann (keine Stimm- oder Emotionsanalyse, CLAUDE.md).
+Frage: Endet der Turn dort, wo die Aufnahme als zusammenhaengende Aeusserung gedacht war --
+oder antwortet die Persona schon an einer Denkpause? Bewertet wird nur, was an Text ankommt
+und wann (keine Stimm- oder Emotionsanalyse, CLAUDE.md).
 
-Je Sitzung (Manifest: clip, stt_segmentation_ms):
-- zerfallen:      mehr als ein Turn-Ende fuer die Aufnahme (Turn-Protokoll)
-- abgebrochen:    Persona-Antworten, die von der Fortsetzung unterbrochen wurden (Transkript)
-- vollstaendig:   Anteil der Referenzwoerter (robust_index.json, `stt_check`) in der ersten
-                  Nutzernachricht, auf die die Persona antwortet
-- Turn-Ende / erstes Audio: ms ab VAD-Sprechende (wie die Latenzmetrik)
+Varianten werden nach (STT-Segmentierung, VAD-Stopp) gruppiert. Je Variante:
+- zerfallen:        mehr als ein Turn-Ende fuer die Aufnahme (Turn-Protokoll). Strukturelle
+                    Abweichung von der Sollgrenze; sagt nichts ueber den Inhalt.
+- Ausgabe vor Fortsetzung (Naeherung): unterbrochene Persona-Antwort **mit** Transkripttext --
+                    Hinweis, dass simulierte Ausgabe schon lief. Kein Hoernachweis (kein
+                    Client-Mitschnitt).
+- Latenz:           nur nicht zerfallene Sitzungen mit VAD-Zeitbasis (bei zerfallenen mischt
+                    das erste Audio Teilantworten). Sitzungen ohne VAD-Anker (z. B. sehr kurze
+                    Aeusserungen ueber den Transkript-Fallback) werden separat mit der
+                    Clip-relativen Zeit ausgewiesen statt still zu fehlen.
+- gleiche Clips:    Latenz nur ueber Clips, die in allen Varianten nicht zerfallen und eine
+                    VAD-Zeitbasis haben -- fairer Vergleich der Geschwindigkeit.
+- Wortabdeckung:    grober lexikalischer Anteil der Referenzwoerter im ersten Fragment. Kein
+                    Verstaendnismass: ein fehlendes "nicht" wiegt nicht mehr als jedes andere Wort.
+
+Pruefung und Begruendung der Definitionen: docs/2026-10-08-pruefung-robustheitsprobe.md.
 """
 
 from __future__ import annotations
@@ -34,6 +44,7 @@ def _words(text: str) -> list[str]:
 
 
 def completeness(reference: str, received: str) -> float | None:
+    """Grobe Wortabdeckung: Anteil der Referenzwoerter, die im empfangenen Text vorkommen."""
     ref = _words(reference)
     if not ref:
         return None
@@ -65,61 +76,96 @@ def load_sessions(runs_dir: Path, references: dict[str, str]) -> list[dict]:
         assistants = [r for r in transcript if r["role"] == "assistant"]
         sessions.append(
             {
+                "run_id": run_id,
                 "clip": clip,
-                "seg": config["stt_segmentation_ms"],
+                "variant": (config["stt_segmentation_ms"], config.get("vad_stop_secs")),
+                "split": turn["status"] == "zerfallen",
                 "status": turn["status"],
                 "n_turn_ends": turn["n_turn_ends"],
-                "interrupted": sum(bool(a["interrupted"]) for a in assistants),
-                "complete": completeness(references.get(clip, ""), users[0] if users else ""),
+                "output_before_continuation": any(
+                    a["interrupted"] and a["text"].strip() for a in assistants
+                ),
+                "coverage": completeness(references.get(clip, ""), users[0] if users else ""),
                 "turn_end_ms": turn["turn_end_ms"],
                 "first_audio_ms": turn["first_audio_ms"],
-                "first_user_msg": users[0] if users else "",
+                "first_audio_from_clip_ms": turn.get("first_audio_from_clip_ms"),
             }
         )
     return sessions
 
 
-def report(sessions: list[dict]) -> None:
-    by_seg: dict[int, list[dict]] = defaultdict(list)
-    for s in sessions:
-        by_seg[s["seg"]].append(s)
+def _fmt(v: float | None) -> str:
+    return "–" if v is None else f"{v:.0f}"
 
-    print("Je Segmentierungswert (alle Sitzungen beider Durchgaenge)")
+
+def report(sessions: list[dict]) -> None:
+    by_var: dict[tuple, list[dict]] = defaultdict(list)
+    for s in sessions:
+        by_var[s["variant"]].append(s)
+    variants = sorted(by_var, key=lambda v: (v[0], v[1] or 0))
+
+    def label(v: tuple) -> str:
+        return f"seg {v[0]} / VAD {v[1]}"
+
+    print("Je Variante (Segmentierung ms / VAD-Stopp s), alle Sitzungen")
     print(
-        f"{'Segm.':>6s} {'Sitz.':>5s} {'zerfallen':>10s} {'mit Abbruch':>11s} "
-        f"{'vollst. 1. Nachricht':>20s} {'Turn-Ende p50/p90':>18s} {'1. Audio p50/p90':>17s}"
+        f"{'Variante':20s} {'Sitz.':>5s} {'zerfallen':>13s} {'Ausgabe vor Forts.':>19s} "
+        f"{'n Lat.':>6s} {'1. Audio p50/p90':>17s} {'Turn-Ende p50/p90':>18s} "
+        f"{'ohne VAD-Basis':>15s} {'Wortabd.':>8s}"
     )
-    for seg in sorted(by_seg):
-        rows = by_seg[seg]
-        split = sum(r["status"] == "zerfallen" for r in rows)
-        interrupted = sum(r["interrupted"] > 0 for r in rows)
-        comp = [r["complete"] for r in rows if r["complete"] is not None]
-        te = [r["turn_end_ms"] for r in rows if r["turn_end_ms"] is not None]
-        fa = [r["first_audio_ms"] for r in rows if r["first_audio_ms"] is not None]
+    for v in variants:
+        rows = by_var[v]
+        split = [r for r in rows if r["split"]]
+        out_before = sum(r["output_before_continuation"] for r in split)
+        ok = [r for r in rows if not r["split"]]
+        timed = [r for r in ok if r["first_audio_ms"] is not None]
+        untimed = [r for r in ok if r["first_audio_ms"] is None]
+        fa = [r["first_audio_ms"] for r in timed]
+        te = [r["turn_end_ms"] for r in timed if r["turn_end_ms"] is not None]
+        cov = [r["coverage"] for r in rows if r["coverage"] is not None]
         print(
-            f"{seg:6d} {len(rows):5d} {split:5d} ({split / len(rows):4.0%}) "
-            f"{interrupted:5d} ({interrupted / len(rows):4.0%}) "
-            f"{sum(comp) / len(comp):19.0%} "
-            f"{quantile(te, .5):8.0f} / {quantile(te, .9):6.0f} "
-            f"{quantile(fa, .5):8.0f} / {quantile(fa, .9):6.0f}"
+            f"{label(v):20s} {len(rows):5d} {len(split):4d} ({len(split) / len(rows):4.0%}) "
+            f"{out_before:6d} von {len(split):3d}      {len(timed):6d} "
+            f"{_fmt(quantile(fa, 0.5)):>8s} / {_fmt(quantile(fa, 0.9)):>6s} "
+            f"{_fmt(quantile(te, 0.5)):>8s} / {_fmt(quantile(te, 0.9)):>6s} "
+            f"{len(untimed):15d} {sum(cov) / len(cov):8.0%}"
         )
 
-    print("\nAufnahmen mit Zerfall oder unvollstaendiger erster Nachricht (< 90 %)")
+    untimed_all = [s for s in sessions if not s["split"] and s["first_audio_ms"] is None]
+    if untimed_all:
+        print(
+            "\nOhne VAD-Zeitbasis (Turn-Ende ueber Transkript-Fallback), erstes Audio ab Clip-Ende:"
+        )
+        for s in sorted(untimed_all, key=lambda s: (s["clip"], s["variant"])):
+            from_clip = _fmt(s["first_audio_from_clip_ms"])
+            print(f"  {s['clip']:5s} {label(s['variant']):20s} {from_clip} ms")
+
+    # Fairer Geschwindigkeitsvergleich: dieselben Clips in allen Varianten
+    clean_clips = {
+        c
+        for c in {s["clip"] for s in sessions}
+        if all(
+            not s["split"] and s["first_audio_ms"] is not None for s in sessions if s["clip"] == c
+        )
+    }
+    if clean_clips:
+        names = ", ".join(sorted(clean_clips))
+        print(f"\nGleiche Clips ({len(clean_clips)}: {names}), erstes Audio p50/p90:")
+        for v in variants:
+            fa = [r["first_audio_ms"] for r in by_var[v] if r["clip"] in clean_clips]
+            p50, p90 = _fmt(quantile(fa, 0.5)), _fmt(quantile(fa, 0.9))
+            print(f"  {label(v):20s} n={len(fa):3d}  {p50} / {p90}")
+
+    print("\nZerfall je Clip (Sitzungen zerfallen / gesamt)")
     clips = sorted({s["clip"] for s in sessions})
-    segs = sorted(by_seg)
-    print(f"{'Clip':5s} " + " ".join(f"{'seg ' + str(s):>16s}" for s in segs))
+    print(f"{'Clip':5s} " + " ".join(f"{label(v):>20s}" for v in variants))
     for clip in clips:
         cells = []
-        flagged = False
-        for seg in segs:
-            rows = [r for r in by_seg[seg] if r["clip"] == clip]
-            split = sum(r["status"] == "zerfallen" for r in rows)
-            comp = min((r["complete"] for r in rows if r["complete"] is not None), default=None)
-            flagged |= split > 0 or (comp is not None and comp < 0.9)
-            comp_txt = "–" if comp is None else f"{comp:.0%}"
-            cells.append(f"{split}/{len(rows)} zerf., {comp_txt:>4s}")
-        if flagged:
-            print(f"{clip:5s} " + " ".join(f"{c:>16s}" for c in cells))
+        for v in variants:
+            rows = [r for r in by_var[v] if r["clip"] == clip]
+            cells.append(f"{sum(r['split'] for r in rows)}/{len(rows)}")
+        if any(not c.startswith("0/") for c in cells):
+            print(f"{clip:5s} " + " ".join(f"{c:>20s}" for c in cells))
 
 
 def main() -> None:

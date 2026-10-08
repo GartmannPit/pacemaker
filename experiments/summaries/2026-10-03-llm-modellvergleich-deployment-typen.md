@@ -657,14 +657,29 @@ Aufbau: EU-Mess-VM, `gpt-4.1-nano`, Referenzkonfiguration (§15 Variante B); jed
 
 ### 16.1 Ergebnisse
 
-| Segmentierung | zerfallen | davon Persona hörbar unterbrochen | nur still verworfen | nicht zerfallen: erstes Audio p50 / p90 | Turn-Ende p50 / p90 |
-|---|--:|--:|--:|--:|--:|
-| **100 ms** | 30/52 (58 %) | 26 | 4 | **944 / 1266** | 356 / 531 |
-| 200 ms | 29/52 (56 %) | 25 | 4 | 1237 / 1636 | 439 / 616 |
-| 300 ms | 28/52 (54 %) | 25 | 3 | 1331 / 3834 | 565 / 1058 |
+*(Überarbeitet 2026-10-08 nach der [Prüfung durch Codex](../../docs/2026-10-08-pruefung-robustheitsprobe.md);
+Einordnung: [`docs/2026-10-08-einordnung-pruefung-robustheitsprobe.md`](../../docs/2026-10-08-einordnung-pruefung-robustheitsprobe.md).
+Alle Werte reproduzierbar mit `uv run python -m pacemaker_agent.metrics.robustness`.)*
 
-Werte in ms. „Hörbar unterbrochen" = die Persona hatte bereits zu sprechen begonnen, als die
-Fortsetzung kam (Transkript: unterbrochene Antwort mit Text).
+| Segmentierung | zerfallen | davon Ausgabe vor Fortsetzung (Näherung) | nicht zerfallen mit VAD-Zeitbasis: n | erstes Audio p50 / p90 | Turn-Ende p50 / p90 |
+|---|--:|--:|--:|--:|--:|
+| **100 ms** | 30/52 (58 %) | 26 von 30 | 20 | **944 / 1266** | 356 / 531 |
+| 200 ms | 29/52 (56 %) | 25 von 29 | 21 | 1237 / 1636 | 439 / 616 |
+| 300 ms | 28/52 (54 %) | 25 von 28 | 22 | 1331 / 3834 | 565 / 1058 |
+
+Werte in ms. „Ausgabe vor Fortsetzung" = unterbrochene Persona-Antwort **mit** Transkripttext —
+Hinweis, dass die simulierte Ausgabe schon lief; **kein Hörnachweis** (kein Client-Mitschnitt).
+Latenz nur für nicht zerfallene Sitzungen mit VAD-Zeitbasis; bei zerfallenen mischt das erste
+Audio Teilantworten.
+
+**Fairer Vergleich auf denselben 10 Clips** (in allen Varianten nicht zerfallen, mit VAD-Basis;
+je n = 20): erstes Audio p50/p90 **944 / 1266** (100 ms), 1236 / 1657 (200 ms), 1315 / 2209
+(300 ms).
+
+**Kurze Äußerung ohne VAD-Zeitbasis — R19 („OK.", 0,27 s):** In allen sechs Sitzungen greift die
+VAD nicht; das Turn-Ende kommt über den Transkript-Fallback mit Zeitlimit. Erstes Audio ab
+Clip-Ende **3190–3572 ms**. Deshalb nur 150 Latenzdateien bei 156 Sitzungen. R20 („Verstehe.")
+und R21 sind unauffällig.
 
 Zerfallen in allen sechs Durchläufen je Aufnahme: R03, R05, R08, R10, R11, R12, R14, R15, R17,
 S01, S02, S03, S05; R01 in 5 von 6; S04 nur bei 100/200 ms.
@@ -676,30 +691,44 @@ Beispiele (Segmentierung 100 ms):
 | R03 | „Es hängt bei uns." | „Ja, das ist verständlich," | „Ehrlich gesagt, davon ab, wer gerade Zeit fürs Coaching hat." |
 | R10 | „Ach, das müssen Sie mit Ihrem Chef." | „Ja, genau," | „Nicht abstimmen, das liegt doch sicher in Ihrem Budget." |
 | R11 | „Die Mail habe ich glaube ich schon geschickt." | „Danke, das hatte ich schon" | „Oder auch nicht. Ich prüf das gleich noch mal." |
-| R12 | „Ja, das kann ich verstehen." | „Entschuldigung, ich glaube," | „Darf ich trotzdem …" (zerfällt dreimal) |
+| R12 | „Ja, das kann ich verstehen." | „Entschuldigung, ich glaube," | „Darf ich trotzdem …" (vier erkannte Turns, drei zusätzliche Grenzen) |
 
 ### 16.2 Befunde
 
-1. **Gut die Hälfte echter, pausenreicher Äußerungen zerfällt — unabhängig von der
-   Segmentierung.** Ursache ist die Turn-Erkennung (VAD-Stopp 200 ms + Smart Turn wertet das
-   Fragment als abgeschlossen), nicht die STT-Segmentierung.
-2. **In ~9 von 10 Fällen hörbar:** Die Persona beginnt zu sprechen und wird von der Fortsetzung
-   unterbrochen. Teils bestätigt sie dabei eine Bedeutung, die die Fortsetzung umkehrt (R10).
-3. **Die Information geht nicht verloren:** Die Antwort nach der Fortsetzung sieht beide Teile.
-   Der Schaden ist das Dazwischenreden, nicht fehlender Inhalt. (Die Kennzahl
-   „Vollständigkeit der ersten Nachricht" in `robustness.py` überzeichnet deshalb den
-   Informationsverlust.)
-4. **100 ms Segmentierung bestätigt:** bei nicht zerfallenen Äußerungen deutlich am schnellsten,
-   ohne mehr Zerfall als 200/300 ms. Die offene Frage aus §13.4/§15 ist damit für diese
-   Stichprobe beantwortet.
-5. **Nicht jeder Zerfall ist falsch** — nach „Okay." und 1,7 s Stille (R14) würde auch ein Mensch
-   antworten. Klar falsch sind grammatisch unvollständige Fragmente (R03, R08, R10) und
-   Fortsetzungen, die die Bedeutung umkehren (R05, R10, R11).
-6. **Zielkonflikt:** Schnelle Antworten (900 ms) und kein Dazwischenreden bei Denkpausen ziehen
+1. **In diesem gezielt schwierigen Korpus zerfallen 30/29/28 von je 52 Sitzungen.** Größere
+   STT-Segmentierung beseitigt den Zerfall nicht; Unabhängigkeit ist nicht nachgewiesen (R01, S04
+   ändern sich mit der Segmentierung). Turn-Erkennung im Zusammenspiel mit STT ist der
+   plausible Haupthebel; VAD-Stopp und Smart Turn wurden nicht isoliert verglichen.
+2. **Ausgabe vor Fortsetzung in 76 von 87 zerfallenen Sitzungen (Näherung):** Die Persona beginnt
+   zu antworten, bevor die Fortsetzung kommt — teils mit einer Bestätigung, die die Fortsetzung
+   umkehrt (R10). Tatsächlicher Hörbeginn nicht gemessen.
+3. **Information:** In den geprüften Beispielen stehen beide Fragmente im Verlauf; Logs belegen
+   für R03/R10 den zusammengesetzten LLM-Kontext. Vollständige Erfassung, korrekte Zusammenführung
+   und Berücksichtigung der Mindestinfo sind **nicht systematisch geprüft** (R10 antwortet
+   abschließend allgemein statt auf die Budget-Korrektur einzugehen).
+4. **100 ms bleiben vorläufig die schnellste Referenz** (auch auf denselben Clips), bei leicht
+   mehr Zerfall als 300 ms (30 vs. 28). Robustheit bzw. Nichtunterlegenheit sind offen.
+5. **Kurze Äußerungen:** „OK." (R19) wird in allen Sitzungen erst nach 3,2–3,6 s beantwortet
+   (Transkript-Fallback, VAD greift nicht). Ursache nicht isoliert (Hypothese: kurze, leise
+   Aufnahme unter VAD-Start-Schwelle). Für Gespräche relevant.
+6. **Sollgrenze vs. Gesprächspragmatik:** Nach „Okay." und 1,7 s Stille (R14) wäre eine Antwort im
+   freien Gespräch plausibel; gegenüber der vorab gesetzten Sollgrenze bleibt sie eine
+   Abweichung. Besonders problematisch: grammatisch unvollständige Fragmente (R03, R08, R10) und
+   Fortsetzungen, die die Bedeutung umkehren (R05, R10, R11). Beide Bewertungen künftig getrennt
+   annotieren.
+7. **Zielkonflikt:** Schnelle Antworten (900 ms) und kein Dazwischenreden bei Denkpausen ziehen
    in entgegengesetzte Richtungen. Kandidaten: längerer VAD-Stopp (kostet Latenz bei jedem Turn),
    Vollständigkeitsprüfung am Transkript (fängt unvollständige Fragmente), Audio zurückhalten bis
    zu einer Mindeststille.
 
-Einschränkungen: ein Sprecher, ein Mikrofon; Pausen länger als im Drehbuch vorgesehen; nur
-`nano`; frische Sitzung je Aufnahme (die Persona antwortet wie auf den ersten Satz eines Anrufs —
-inhaltliche Angemessenheit hier nicht bewertbar, gehört zum Rollentreue-Test).
+Einschränkungen: ein Sprecher, ein Mikrofon, gezielt schwierige Aufnahmen; Pausen teils länger,
+teils kürzer als im Drehbuch; nur `nano`; frische Sitzung je Aufnahme (die Persona antwortet wie
+auf den ersten Satz eines Anrufs — inhaltliche Angemessenheit hier nicht bewertbar); 156
+Sitzungen sind keine 156 unabhängigen Äußerungen (26 Aufnahmen × 6). Zulässig: „Diese
+Konfiguration zerlegt wiederholt bestimmte, vorab als zusammenhängend definierte Aufnahmen."
+Nicht zulässig: „Gut die Hälfte realer Verkaufsgespräche zerfällt."
+
+**Schritt C ist damit nicht abgeschlossen:** Es fehlen das zusammenhängende Gespräch, annotierte
+Sollgrenzen und kritische Mindestinfo je tatsächlich gesprochener Variante, sowie die Klärung,
+ob Smart Turn (audiobasierte Endpunkterkennung) mit dem Prosodie-Verbot in `CLAUDE.md` vereinbar
+ist (siehe Einordnung §2.3).
