@@ -90,6 +90,15 @@ def test_last_voiced_sample_ignores_trailing_silence() -> None:
     assert last_voiced_sample(pcm) == SAMPLE_RATE // 2
 
 
+def test_completeness_counts_reference_words_in_first_message() -> None:
+    from pacemaker_agent.metrics.robustness import completeness
+
+    reference = "Das kostet im Jahr 12 nee 15000 Euro"
+    assert completeness(reference, "Das kostet im Jahr 12 nee 15000 Euro.") == 1.0
+    assert completeness(reference, "Das kostet im Jahr 12") == 5 / 8
+    assert completeness("", "egal") is None
+
+
 def test_quantile_interpolates_like_pandas() -> None:
     assert quantile([1.0, 2.0, 3.0, 4.0], 0.5) == 2.5
     assert quantile([], 0.9) is None
