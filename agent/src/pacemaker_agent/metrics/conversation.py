@@ -175,7 +175,11 @@ def utterances(run: dict) -> list[dict]:
             turn.get("first_audio_ms") is None and turn.get("first_audio_from_clip_ms") is not None
         )
         f2 = turn.get("n_turn_ends", 0) > 1
-        f3 = any(start < a < end for a, _ in intervals) if start and end else False
+        f3 = (
+            any(start < a < end for a, _ in intervals)
+            if start is not None and end is not None
+            else False
+        )
         # Texte im Fenster dieses Clips (bis zum naechsten Clip)
         window = [r for r in transcript if start - 0.5 <= _ts(r) < nxt]
         user_texts = [r["text"] for r in window if r["role"] == "user"]
