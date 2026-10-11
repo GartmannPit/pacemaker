@@ -867,3 +867,41 @@ Daten: `experiments/runs/t2-bargein/`, Auswertung `uv run python -m pacemaker_ag
 Zielkonflikt: Schnelleres Verstummen verlangt eine empfindlichere Sprechbeginn-Erkennung, die
 auch Hörersignale und kurze Geräusche als Unterbrechung wertet. Ohne Unterscheidung beider
 Fälle ist Muss-Kriterium 3 mit dieser Pipeline nicht erreichbar.
+
+## 20. Rollentreue im Textmodus (Testablauf T3, 2026-10-11)
+
+10 Gespräche je Durchgang mit simulierten Anrufern (Rollen vorab festgelegt, [Testablauf](../../docs/phase-0-testablauf-gespraech.md) §4),
+Persona mit Produkt-Prompt und Werkzeug `auflegen`, Anrufer und Judge `gpt-4.1-mini`, alles Azure
+OpenAI Data Zone EU. Prüft Prompt und Modell, nicht den Sprachpfad.
+Daten: `experiments/runs/t3-rollen/`, Werkzeug `uv run python -m pacemaker_agent.tests.role_test`.
+
+| Durchgang | Persona-Modell | Rollenbruch (Keywords + Judge) | Persona-Beiträge je Gespräch (01–10) |
+|---|---|--:|---|
+| 1 (Prompt vom 08.10.) | `nano` | 0/10 | 1, 1, 1, 2, 1, 1, 1, 1, 1, 1 |
+| 1 | `mini` | 0/10 | 1, 5, 5, 4, 1, 3, 1, 1, 1, 1 |
+| 2 (Auflege-Regel, s. u.) | `nano` | 0/10 | 1, 1, 3, 1, 1, 1, 1, 2, 1, 3 |
+| **2** | **`mini`** | **0/10** | **4, 6, 4, 5, 5, 4, 1, 3, 9, 4** |
+
+### 20.1 Befunde
+
+1. **Durchgang 1: Kriterium verfehlt.** Kein Rollenbruch, aber die Persona legte auch bei guten,
+   konkreten Anrufern (01, 10) nach dem ersten Satz auf — mit beiden Modellen. Ursache war der
+   neue Prompt (Werkzeug `auflegen` plus „wenig Zeit früh klar machen"): der erste eigene Einwand
+   wurde als Gesprächsende behandelt.
+2. **Durchgang 2** (gekennzeichnete Prompt-Änderung, Kriterium vorab: konstruktive Anrufer
+   01/04/05/06/10 erreichen ≥ 4 Persona-Beiträge, Unsinn/Beleidigung/falsch verbunden dürfen
+   sofort enden): Regel „Ein Einwand ist kein Gesprächsende; in den ersten drei Beiträgen nicht
+   auflegen, außer bei Unsinn, Beleidigung, falscher Verbindung".
+   - **`mini` erfüllt das Kriterium** (4–5 Beiträge bei 01/04/05/06/10, Unsinn nach 1).
+   - **`nano` verfehlt es deutlich** — legt trotz ausdrücklicher Regel in 7/10 Gesprächen nach dem
+     ersten Satz auf.
+3. **Manuelle Durchsicht `mini`/Durchgang 2:** KI-Frage ehrlich beantwortet und weitergespielt
+   („Ja, ich bin eine KI-Trainingsfigur, aber weiter als Markus Brandt"); Budgetgrenze und
+   bestehendes Tool als Einwände; Gesprächsende per Mail-Verweis plausibel. Schwächen: bei
+   Verkaufstipps ein halber Tipp im Charakter; Gespräche 4–5 Beiträge (~1,5–2 Min.) statt ~5 Min.;
+   bei Aggression lange Geduld (9 Beiträge).
+4. **Der LLM-Judge ist nachsichtig** (bewertete u. a. ein sofortiges Auflegen als „KI-Frage
+   ehrlich beantwortet"). Für die Abnahme zählt die manuelle Durchsicht; der Judge ist Filter.
+5. **Folge für die Stack-Wahl:** `nano` ist ~150 ms schneller (§14), trägt die Persona aber nicht;
+   `mini` trägt sie. Das Rollenkriterium ist ein Muss — Empfehlung daher `mini`, mit entsprechend
+   größerem Abstand zur Latenzvorgabe.
