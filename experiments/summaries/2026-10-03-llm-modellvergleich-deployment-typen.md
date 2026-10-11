@@ -824,3 +824,46 @@ kommt über die Zeitgrenze der Stop-Strategie. Erstes Audio daher ~1,4–1,7 s. 
 Audiomerkmalen allein ist das nicht zu entscheiden; im Gesprächskontext (Persona hat eine Frage
 gestellt) wäre „OK." eindeutig abgeschlossen — Argument für eine Turn-Erkennung am Text mit
 Kontext (Empfehlung für den Architekturumbau, siehe Ergebnisdokument Phase 0).
+
+## 19. Barge-in und Hörersignal (Testablauf T2, 2026-10-08)
+
+Ablauf und Kriterien vorab festgelegt ([Testablauf](../../docs/phase-0-testablauf-gespraech.md) §3
+und Nachtrag): EU-Mess-VM, `nano`, frische Sitzung je Fall, Auslöser R01 → R02, Zwischenruf
+(Pits Aufnahmen) mit hörbarem Beginn 1,0 s nach Beginn der Persona-Antwort, je 5 Fälle je Clip
+und VAD-Start (0,1 / 0,2 s), Reihenfolge gegenbalanciert. Messgröße serverseitig: hörbarer
+Beginn des Zwischenrufs → `BotStoppedSpeaking` am Ausgabe-Transport (ohne Client-Puffer).
+Daten: `experiments/runs/t2-bargein/`, Auswertung `uv run python -m pacemaker_agent.metrics.conversation experiments/runs/t2-bargein`.
+
+| Zwischenruf | VAD-Start | auslösbar | Persona verstummt | ≤ 300 ms | Verstummen nach (ms) |
+|---|--:|--:|--:|--:|---|
+| R23 „Darf ich ganz kurz reingrätschen?" | 0,1 s | 5/5 | 5 | 1 | 283, 303, 305, 306, 322 |
+| R23 | 0,2 s | 5/5 | 5 | 0 | 384, 385, 400, 404, 405 |
+| R24 „Nee, nee, Moment, so meinte ich das nicht." | 0,1 s | 5/5 | 5 | 2 | 293, 293, 311, 315, 435 |
+| R24 | 0,2 s | 5/5 | 5 | 0 | 532, 533, 552, 553, 553 |
+| R22 „Mhm." (soll **nicht** unterbrechen) | 0,1 s | 5/5 | **4** | – | 815, 835, 835, 836 |
+| R22 | 0,2 s | 4/5 | **3** | – | 934, 1864, 1983 |
+
+### 19.1 Befunde
+
+1. **Barge-in-Kriterium (≤ 300 ms in ≥ 9/10) verfehlt** — mit VAD-Start 0,1 s in 3/10 Fällen
+   erfüllt (p50 306, p90 333 ms), mit 0,2 s in 0/10 (p50 469, p90 553 ms). Serverseitig; im
+   Browser kommen Puffer hinzu.
+2. **Die Zeit steckt fast vollständig in der VAD-Bestätigung des Sprechbeginns.** Beispiel R23
+   (0,1 s): hörbarer Beginn → VAD-Erkennung ~290 ms, VAD-Erkennung → Persona still ~30 ms
+   (Log-Zeitstempel). Die Pipeline selbst bricht schnell ab; Hebel ist die Startschwelle
+   (Mindestlautstärke mit 400-ms-Fenster, `start_secs`), siehe §18.
+3. **Ein Hörersignal unterbricht die Persona fast immer** — „Mhm" in 4/5 (0,1 s) bzw. 3/4
+   (0,2 s). Bei 0,2 s teils erst nach 1,9–2,0 s, vermutlich über den Transkript-Weg statt die
+   VAD (nicht isoliert). Pipecat unterbricht bei jedem erkannten Sprechbeginn; eine Regel
+   „Hörersignal ≠ Unterbrechung" (z. B. Mindestdauer oder Mindestwortzahl) fehlt.
+4. **Kein spätes Audio** (Persona-Audio setzt während des Zwischenrufs nicht wieder ein).
+5. **Entscheidung VAD-Start nach vorab festgelegter Regel:** 0,1 s wäre Default geworden, wenn
+   Barge-in nicht schlechter **und** „Mhm" nicht häufiger unterbricht. Barge-in ist besser,
+   „Mhm" unterbricht mit 4/5 gegenüber 3/4 aber geringfügig häufiger — bei n = 5 im Rauschen,
+   nach der Regel dennoch ein Nein. **Default bleibt 0,2 s**; R19 („OK." nach ~3,2 s) ist damit
+   wieder offener Befund. Die Regel hat einen solchen Gleichstand nicht vorhergesehen; eine
+   neue Entscheidung braucht mehr Fälle und eine Unterbrechungsregel für Hörersignale.
+
+Zielkonflikt: Schnelleres Verstummen verlangt eine empfindlichere Sprechbeginn-Erkennung, die
+auch Hörersignale und kurze Geräusche als Unterbrechung wertet. Ohne Unterscheidung beider
+Fälle ist Muss-Kriterium 3 mit dieser Pipeline nicht erreichbar.

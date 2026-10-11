@@ -95,12 +95,12 @@ class TuningConfig:
 
     stt_segmentation_ms: int  # Azure-STT-Segmentierungsstille (azure-eu)
     vad_stop_secs: float  # Stille, bis Silero das Sprechende meldet
-    # Sprechbeginn: so lange Konfidenz UND Lautstaerke ueber Schwelle. Default 0.1 s seit
-    # 2026-10-08: Mit dem Pipecat-Default 0.2 s verpasst die VAD sehr kurze Antworten ("OK.",
-    # R19), weil die Lautstaerke (gleitendes 400-ms-Fenster) 0.6 erst spaet erreicht --
-    # Antwort erst nach ~3,2 s ueber den Transkript-Fallback. Zerfall und Latenz unveraendert
-    # (Summary §18). VORLAEUFIGER KANDIDAT, kein endgueltiger Default: Fehlstarts durch
-    # Hoerersignale ("mhm") und Geraeusche sind noch nicht geprueft (Barge-in-Tests).
+    # Sprechbeginn: so lange Konfidenz UND Lautstaerke ueber Schwelle. Default 0.2 s
+    # (Pipecat-Default). 0.1 s erkennt sehr kurze Antworten ("OK.", R19: ~1,4 statt ~3,2 s,
+    # Summary §18) und verstummt beim Barge-in schneller (p50 306 statt 469 ms), wurde nach
+    # der vorab festgelegten Regel aber NICHT uebernommen: Hoerersignal "Mhm" unterbrach mit
+    # 0.1 s in 4/5, mit 0.2 s in 3/4 Faellen (Summary §19). Beide unterbrechen fast immer --
+    # das loest keine VAD-Schwelle, sondern eine eigene Unterbrechungsregel.
     vad_start_secs: float
     vad_min_volume: float
     warm_up: bool  # Verbindungen vor dem ersten Turn aufbauen
@@ -119,7 +119,7 @@ def load_tuning_config() -> TuningConfig:
         short_opener=os.environ.get("PACEMAKER_SHORT_OPENER", "0") == "1",
         stt_segmentation_ms=int(os.environ.get("AZURE_STT_SEGMENTATION_MS", "100")),
         vad_stop_secs=float(os.environ.get("PACEMAKER_VAD_STOP_SECS", "0.2")),
-        vad_start_secs=float(os.environ.get("PACEMAKER_VAD_START_SECS", "0.1")),
+        vad_start_secs=float(os.environ.get("PACEMAKER_VAD_START_SECS", "0.2")),
         vad_min_volume=float(os.environ.get("PACEMAKER_VAD_MIN_VOLUME", "0.6")),
         warm_up=os.environ.get("PACEMAKER_WARM_UP", "1") == "1",
         tts_edge_silence_ms=None if edge_silence == "azure" else int(edge_silence),
