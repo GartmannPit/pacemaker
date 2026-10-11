@@ -171,3 +171,24 @@ F0); eine Einzelsitzung am 2026-10-11 lief fehlerfrei. Abhilfe: 5 s Pause zwisch
 Sitzungen mit Dienstfehlern werden in der Auswertung als ungültig ausgewiesen. T1 wird mit
 unverändertem Ablauf, Prompt und Kriterien wiederholt. T2 war nicht betroffen (keine Fehler
 im Turn-Protokoll).
+
+## Nachtrag 3 (2026-10-11): Folgen aus T3 für die ausstehenden Läufe
+
+T3 (Summary §20) ergab: Mit dem Prompt aus §0 legte die Persona bei guten Anrufern sofort auf
+(Durchgang 1, Kriterium verfehlt). Nach der gekennzeichneten Prompt-Änderung (Durchgang 2)
+erfüllt `gpt-4.1-mini` das vorab festgelegte Kriterium, `gpt-4.1-nano` nicht.
+
+Deshalb, **vor** den noch ausstehenden Sprachläufen festgelegt:
+
+1. **T1 läuft mit Prompt-Durchgang 2 und `gpt-4.1-mini`** (Kandidat für die Empfehlung), sonst
+   unverändert (VAD-Start 0,1 s wie vorab festgelegt, 3 Durchgänge, Wiederanruf). T1 wurde noch
+   nicht gültig ausgeführt (Azure-STT-Kontingent, Nachtrag 2), es gibt also kein Ergebnis, an
+   das angepasst würde.
+2. **Latenz-Kontrollmessung `mini`** in der Referenzkonfiguration (wie §15 Variante B: kein
+   Einstieg, Randstille 0, Segmentierung 100 ms, VAD-Stopp 0,2 s, VAD-Start 0,2 s), 3 × 30 Turns
+   auf der VM — bisher ist `mini` nur mit Einstieg gemessen (§14). Kriterium unverändert p90 < 900 ms.
+3. Barge-in (T2) wird nicht wiederholt: Die Abbruchzeit hängt an der VAD, nicht am Modell.
+
+Alle drei Läufe erst, wenn Azure STT wieder ohne „Quota exceeded" antwortet (isolierte Prüfung
+2026-10-11: TTS funktioniert, jede STT-Erkennung wird abgelehnt — STT-Kontingent der
+Speech-Ressource erschöpft).
