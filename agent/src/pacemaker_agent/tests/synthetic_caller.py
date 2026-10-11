@@ -70,6 +70,10 @@ BOT_SETTLE_SECS = 1.0
 # Verbindung) lehnte die neue Sitzung mit "Quota exceeded" (1007) ab, solange die vorige
 # Verbindung noch offen war (T1, 2026-10-08). Zugleich > 1 s, weil run_id Sekundenaufloesung hat.
 SESSION_GAP_SECS = 5.0
+# Sitzungen mit Dienstfehler im Turn-Protokoll werden wiederholt (T1 2026-10-11: "Quota
+# exceeded" von Azure STT trotz 5 s Pause, Ursache nicht isoliert).
+MAX_SERVICE_RETRIES = 3
+RETRY_WAIT_SECS = 20.0
 
 
 class _BotIdleObserver(BaseObserver):
@@ -260,7 +264,16 @@ async def _session(
     if ended_by_pipeline_after is not None:
         logger.info(f"Sitzung von der Pipeline beendet nach Clip {ended_by_pipeline_after}")
     logger.info(f"Turn-Protokoll: {ledger_path}")
-    return {**balance, "ended_by_pipeline_after_clip": ended_by_pipeline_after}
+    service_error = any(
+        json.loads(line).get("errors")
+        for line in ledger_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    )
+    return {
+        **balance,
+        "ended_by_pipeline_after_clip": ended_by_pipeline_after,
+        "service_error": service_error,
+    }
 
 
 async def _run(
@@ -285,13 +298,20 @@ async def _run(
         sequence = [clips[i % len(clips)] for i in range(turns)]
         run_ids = []
         for rep_no in range(1, repeat + 1):
-            remaining, call_no, offset = sequence, 1, 0
+            remaining, call_no, offset, retries = sequence, 1, 0, 0
             while remaining:
                 run_id = new_run_id(stack)
                 extra = {**manifest_extra, "repeat": rep_no, "call": call_no, "clip_offset": offset}
                 result = await _session(stack, remaining, run_id, extra, barge_in)
                 run_ids.append(run_id)
                 await asyncio.sleep(SESSION_GAP_SECS)
+                if result["service_error"] and retries < MAX_SERVICE_RETRIES:
+                    # Dienstfehler (z. B. Azure "Quota exceeded"): Sitzung ist ungueltig und
+                    # wird mit neuer run_id wiederholt; die ungueltige bleibt im Protokoll.
+                    retries += 1
+                    logger.warning(f"Dienstfehler in {run_id} -- Wiederholung {retries}")
+                    await asyncio.sleep(RETRY_WAIT_SECS)
+                    continue
                 ended = result["ended_by_pipeline_after_clip"]
                 if not continue_after_hangup or ended is None or ended >= len(remaining):
                     break
