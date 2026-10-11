@@ -66,6 +66,11 @@ FIXTURES = Path(__file__).resolve().parents[3] / "fixtures" / "audio"
 # und wirkte als Barge-in (2026-10-03 bei s2s beobachtet).
 BOT_SETTLE_SECS = 1.0
 
+# Pause zwischen zwei Sitzungen. 1,1 s reichten nicht: Azure STT (Tarif F0, eine gleichzeitige
+# Verbindung) lehnte die neue Sitzung mit "Quota exceeded" (1007) ab, solange die vorige
+# Verbindung noch offen war (T1, 2026-10-08). Zugleich > 1 s, weil run_id Sekundenaufloesung hat.
+SESSION_GAP_SECS = 5.0
+
 
 class _BotIdleObserver(BaseObserver):
     """Taktgeber fuer den naechsten Clip."""
@@ -286,7 +291,7 @@ async def _run(
                 extra = {**manifest_extra, "repeat": rep_no, "call": call_no, "clip_offset": offset}
                 result = await _session(stack, remaining, run_id, extra, barge_in)
                 run_ids.append(run_id)
-                await asyncio.sleep(1.1)  # run_id hat Sekundenaufloesung
+                await asyncio.sleep(SESSION_GAP_SECS)
                 ended = result["ended_by_pipeline_after_clip"]
                 if not continue_after_hangup or ended is None or ended >= len(remaining):
                     break
@@ -302,6 +307,7 @@ async def _run(
         run_id = f"{new_run_id(stack)}-{clip.stem}"
         await _session(stack, [clip], run_id, {**manifest_extra, "clip": clip.stem})
         run_ids.append(run_id)
+        await asyncio.sleep(SESSION_GAP_SECS)
     return run_ids
 
 

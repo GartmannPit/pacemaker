@@ -207,7 +207,12 @@ def utterances(run: dict) -> list[dict]:
 
 
 def report_t1(runs: list[dict], export: Path | None) -> None:
-    rows = [u for r in runs if not r["config"].get("barge_in_secs") for u in utterances(r)]
+    t1_runs = [r for r in runs if not r["config"].get("barge_in_secs")]
+    # Sitzungen mit Dienstfehlern (z. B. Azure-Kontingent) sind ungueltig, nicht "keine Antwort"
+    broken = [r["run_id"] for r in t1_runs if any(t.get("errors") for t in r["turns"])]
+    for run_id in broken:
+        print(f"UNGUELTIG (Dienstfehler im Turn-Protokoll): {run_id}")
+    rows = [u for r in t1_runs if r["run_id"] not in broken for u in utterances(r)]
     if not rows:
         return
     n = len(rows)

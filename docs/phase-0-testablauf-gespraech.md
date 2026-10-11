@@ -160,3 +160,14 @@ Außerdem: Auflegen beendet das Gespräch nur, wenn der Abschied ohne Unterbrech
 wurde; spricht der Anrufer dazwischen, läuft das Gespräch weiter (Funktionstest: sonst stummes
 bzw. abgeschnittenes Auflegen). Lokal unter Windows läuft das Einspeisen langsamer als Echtzeit
 (Timer-Auflösung); gemessen wird nur auf der Linux-VM, deren Taktung vorab geprüft wird.
+
+## Nachtrag 2 (2026-10-11): T1 wiederholt
+
+Der erste T1-Lauf (2026-10-08, `experiments/runs/t1-gespraech-ungueltig/`) ist **technisch
+ungültig**: In 3 von 4 Sitzungen lehnte Azure STT die Verbindung beim Start mit „Quota exceeded"
+(Fehlercode 1007) ab, danach antwortete die Persona nicht mehr. Ursache: zu kurze Pause (1,1 s)
+zwischen zwei Sitzungen bei einer Speech-Ressource mit einer gleichzeitigen Verbindung (Tarif
+F0); eine Einzelsitzung am 2026-10-11 lief fehlerfrei. Abhilfe: 5 s Pause zwischen Sitzungen,
+Sitzungen mit Dienstfehlern werden in der Auswertung als ungültig ausgewiesen. T1 wird mit
+unverändertem Ablauf, Prompt und Kriterien wiederholt. T2 war nicht betroffen (keine Fehler
+im Turn-Protokoll).
