@@ -130,3 +130,4 @@ sofort auf. Latenzabstand zur Vorgabe bewusst in Kauf genommen, siehe §6.
 | DPA, Hetzner-AVV, Product Terms, Missbrauchsüberwachung | Pit |
 | Smart Turn vs. Prosodie-Verbot | Pit |
 | Aufnahmen der Robustheitsprobe löschen (Einwilligung) | nach Abschluss Phase 0 |
+| **Kosten-ToDo STT-Streaming:** Die Pipeline streamt das Mikrofon das ganze Gespräch lang an Azure STT; abgerechnet wird gestreamtes Audio (~1,7 ct/Min., über die Hälfte der Speech-Kosten). Audio nur senden, wenn die lokale VAD Sprache erkennt (mit kurzem Vorlauf-Puffer, damit Wortanfänge nicht fehlen), könnte die Persona-Redezeit und Stille einsparen — grob bis zur Hälfte der STT-Kosten. Vorher prüfen: Abrechnungsbasis bei Azure bestätigen, Wiedereinstieg/Latenz des STT-Streams, Erkennungsgenauigkeit, Barge-in unverändert (läuft über die lokale VAD). | Phase 1, Claude |
