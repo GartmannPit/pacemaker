@@ -6,6 +6,8 @@ Bei Speech-to-Speech-Stacks fehlen STT und TTS; das LLM verarbeitet Audio direkt
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
 
 from loguru import logger
 from pipecat.adapters.schemas.function_schema import FunctionSchema
@@ -40,8 +42,9 @@ from .metrics.barge_in import BargeInObserver
 from .metrics.collector import MetricsCollector
 from .metrics.run_manifest import write_manifest
 from .metrics.transcript import TranscriptRecorder, TranscriptTimingObserver
-from .personas.kaltakquise_head_of_ops import HANGUP_TOOL, HANGUP_TOOL_NAME, system_prompt
-from .stacks import build_stack
+from .personas import DEFAULT_PERSONA, PersonaEntry, get_persona
+from .personas.protocol import Protocolist
+from .stacks import build_protocol_client, build_stack
 
 # Werkzeuge nur fuer Kaskaden-Stacks; der Realtime-Stack bekommt den Prompt ueber
 # system_instruction und ist fuer Werkzeuge nicht geprueft.
@@ -120,6 +123,59 @@ def _wire_transcript(
     logger.info(f"Transkript wird geschrieben nach: {transcript.path}")
 
 
+class _ConversationDirector:
+    """Gespraechslogik der Persona (personas/state.py, personas/protocol.py) im Sprachpfad.
+
+    Nach jeder fertigen Persona-Antwort ordnet der Protokollant den Wechsel im Hintergrund
+    ein; die neue Regiezeile wird als Systemnachricht **angehaengt** (nie vorne eingefuegt:
+    ein veraenderter Prompt-Anfang zerstoert Azures Prompt-Caching, siehe ContextWindowLimiter
+    unten). Sie wirkt ab dem naechsten Turn -- der Latenzpfad wartet nie auf den Protokollanten.
+    Zustandsverlauf: <runs>/zustand/<run_id>.jsonl.
+    """
+
+    def __init__(self, entry: PersonaEntry, context: LLMContext, log_path: Path) -> None:
+        assert entry.persona is not None
+        client, model = build_protocol_client()
+        self._protocol = Protocolist(entry.persona, client, model)
+        self._context = context
+        self._log_path = log_path
+        self._pending_user: list[str] = []
+        self._last_line = self._protocol.state.director_line()
+        self._background: set[asyncio.Task] = set()
+        self._lock = asyncio.Lock()
+        context.add_message({"role": "system", "content": self._last_line})
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Gespraechslogik aktiv ({entry.id}, Protokollant {model}) -> {log_path}")
+
+    def wire(self, context_aggregator: LLMContextAggregatorPair) -> None:
+        @context_aggregator.user().event_handler("on_user_turn_message_added")
+        async def _on_user(_aggregator: LLMUserAggregator, message: UserTurnMessageAddedMessage):
+            self._pending_user.append(str(message.content))
+
+        @context_aggregator.assistant().event_handler("on_assistant_turn_stopped")
+        async def _on_assistant(
+            _aggregator: LLMAssistantAggregator, message: AssistantTurnStoppedMessage
+        ) -> None:
+            user = " ".join(self._pending_user).strip()
+            self._pending_user.clear()
+            task = asyncio.create_task(self._observe(user, str(message.content or "")))
+            self._background.add(task)
+            task.add_done_callback(self._background.discard)
+
+    async def _observe(self, user: str, reply: str) -> None:
+        async with self._lock:  # Reihenfolge der Turns bleibt erhalten
+            events = await self._protocol.observe(user, reply)
+            state = self._protocol.state
+            with self._log_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(state.history[-1], ensure_ascii=False) + "\n")
+            if events:
+                logger.info(f"Protokollant: {[e.kind.value for e in events]} -> {state.attitude}")
+            line = state.director_line()
+            if line != self._last_line:
+                self._context.add_message({"role": "system", "content": line})
+                self._last_line = line
+
+
 class _HangupController(BaseObserver):
     """Persona legt auf (Werkzeug `auflegen`): Abschied sprechen, danach Gespraech beenden.
 
@@ -176,19 +232,22 @@ def build_pipeline_task(
     run_id: str,
     extra_observers: list | None = None,
     manifest_extra: dict | None = None,
+    persona: str | None = None,
 ) -> PipelineTask:
     """Baut die Pipeline und schreibt das Run-Manifest (metrics/run_manifest.py).
 
     `run_id` verbindet Metrikdatei, Transkript, Turn-Protokoll und Manifest eines Laufs.
+    `persona`: Name aus personas.PERSONAS, sonst PACEMAKER_PERSONA bzw. Phase-0-Persona.
     """
     tuning = load_tuning_config()
-    prompt = system_prompt(short_opener=tuning.short_opener)
+    entry = get_persona(persona)
+    prompt = entry.system_prompt(short_opener=tuning.short_opener)
     services = build_stack(stack_name, system_prompt=prompt)
 
     use_tools = stack_name in _STACKS_WITH_TOOLS
     context = LLMContext(
         messages=[{"role": "system", "content": prompt}],
-        tools=[FunctionSchema(**HANGUP_TOOL)] if use_tools else NOT_GIVEN,
+        tools=[FunctionSchema(**entry.hangup_tool)] if use_tools else NOT_GIVEN,
     )
     # vad_analyzer hier (Aggregator-Ebene), nicht am Transport: Pipecat >=1.8 haengt
     # VAD-basierte Turn-Start-Erkennung an LLMUserAggregatorParams, nicht mehr an
@@ -264,6 +323,9 @@ def build_pipeline_task(
     ]
     pipeline = Pipeline([p for p in processors if p is not None])
 
+    # Persona nur im Manifest, wenn nicht Default: config_hash der Phase-0-Laeufe bleibt gleich.
+    if entry.id != DEFAULT_PERSONA:
+        manifest_extra = {**(manifest_extra or {}), "persona": entry.id}
     write_manifest(
         run_id,
         stack=stack_name,
@@ -279,6 +341,12 @@ def build_pipeline_task(
         llm_model=services.llm_model,
     )
     _wire_transcript(context_aggregator, transcript)
+    # Gespraechslogik nur fuer Kaskaden-Stacks (s2s bekommt den Prompt einmalig beim Aufbau).
+    if entry.has_logic and use_tools:
+        director = _ConversationDirector(
+            entry, context, collector.path.parent / "zustand" / f"{run_id}.jsonl"
+        )
+        director.wire(context_aggregator)
     observers = [
         _build_metrics_observer(collector),
         TranscriptTimingObserver(transcript),
@@ -286,7 +354,7 @@ def build_pipeline_task(
     ]
     hangup = _HangupController(transcript) if use_tools else None
     if hangup is not None:
-        services.llm.register_function(HANGUP_TOOL_NAME, hangup.hangup)
+        services.llm.register_function(entry.hangup_tool["name"], hangup.hangup)
         observers.append(hangup)
     observers.extend(extra_observers or [])
 

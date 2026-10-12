@@ -1,6 +1,6 @@
 """Einstiegspunkt. Waehlt Stack und Transport per CLI-Flag.
 
-uv run pacemaker-agent --stack azure-eu --transport local
+uv run pacemaker-agent --stack azure-eu --transport local [--persona markus-brandt]
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import asyncio
 from loguru import logger
 
 from .metrics.run_manifest import new_run_id
+from .personas import PERSONAS
 from .pipeline import build_pipeline_task
 from .stacks import STACKS
 
@@ -42,12 +43,14 @@ def _build_transport(kind: str):
     )
 
 
-async def _run(stack: str, transport_kind: str) -> None:
+async def _run(stack: str, transport_kind: str, persona: str | None) -> None:
     from pipecat.pipeline.runner import PipelineRunner
 
     transport = _build_transport(transport_kind)
-    task = build_pipeline_task(stack, transport, run_id=new_run_id(stack))
-    logger.info(f"Pacemaker-Agent startet | stack={stack} transport={transport_kind}")
+    task = build_pipeline_task(stack, transport, run_id=new_run_id(stack), persona=persona)
+    logger.info(
+        f"Pacemaker-Agent startet | stack={stack} transport={transport_kind} persona={persona}"
+    )
     await PipelineRunner().run(task)
 
 
@@ -55,8 +58,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="pacemaker-agent")
     parser.add_argument("--stack", default="azure-eu", choices=STACKS)
     parser.add_argument("--transport", default="local", choices=TRANSPORTS)
+    # Ohne Angabe: PACEMAKER_PERSONA, sonst die Phase-0-Persona (personas/__init__.py)
+    parser.add_argument("--persona", default=None, choices=PERSONAS)
     args = parser.parse_args()
-    asyncio.run(_run(args.stack, args.transport))
+    asyncio.run(_run(args.stack, args.transport, args.persona))
 
 
 if __name__ == "__main__":

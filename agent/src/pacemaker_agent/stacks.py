@@ -60,6 +60,22 @@ def build_stack(name: str, *, system_prompt: str) -> StackServices:
     raise ValueError(f"Unbekannter Stack '{name}'. Erlaubt: {', '.join(STACKS)}")
 
 
+def build_protocol_client() -> tuple[object, str]:
+    """Client und Deployment fuer den Gespraechsprotokollanten (personas/protocol.py).
+
+    Immer Azure OpenAI EU, unabhaengig vom Stack: Der Protokollant gehoert zum Produktpfad,
+    auch wenn der Stack eine US-Referenz ist. Deployment `AZURE_PROTOKOLL_DEPLOYMENT`
+    (Default gpt-4.1-mini); laeuft asynchron, nicht im Latenzpfad.
+    """
+    import os
+
+    from openai import AsyncOpenAI
+
+    cfg = load_azure_config()
+    client = AsyncOpenAI(base_url=cfg.openai_endpoint, api_key=cfg.openai_key)
+    return client, os.environ.get("AZURE_PROTOKOLL_DEPLOYMENT", "gpt-4.1-mini")
+
+
 def _build_azure_eu() -> StackServices:
     # Importpfade nach `uv sync` gegen die installierte Pipecat-Version pruefen
     # (siehe README-Hinweis). Bei aelteren Versionen: `from pipecat.services.azure import ...`

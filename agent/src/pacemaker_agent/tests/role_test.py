@@ -1,6 +1,6 @@
 """Testablauf T3 -- Rollentreue im Textmodus mit simulierten Anrufern.
 
-    uv run python -m pacemaker_agent.tests.role_test
+    uv run python -m pacemaker_agent.tests.role_test [--persona markus-brandt]
 
 Persona: derselbe System-Prompt und dasselbe Werkzeug `auflegen` wie im Sprachpfad,
 Deployment `AZURE_OPENAI_DEPLOYMENT` (Default gpt-4.1-nano), Temperatur wie im Produkt
@@ -9,10 +9,16 @@ Azure OpenAI Data Zone EU. Prueft Prompt und Modell, nicht den Sprachpfad.
 
 Ergebnisse: experiments/runs/t3-rollen/<zeit>/ (Gespraeche, Urteile, Zusammenfassung).
 Kriterien: docs/phase-0-testablauf-gespraech.md §4. Nicht parallel zu einem Messlauf.
+
+Personas mit Gespraechslogik (personas/model.py) laufen zusaetzlich gegen ZIEL_CALLERS: Der
+Protokollant ordnet jeden Wechsel ein, die Regiezeile wird wie im Sprachpfad angehaengt, und
+geprueft wird, ob die Meilensteine zur Anruferqualitaet passen (docs/phase-1-personas-entwurf.md
+§4.8). Ohne Logik (Phase-0-Persona) laeuft der Test unveraendert.
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import os
@@ -23,7 +29,8 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
 from ..metrics.collector import _REPO_ROOT
-from ..personas.kaltakquise_head_of_ops import HANGUP_TOOL, HANGUP_TOOL_NAME, system_prompt
+from ..personas import PERSONAS, PersonaEntry, get_persona
+from ..personas.protocol import Protocolist
 
 MAX_CALLER_TURNS = 16
 
@@ -91,11 +98,41 @@ CALLERS: list[dict] = [
     },
 ]
 
+# Fuer Personas mit Gespraechslogik (Entwurf §4.8). "ziel": Hauptziel muss erreicht werden
+# (True) bzw. darf nicht erreicht werden (False).
+ZIEL_CALLERS: list[dict] = [
+    {
+        "id": "11-stark",
+        "role": "Ein starker SDR: stellt sich kurz vor, fragt um Erlaubnis, stellt offene Fragen "
+        "zu den Ablaeufen (z. B. was bei kurzfristigen Ausfaellen passiert, was neben dem Tool "
+        "noch von Hand gepflegt wird), hoert zu, fasst geschilderte Probleme in eigenen Worten "
+        "zusammen und fragt nach deren Folgen. Erst danach schlaegt er einen 20-minuetigen "
+        "Termin an einem konkreten Tag vor.",
+        "erwartung": "Termin wird vereinbart, nachdem ein Problem bestaetigt ist",
+        "ziel": True,
+    },
+    {
+        "id": "12-pitch",
+        "role": "Ein schwacher SDR: stellt sein Produkt sofort ausfuehrlich vor, unterstellt "
+        "Probleme ('Sie haben doch sicher Chaos bei Ausfaellen'), statt zu fragen, und draengt "
+        "ab dem zweiten Beitrag auf einen Termin.",
+        "erwartung": "kein Termin",
+        "ziel": False,
+    },
+    {
+        "id": "13-hoeflich-ohne-bedarf",
+        "role": "Ein hoeflicher, kurzer SDR, der nur geschlossene Ja/Nein-Fragen stellt, nie "
+        "nach Ablaeufen oder Problemen fragt und am Ende fragt, ob er eine Mail schicken darf.",
+        "erwartung": "kein Termin (Mail darf zugestimmt werden)",
+        "ziel": False,
+    },
+]
+
 CALLER_PROMPT = """Du spielst in einem Test einen Anrufer am Telefon (Kaltakquise, Deutsch). \
 Deine Rolle: {role}
 Du sprichst mit Markus Brandt, Head of Operations bei einem Logistikdienstleister. Antworte \
 nur mit deinem naechsten gesprochenen Redebeitrag (ein bis vier Saetze, gesprochenes Deutsch, \
-keine Regieanweisungen). Beginne das Telefonat, wenn noch nichts gesagt wurde."""
+keine Regieanweisungen). Beginne das Telefonat, wenn noch nichts gesagt wurde.{briefing}"""
 
 KEYWORDS = [
     "als ki",
@@ -138,16 +175,16 @@ Antworte NUR mit JSON:
 null nur, wenn der Punkt in diesem Gespraech nicht vorkam."""
 
 
-def _tool_schema() -> dict:
+def _tool_schema(tool: dict) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": HANGUP_TOOL["name"],
-            "description": HANGUP_TOOL["description"],
+            "name": tool["name"],
+            "description": tool["description"],
             "parameters": {
                 "type": "object",
-                "properties": HANGUP_TOOL["properties"],
-                "required": HANGUP_TOOL["required"],
+                "properties": tool["properties"],
+                "required": tool["required"],
             },
         },
     }
@@ -164,11 +201,25 @@ async def _chat(client: AsyncOpenAI, **kwargs):
     return None
 
 
-async def converse(client: AsyncOpenAI, persona_model: str, caller_model: str, caller: dict):
-    persona_msgs: list[dict] = [{"role": "system", "content": system_prompt(short_opener=False)}]
-    caller_msgs: list[dict] = [
-        {"role": "system", "content": CALLER_PROMPT.format(role=caller["role"])}
+async def converse(
+    client: AsyncOpenAI,
+    persona_model: str,
+    caller_model: str,
+    caller: dict,
+    entry: PersonaEntry,
+    protocol: Protocolist | None = None,
+):
+    persona_msgs: list[dict] = [
+        {"role": "system", "content": entry.system_prompt(short_opener=False)}
     ]
+    briefing = f"\nDein Auftrag: {entry.persona.briefing()}" if entry.persona else ""
+    caller_msgs: list[dict] = [
+        {"role": "system", "content": CALLER_PROMPT.format(role=caller["role"], briefing=briefing)}
+    ]
+    last_line = ""
+    if protocol is not None:  # wie im Sprachpfad (pipeline._ConversationDirector)
+        last_line = protocol.state.director_line()
+        persona_msgs.append({"role": "system", "content": last_line})
     dialog: list[dict] = []
     hung_up = False
     for _ in range(MAX_CALLER_TURNS):
@@ -178,20 +229,35 @@ async def converse(client: AsyncOpenAI, persona_model: str, caller_model: str, c
         caller_msgs.append({"role": "assistant", "content": line})
         persona_msgs.append({"role": "user", "content": line})
 
-        r = await _chat(client, model=persona_model, messages=persona_msgs, tools=[_tool_schema()])
+        r = await _chat(
+            client,
+            model=persona_model,
+            messages=persona_msgs,
+            tools=[_tool_schema(entry.hangup_tool)],
+        )
         msg = r.choices[0].message
         text = (msg.content or "").strip()
-        calls = [c for c in (msg.tool_calls or []) if c.function.name == HANGUP_TOOL_NAME]
+        calls = [c for c in (msg.tool_calls or []) if c.function.name == entry.hangup_tool["name"]]
         if text:
             dialog.append({"sprecher": "Persona", "text": text})
+        farewell = ""
         if calls:
             args = json.loads(calls[0].function.arguments or "{}")
             farewell = str(args.get("abschiedssatz", "")).strip()
             dialog.append({"sprecher": "Persona", "text": farewell, "auflegen": True})
+        if protocol is not None:
+            events = await protocol.observe(line, " ".join(t for t in (text, farewell) if t))
+            dialog[-1]["ereignisse"] = [e.kind.value for e in events]
+        if calls:
             hung_up = True
             break
         persona_msgs.append({"role": "assistant", "content": text})
         caller_msgs.append({"role": "user", "content": text})
+        if protocol is not None:
+            line_now = protocol.state.director_line()
+            if line_now != last_line:
+                persona_msgs.append({"role": "system", "content": line_now})
+                last_line = line_now
     return dialog, hung_up
 
 
@@ -240,19 +306,43 @@ def repeated_sentences(dialog: list[dict]) -> list[str]:
     return [s for s, n in seen.items() if n > 1]
 
 
-async def main_async() -> None:
+def _goal_check(entry: PersonaEntry, caller: dict, protocol: Protocolist) -> dict:
+    """Meilensteine gegen die Erwartung des Anrufers (nur Personas mit Gespraechslogik)."""
+    assert entry.persona is not None
+    goals = [m.id for m in entry.persona.milestones if m.is_goal]
+    state = protocol.state
+    reached = any(g in state.milestones for g in goals)
+    violated = [k for k, v in state.milestones.items() if v.gate_violated]
+    return {
+        "ziel_erreicht": reached,
+        "ziel_erwartet": caller["ziel"],
+        "tor_verletzt": violated,
+        "ziel_ok": reached == caller["ziel"] and not violated,
+        "zustand": state.history,
+    }
+
+
+async def main_async(persona_name: str | None) -> None:
     load_dotenv(_REPO_ROOT / "agent" / ".env")
+    entry = get_persona(persona_name)
     persona_model = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4.1-nano")
     judge_model = os.environ.get("AZURE_JUDGE_DEPLOYMENT", "gpt-4.1-mini")
+    protocol_model = os.environ.get("AZURE_PROTOKOLL_DEPLOYMENT", "gpt-4.1-mini")
     client = AsyncOpenAI(
         base_url=os.environ["AZURE_OPENAI_ENDPOINT"], api_key=os.environ["AZURE_OPENAI_API_KEY"]
     )
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    out_dir = _REPO_ROOT / "experiments" / "runs" / "t3-rollen" / f"{stamp}-{persona_model}"
+    out_dir = (
+        _REPO_ROOT / "experiments" / "runs" / "t3-rollen" / f"{stamp}-{entry.id}-{persona_model}"
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
     results = []
-    for caller in CALLERS:  # sequenziell: Ratenlimit
-        dialog, hung_up = await converse(client, persona_model, judge_model, caller)
+    callers = CALLERS + (ZIEL_CALLERS if entry.has_logic else [])
+    for caller in callers:  # sequenziell: Ratenlimit
+        protocol = Protocolist(entry.persona, client, protocol_model) if entry.persona else None
+        dialog, hung_up = await converse(
+            client, persona_model, judge_model, caller, entry, protocol
+        )
         verdict = await judge(client, judge_model, caller, dialog)
         result = {
             "id": caller["id"],
@@ -265,6 +355,13 @@ async def main_async() -> None:
             "judge": verdict,
             "dialog": dialog,
         }
+        if protocol is not None:
+            result["persona"] = entry.id
+            result["protokoll_model"] = protocol_model
+            if "ziel" in caller:
+                result["ziel"] = _goal_check(entry, caller, protocol)
+            else:
+                result["zustand"] = protocol.state.history
         results.append(result)
         (out_dir / f"{caller['id']}.json").write_text(
             json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -274,15 +371,28 @@ async def main_async() -> None:
             f"{caller['id']:20s} aufgelegt={hung_up!s:5s} Rollenbruch={v.get('rollenbruch')} "
             f"Erwartung={v.get('erwartung_erfuellt')} vorzeitig={v.get('vorzeitig_aufgelegt')} "
             f"Keywords={result['keywords']} Wiederholung={len(result['repeated'])}"
+            + (
+                f" Ziel={result['ziel']['ziel_erreicht']} (erwartet {caller['ziel']}) "
+                f"Tor verletzt={result['ziel']['tor_verletzt']}"
+                if "ziel" in result
+                else ""
+            )
         )
     breaks = sum(1 for r in results if r["judge"].get("rollenbruch") or r["keywords"])
     met = sum(1 for r in results if r["judge"].get("erwartung_erfuellt"))
-    print(f"Ohne Rollenbruch: {len(results) - breaks}/10 · Erwartung erfuellt: {met}/10")
+    n = len(results)
+    print(f"Ohne Rollenbruch: {n - breaks}/{n} · Erwartung erfuellt: {met}/{n}")
+    goal_runs = [r for r in results if "ziel" in r]
+    if goal_runs:
+        ok = sum(1 for r in goal_runs if r["ziel"]["ziel_ok"])
+        print(f"Meilensteine passend zur Anruferqualitaet: {ok}/{len(goal_runs)}")
     print(f"Ergebnisse: {out_dir}")
 
 
 def main() -> None:
-    asyncio.run(main_async())
+    parser = argparse.ArgumentParser(prog="role-test")
+    parser.add_argument("--persona", default=None, choices=PERSONAS)
+    asyncio.run(main_async(parser.parse_args().persona))
 
 
 if __name__ == "__main__":
