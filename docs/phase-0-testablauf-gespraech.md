@@ -192,3 +192,16 @@ Deshalb, **vor** den noch ausstehenden Sprachläufen festgelegt:
 Alle drei Läufe erst, wenn Azure STT wieder ohne „Quota exceeded" antwortet (isolierte Prüfung
 2026-10-11: TTS funktioniert, jede STT-Erkennung wird abgelehnt — STT-Kontingent der
 Speech-Ressource erschöpft).
+
+## Nachtrag 4 (2026-10-12): Latenz-Kontrollmessung `mini` wiederholt
+
+Der erste Lauf der Kontrollmessung (Nachtrag 3, Punkt 2; `experiments/runs/latenz-mini/`) ist
+**technisch ungültig**: In allen drei Läufen legte die Persona nach dem zehnten Clip
+(`10_abschluss`, eine Verabschiedung) regelkonform über `auflegen` auf, die Clips 11–30 wurden
+nicht angeboten — je Lauf 10 statt 30 Turns. Bei der Referenzmessung (§14, 2026-10-07) gab es das
+Werkzeug noch nicht. Festgestellt anhand der Turn-Bilanz, **bevor** Latenzwerte angesehen wurden.
+
+Wiederholung mit unveränderter Konfiguration, zusätzlich `--continue-after-hangup` (restliche
+Clips nach dem Auflegen in neuer Sitzung, wie T1). Je Lauf damit 30 angebotene Turns in drei
+Sitzungen statt einer; jede Sitzung wärmt auf (Referenzkonfiguration). Ausgabe:
+`experiments/runs/latenz-mini-2/`. Kriterium unverändert p90 < 900 ms über ≥ 30 Turns je Lauf.
