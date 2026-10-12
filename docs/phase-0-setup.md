@@ -19,8 +19,10 @@ ist hier noch kein Thema (siehe [`phase-0-proof-of-concept.md`](phase-0-proof-of
 
 ## 2. Azure-Ressourcen anlegen
 
-Zwei Ressourcen im [Azure-Portal](https://portal.azure.com), **beide in derselben
-Resource Group und derselben Region**.
+Zwei Ressourcen im [Azure-Portal](https://portal.azure.com) in derselben Resource Group:
+**Azure AI Speech** (STT + TTS) und eine **Foundry-Ressource** (Sprachmodelle). Eine
+eigenständige „Azure OpenAI"-Ressource wird **nicht** gebraucht — die OpenAI-Modelle laufen
+über die Foundry-Ressource (Stand 2026-10-12).
 
 - **Resource Group:** neu anlegen, Name z. B. `pacemaker-poc` (alles an einem Ort, am
   Ende von Phase 0 in einem Rutsch löschbar).
@@ -34,38 +36,40 @@ Resource Group und derselben Region**.
    - Resource group: `pacemaker-poc`
    - Region: **Germany West Central**
    - Name: z. B. `pacemaker-speech`
-   - Pricing tier: **Free F0** (1× pro Subscription kostenlos: 5 h STT + 0,5 Mio.
-     Zeichen Neural-TTS pro Monat — reicht für Phase 0). Falllback: `Standard S0`.
+   - Pricing tier: **Standard S0.** *Nicht* Free F0: F0 erlaubt nur eine gleichzeitige
+     STT-Verbindung und ein kleines Monatskontingent — daran scheiterten Testläufe mit
+     „Quota exceeded" (Testablauf Nachtrag 2).
 3. **Network:** siehe [2.3](#23-netzwerkzugriff--welchen-type).
 4. **Review + create** → **Create**. Nach dem Deployment: **Go to resource**.
 5. Linke Navigation → **Keys and Endpoint**. Notieren:
    - **KEY 1** → `AZURE_SPEECH_KEY`
    - **Location/Region** (z. B. `germanywestcentral`) → `AZURE_SPEECH_REGION`
 
-### 2.2 Azure OpenAI (LLM)
+### 2.2 Foundry-Ressource (LLM)
 
-1. Portal → **Create a resource** → **Azure OpenAI** → **Create**.
-2. **Basics:**
+1. [ai.azure.com](https://ai.azure.com) → **Create new** → Foundry-Ressource (bzw. Projekt
+   mit neuer Ressource) anlegen:
    - Resource group: `pacemaker-poc`
-   - Region: **Germany West Central** (falls nicht wählbar: `Sweden Central` oder
-     `France Central` — beide EU)
-   - Name: z. B. `pacemaker-openai`
-   - Pricing tier: **Standard S0**
-   - Falls ein Hinweis **„Request access"** erscheint: kurzes Formular ausfüllen
-     (Freischaltung meist < 1 Tag, oft sofort).
-3. **Network:** siehe [2.3](#23-netzwerkzugriff--welchen-type).
-4. **Review + create** → **Create** → **Go to resource**.
-5. **Modell-Deployment anlegen:** auf der Ressource → **Go to Azure AI Foundry portal**
-   (oder [ai.azure.com](https://ai.azure.com), Ressource auswählen) → **Deployments**
-   → **Deploy model** → **Deploy base model**:
-   - Modell: **`gpt-4.1-mini`** (Nachfolger von `gpt-4o-mini`, das Azure ausläuft)
+   - Region: eine EU-Region, in der die gewünschten Modelle als **Data Zone Standard (EU)**
+     angeboten werden. Unsere Ressource liegt in **Sweden Central**; `gpt-5.4-mini` wird laut
+     Microsoft dort nicht als Data Zone angeboten, u. a. aber in **Germany West Central**
+     (vor dem Anlegen in der Modellliste prüfen).
+2. **Network:** siehe [2.3](#23-netzwerkzugriff--welchen-type).
+3. **Modell-Deployment anlegen:** in der Ressource → **Deployments** → **Deploy model**
+   → **Deploy base model**:
+   - Modell: **`gpt-4.1-mini`** (trägt die Persona, Phase-0-Ergebnis); optional
+     `gpt-4.1-nano` für Vergleiche
    - Deployment name: **`gpt-4.1-mini`** (frei wählbar — genau dieser Name kommt in die `.env`)
-   - Deployment type: **Data Zone Standard** (EU) falls angeboten, sonst **Standard**
-     (regional). *Nicht* „Global Standard" (routet ggf. außerhalb der EU).
-   - TPM/Quota: Default lassen; bei „quota exceeded" TPM auf z. B. 10K senken.
-6. Zurück auf der **Azure-OpenAI-Ressource** (nicht Foundry) → **Keys and Endpoint**. Notieren:
-   - **Endpoint** (`https://pacemaker-openai.openai.azure.com/`) → an `AZURE_OPENAI_ENDPOINT`
-     zusätzlich **`openai/v1`** anhängen (siehe unten, § 3).
+   - Deployment type: **Data Zone Standard** (EU), sonst **Standard** (regional).
+     *Nicht* „Global Standard" (routet ggf. außerhalb der EU).
+   - Inhaltsfilter im Streaming-Modus: **Asynchronous Filter** (sonst ~265 ms mehr Latenz,
+     Summary §15).
+   - TPM/Quota: Default lassen; bei „quota exceeded" TPM anpassen.
+4. In der Ressource → **Keys and Endpoint** (bzw. Projektübersicht). Notieren:
+   - **Endpoint** der Form `https://<name>.services.ai.azure.com/` → an
+     `AZURE_OPENAI_ENDPOINT` zusätzlich **`openai/v1`** anhängen (siehe unten, § 3).
+     Dieselbe Ressource ist auch unter `https://<name>.openai.azure.com/` erreichbar
+     (für den Realtime-Stack `s2s` als `wss://…/openai/v1/realtime`).
    - **KEY 1** → `AZURE_OPENAI_API_KEY`
 
 **Wichtig — welche API-Version:** Pipecats `AzureLLMService` (≥ 1.8.0) nutzt die neue
@@ -107,9 +111,9 @@ Dann `agent/.env` öffnen und eintragen:
 | `AZURE_SPEECH_KEY` | Speech → Keys and Endpoint → KEY 1 | `a1b2c3…` |
 | `AZURE_SPEECH_REGION` | Speech → Keys and Endpoint → Location | `germanywestcentral` |
 | `AZURE_TTS_VOICE` | fest vorgegeben (sachliche männliche Stimme) | `de-DE-ConradNeural` |
-| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI → Keys and Endpoint → Endpoint, **+ `openai/v1` anhängen** | `https://pacemaker-openai.openai.azure.com/openai/v1` |
-| `AZURE_OPENAI_API_KEY` | Azure OpenAI → Keys and Endpoint → KEY 1 | `d4e5f6…` |
-| `AZURE_OPENAI_DEPLOYMENT` | **Deployment-Name** aus AI Foundry (nicht der Modellname, falls abweichend) | `gpt-4.1-mini` |
+| `AZURE_OPENAI_ENDPOINT` | Foundry-Ressource → Endpoint, **+ `openai/v1` anhängen** | `https://pacemaker-ai.services.ai.azure.com/openai/v1` |
+| `AZURE_OPENAI_API_KEY` | Foundry-Ressource → Keys and Endpoint → KEY 1 | `d4e5f6…` |
+| `AZURE_OPENAI_DEPLOYMENT` | **Deployment-Name** aus Foundry (nicht der Modellname, falls abweichend) | `gpt-4.1-mini` |
 
 `agent/.env` ist gitignored und darf nicht eingecheckt werden.
 
