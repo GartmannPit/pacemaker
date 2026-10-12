@@ -964,3 +964,55 @@ Gegenfrage ist kein Rollenbruch), R13/R15 ohne Antwort (F1, kein Turn erkannt), 
    vergleichbar (das an den synthetischen 3 × 30 Turns hängt), aber näher an der Nutzererfahrung.
 4. **Kosten aus T1** (15 Gesprächsminuten, `metrics/costs.py`): `azure-eu`/`mini` bis
    0,029 $/Min. (STT 0,012–0,017, LLM 0,003, TTS 0,009); LLM ohne Cache-Rabatt.
+
+## 22. Neuere Modelle: `gpt-6-luna` und `gpt-5.4-mini` (2026-10-12)
+
+Experiment außerhalb der Phase-0-Abnahme. Frage: Gibt es in Foundry ein schnelleres oder
+besseres Modell als `gpt-4.1-mini` für die Persona?
+
+**Aufbau:** Alle Deployments in der Foundry-Ressource Sweden Central, **Data Zone Standard (EU)**,
+Inhaltsfilter „Asynchronous Filter". Kurzmessung von der EU-Mess-VM: 30 gestreamte Anfragen je
+Modell und Lauf (plus eine Aufwärm-Anfrage), Systemprompt des neuen Markus (Persona-Entwurf,
+Branch `persona-extension`) mit den Werkzeugen `auflegen` und `zusagen`, eine typische
+Anruferäußerung. Gemessen: Zeit bis zum ersten Text-Token und bis zum ersten Satzende (das ist
+der Teil, der vor dem ersten TTS-Audio liegt). Reasoning-Modelle mit `reasoning_effort=none`.
+Skript: `~/probe/ttft_probe.py` auf der VM (nicht im Repo).
+
+| Modell | Lauf | Erstes Token p50 / p90 (ms) | Erstes Satzende p50 / p90 (ms) |
+|---|---|--:|--:|
+| `gpt-4.1-mini` | A1 | 345 / 426 | 390 / 483 |
+| `gpt-6-luna` (`none`) | A1 | 552 / 696 | 570 / 736 |
+| `gpt-4.1-mini` | A2 | 336 / 430 | 420 / 523 |
+| `gpt-6-luna` (`none`) | A2 | 550 / 745 | 576 / 813 |
+| `gpt-4.1-mini` | B1 | 345 / 531 | 412 / 599 |
+| `gpt-5.4-mini` (`none`) | B1 | 417 / 565 | 466 / 620 |
+| `gpt-4.1-mini` | B2 | 343 / 473 | 400 / 1002 |
+| `gpt-5.4-mini` (`none`) | B2 | 418 / 1680 | 475 / 1730 |
+
+(A = Läufe gegen Luna, B = gegen 5.4-mini, jeweils abwechselnd; p90 in B2 bei beiden Modellen
+durch Einzelausreißer, n = 30 trennt das nicht.)
+
+**Rollentest T3 mit `gpt-6-luna`** (neuer Markus, 10 Rollentreue-Anrufer + 3 × 3 Zielanrufer,
+`experiments/runs/t3-rollen/20261012T195034Z-markus-brandt-gpt-6-luna/`), Vergleich `gpt-4.1-mini`
+(`…184623Z-markus-brandt-gpt-4.1-mini/`): Rollenbruch 18/19 bei beiden; Meilensteine passend
+**7/9** (Luna) gegenüber **9/9** (`mini`). Luna beendet Unsinn, falsche Verbindung und Monolog
+nach 1–2 Beiträgen (`mini`: 6–7), legt aber auch bei guten Anrufern früh auf — zweimal verfehlt
+der starke Anrufer deshalb den Termin, einmal direkt nach bestätigtem Schmerzpunkt bei Geduld 9.
+
+### 22.1 Befunde
+
+1. **Für das erste Audio zählt die Zeit bis zum ersten Token, nicht der Durchsatz.** Der erste
+   Satz hat ~10–15 Tokens; ein um 70 Token/s höherer Durchsatz (Luna laut Foundry 198 gegenüber
+   ~128 Token/s) spart darin nur ~40 ms.
+2. **`gpt-6-luna` ist ~170 ms (p50) langsamer** bis zum ersten Satzende, obwohl Reasoning aus und
+   der Filter asynchron ist. Inhaltlich nicht besser, sondern anders kalibriert (ungeduldiger);
+   der Prompt ist auf `gpt-4.1-mini` abgestimmt.
+3. **`gpt-5.4-mini` ist ~55–75 ms (p50) langsamer** als `gpt-4.1-mini`. Rollentest steht aus.
+4. **Werkzeuge und Reasoning:** GPT-6/GPT-5.6-Modelle lehnen über Chat Completions Anfragen mit
+   Werkzeugen ab, sobald Reasoning nicht `none` ist (Default `medium`); für mehr Reasoning wäre die
+   Responses API nötig (Microsoft Learn, Reasoning-Modelle). Mit `none` funktionierten beide.
+5. **Priority Processing** (Microsofts Stufe für niedrige Latenz) gibt es laut Doku nicht für
+   EU Data Zone — scheidet aus. Reservierte Kapazität (PTU) wäre in der EU möglich (Lasttest).
+6. **Folge:** Ein Modellwechsel bringt das Latenzkriterium nicht in Reichweite (LLM-Anteil
+   ~400 ms von ~1,35–1,45 s p90). `gpt-4.1-mini` bleibt Empfehlung. Größere Hebel: spekulativer
+   LLM-Start vor dem finalen STT-Ergebnis, Turn-Erkennung bei echter Sprache.
