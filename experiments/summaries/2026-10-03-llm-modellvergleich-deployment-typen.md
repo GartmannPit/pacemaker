@@ -905,3 +905,62 @@ Daten: `experiments/runs/t3-rollen/`, Werkzeug `uv run python -m pacemaker_agent
 5. **Folge für die Stack-Wahl:** `nano` ist ~150 ms schneller (§14), trägt die Persona aber nicht;
    `mini` trägt sie. Das Rollenkriterium ist ein Muss — Empfehlung daher `mini`, mit entsprechend
    größerem Abstand zur Latenzvorgabe.
+
+## 21. Nachtrag 3/4: T1 und Latenz-Kontrollmessung `mini` (2026-10-12)
+
+Ausgeführt nach [Testablauf](../../docs/phase-0-testablauf-gespraech.md) Nachtrag 3 und 4 auf der
+EU-Mess-VM, `azure-eu`/`gpt-4.1-mini`, Prompt-Durchgang 2, Azure Speech S0 (keine Dienstfehler).
+
+### 21.1 Latenz-Kontrollmessung (Referenzkonfiguration, 3 × 30 Turns)
+
+Daten: `experiments/runs/latenz-mini-2/`. Erster Versuch (`latenz-mini/`) ungültig: Die Persona
+legte nach Clip 10 (`10_abschluss`) regelkonform auf, Clips 11–30 wurden nicht angeboten
+(Nachtrag 4, festgestellt vor Ansicht der Latenzwerte). Wiederholung mit `--continue-after-hangup`:
+je Lauf drei Sitzungen à 10 Clips.
+
+| Lauf | Sitzungen p50 (ms) | Sitzungen p90 (ms) |
+|---|---|---|
+| 1 | 1131, 1251, 1107 | 1376, 1360, 1396 |
+| 2 | 1194, 1084, 1202 | 1385, 1412, 1317 |
+| 3 | 1270, 1113, 1170 | 1354, 1250, 1455 |
+
+- **p90 1250–1455 ms in allen neun Sitzungen — Kriterium p90 < 900 ms klar verfehlt.**
+  `mini` liegt ~150–250 ms über `nano` in derselben Konfiguration (§15 B: p90 1058–1231 ms).
+- Je Sitzung ohne Messwert: `10_abschluss` (die Persona antwortet mit dem Abschied über das
+  Werkzeug `auflegen`; dieser Pfad erzeugt keinen Latenzwert). Damit 27 statt 30 Messwerte je
+  Lauf — formal unter der Mindestzahl, am Ergebnis ändert das nichts.
+
+### 21.2 T1 — zusammenhängendes Gespräch (Pits Aufnahmen, 3 Durchgänge)
+
+Daten: `experiments/runs/t1-gespraech-mini/`, Auswertung `metrics/conversation.py`, Judge
+`tests/judge.py` (`gpt-4.1-mini`), alle markierten Fälle von Hand geprüft.
+
+| | Ergebnis |
+|---|---|
+| Angeboten | 63 Äußerungen in 6 Sitzungen (je Durchgang ein Auflegen + Wiederanruf), keine Dienstfehler |
+| F1 verpasster Sprechbeginn | 3/63 (R05, R13, R15) |
+| F2 vorzeitige Turn-Grenze | 29/63 |
+| F3 vorzeitige Audioausgabe | 23/63 |
+| F4 Information falsch/übergangen | 3/53 prüfbar (Judge: 5; von Hand bestätigt 3) |
+| F6 unangemessene Antwort | 0 (Judge: 4; alle verworfen) |
+| Latenz ohne F1/F2 (n = 31) | erstes Audio p50 1187 / p90 1830 ms |
+| Auflegen | 4×, nach R13, R20, R14, R19 (frühestens nach 9 Äußerungen) |
+
+Prüfung von Hand: F4 bestätigt bei R02 (STT verstümmelt die Frage, Persona sagt „nicht
+verstanden"), R13 (keine der zwei Fragen beantwortet, legt auf) und R02 (weicht im Charakter aus,
+übergeht die Frage). Verworfen: R09 (Persona reagiert auf „nichts verkaufen"), R07 (180 korrekt,
+Gegenfrage ist kein Rollenbruch), R13/R15 ohne Antwort (F1, kein Turn erkannt), F6 bei R13
+(Auflegen nach 9 Äußerungen ist erlaubt).
+
+### 21.3 Befunde
+
+1. **Inhaltlich trägt `mini` das Gespräch** (F4 3/53, F6 0, kein vorzeitiges Auflegen).
+2. **Das Turn-Taking ist die Schwachstelle mit echter Sprache:** In gut einem Drittel der
+   Äußerungen spricht die Persona hörbar hinein (F3 23/63), fast die Hälfte zerfällt (F2). Das
+   bestätigt §16/§17 jetzt im zusammenhängenden Gespräch; die Aufnahmen enthalten bewusst
+   Denkpausen, die Quote gilt für diesen harten Fall.
+3. **Latenz im Gespräch deutlich über den synthetischen Läufen** (p90 1830 statt ~1400 ms):
+   echte Sprache mit Pausen lässt Smart Turn länger warten. Nicht direkt mit dem Kriterium
+   vergleichbar (das an den synthetischen 3 × 30 Turns hängt), aber näher an der Nutzererfahrung.
+4. **Kosten aus T1** (15 Gesprächsminuten, `metrics/costs.py`): `azure-eu`/`mini` bis
+   0,029 $/Min. (STT 0,012–0,017, LLM 0,003, TTS 0,009); LLM ohne Cache-Rabatt.

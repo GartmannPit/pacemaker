@@ -1,9 +1,9 @@
 # Phase 0 — Ergebnisse
 
-**Stand:** 2026-10-11 · **Verfasser:** Claude · **Status:** ENTWURF — offene Messungen und
-Gründer-Bewertungen sind mit **[offen]** markiert.
+**Stand:** 2026-10-12 · **Verfasser:** Claude · **Status:** ENTWURF — alle Messungen von Claude
+abgeschlossen; Gründer-Bewertungen sind mit **[offen]** markiert.
 **Bezug:** [Phase-0-Plan](./phase-0-proof-of-concept.md) · [Bestandsaufnahme](./2026-10-08-bestandsaufnahme-muss-kriterien.md) ·
-[Testablauf](./phase-0-testablauf-gespraech.md) · Messprotokoll: [Summary §1–§20](../experiments/summaries/2026-10-03-llm-modellvergleich-deployment-typen.md)
+[Testablauf](./phase-0-testablauf-gespraech.md) · Messprotokoll: [Summary §1–§21](../experiments/summaries/2026-10-03-llm-modellvergleich-deployment-typen.md)
 
 ## 1. Kurzfassung
 
@@ -11,29 +11,32 @@ Phase 0 sollte beantworten, ob eine deutsche Sprach-Persona mit **< 900 ms p90**
 **akzeptabler Sprachqualität** und **EU-Datenresidenz** erreichbar ist.
 
 - **Latenz: verfehlt.** Bester EU-Stack (`azure-eu`, `gpt-4.1-nano`) p90 1058–1231 ms je Lauf,
-  p50 ~980 ms. Das Modell, das die Persona trägt (`gpt-4.1-mini`), ist langsamer **[offen:
-  Kontrollmessung]**. Auch die US-Referenz und der Realtime-Stack lagen darüber.
+  p50 ~980 ms. Das Modell, das die Persona trägt (`gpt-4.1-mini`), liegt bei p90 1250–1455 ms.
+  Auch die US-Referenz und der Realtime-Stack lagen darüber.
 - **Barge-in: verfehlt.** Serverseitig ≤ 300 ms nur in 0/10 (Default) bzw. 3/10 Fällen; die Zeit
   steckt in der Bestätigung des Sprechbeginns. Hörersignale („Mhm") unterbrechen die Persona fast
   immer.
-- **Rollentreue: mit `gpt-4.1-mini` im Textmodus erfüllt**, mit `nano` nicht.
+- **Rollentreue: mit `gpt-4.1-mini` im Textmodus erfüllt**, mit `nano` nicht. Im
+  zusammenhängenden Sprachgespräch (T1) inhaltlich solide (Information übergangen 3/53), aber die
+  Persona spricht bei Denkpausen in gut einem Drittel der Äußerungen hinein.
 - **Sprachqualität, Reproduzierbarkeit durch Dritte, AVV-Prüfung: [offen, Gründer].**
-- **Kosten:** ~3 ct je Gesprächsminute (`azure-eu`), Obergrenze **[offen: aus Gesprächslauf]**.
+- **Kosten:** bis 0,029 $ (~2,7 ct) je Gesprächsminute (`azure-eu`/`mini`, gemessen in T1).
 
-**Phase 0 ist nicht bestanden.** Zwei Muss-Kriterien sind nachgewiesen verfehlt, mehrere offen.
+**Phase 0 ist nicht bestanden.** Zwei Muss-Kriterien sind nachgewiesen verfehlt, drei hängen an
+Gründer-Bewertungen.
 Die Go/No-Go-Einschätzung in §6 behandelt, ob und wie es trotzdem weitergehen kann.
 
 ## 2. Muss-Kriterien
 
 | # | Kriterium | Status | Ergebnis | Beleg |
 |---|---|---|---|---|
-| 1 | Latenz p90 < 900 ms (EU, ≥ 30 Turns, VM) | **verfehlt** | nano p90 1058–1231 ms; mini **[offen]** | §15, §14, §9, §12 |
+| 1 | Latenz p90 < 900 ms (EU, ≥ 30 Turns, VM) | **verfehlt** | nano p90 1058–1231 ms; mini 1250–1455 ms | §15, §14, §21, §9, §12 |
 | 2 | Sprachqualität ≥ 3,5 (beide Gründer) | **[offen]** | Blind-A/B-Paket bereit (`tests/voice_samples.py`) | — |
 | 3 | Barge-in ≤ 300 ms in ≥ 9/10 | **verfehlt** | 0/10 (VAD-Start 0,2 s), 3/10 (0,1 s), serverseitig; Live-Test **[offen]** | §19 |
 | 4 | Rollen-Konsistenz, 10 Gespräche | **erfüllt (Textmodus, mini)** | 0/10 Rollenbrüche, Gespräche 4–6 Beiträge; nano verfehlt | §20 |
 | 5 | EU-Compliance dokumentiert | **teilweise** | Regionen, Deployment-Typ, CLOUD Act, EUDB recherchiert; DPA/AVV-Prüfung **[offen, Pit]** | [Faktenblatt](./phase-0-eu-compliance.md) |
 | 6 | Transkript + Timing exportierbar | **erfüllt** | Beginn/Ende je Redebeitrag, Export Markdown/CSV | `metrics/transcript_export.py` |
-| 7 | Kosten pro Minute je Stack | **[offen: Messwerte]** | Werkzeug und Preise vorhanden | `metrics/costs.py`, §3.4 |
+| 7 | Kosten pro Minute je Stack | **erfüllt** | `azure-eu`/mini bis 0,029 $, /nano bis 0,027 $, US-Referenz 0,042 $ (T1-Verbrauch) | §3.4, §21 |
 | 8 | Reproduzierbarkeit durch Dritte | **[offen]** | README neu; Installation aus frischem Klon geprüft | `README.md` |
 | 9 | Ergebnisdokument | dieses Dokument | | |
 
@@ -48,7 +51,8 @@ EU-Stack (souverän) nicht gebaut.
 |---|---|--:|--:|---|
 | `azure-eu` / `nano`, optimiert | VM, 3 × 30 Turns, kein Einstieg | ~980 | 1058–1231 je Lauf | §15 B |
 | `azure-eu` / `mini`, mit Einstieg | VM, 3 × 30 Turns | 1043–1119 | 1227–1324 | §14 |
-| `azure-eu` / `mini`, optimiert | VM, 3 × 30 Turns | **[offen]** | **[offen]** | Nachtrag 3 |
+| `azure-eu` / `mini`, optimiert | VM, 3 × 30 Turns | 1084–1270 | 1250–1455 je Sitzung | §21 |
+| `azure-eu` / `mini`, Gespräch T1 | VM, Pits Aufnahmen, ohne F1/F2 | 1187 | 1830 | §21 |
 | Realtime `gpt-realtime-2.1` (`minimal`) | Laptop | 1208 | 2048 | §11/§12 |
 | US-Referenz (Deepgram, OpenAI, ElevenLabs) | Laptop, nicht optimiert | 1224 | 1501 | §12 |
 
@@ -65,7 +69,9 @@ Aufwärmen, Segmentierung 100 ms; nicht wirksam: längerer VAD-Stopp, Kontextkü
 - Einwort-Antworten warten ~1 s auf das Turn-Ende (Smart Turn hält sie für unvollständig).
 - Simulation „Antwort zurückhalten" (Codex-Vorschlag): wirkt erst ab ~1,5 s Wartefrist und kostet
   dann ~0,9 s bei jeder Antwort (`metrics/hold_simulation.py`).
-- Zusammenhängendes Gespräch (T1) **[offen]** — bisherige Läufe ungültig (Azure-STT-Kontingent).
+- **Zusammenhängendes Gespräch (T1, `mini`, 63 Äußerungen):** F2 zerfallen 29/63, F3 Persona
+  spricht hinein 23/63, F1 Sprechbeginn verpasst 3/63, F4 Information übergangen 3/53, F6 0.
+  Persona legt frühestens nach 9 Äußerungen auf (§21).
 
 ### 3.3 Barge-in und Hörersignale
 
@@ -82,9 +88,9 @@ Siehe Summary §19. Verstummen nach hörbarem Beginn des Zwischenrufs: p50 469 /
 | `gpt-4.1-nano` Data Zone | 0,11 / 0,028 (Cache) / 0,44 $ je 1 Mio. Tokens | ebd. |
 | `gpt-4.1-mini` Data Zone | 0,44 / 0,11 / 1,76 $ je 1 Mio. Tokens | ebd. |
 
-Je Gesprächsminute (vorläufig aus Funktionstest, LLM ohne Cache-Rabatt): `azure-eu`/nano
-~0,030 $, /mini ~0,032 $; davon STT ~0,017 $ und TTS ~0,012 $. US-Referenz bei gleichem Verbrauch
-~0,052 $ (TTS teurer). **[offen: Werte aus T1-Gespräch]**
+Je Gesprächsminute aus T1 (15 Gesprächsminuten, LLM ohne Cache-Rabatt, STT als Spanne
+Sprachdauer–Gesprächsdauer): `azure-eu`/mini **bis 0,029 $** (STT 0,012–0,017, LLM 0,003,
+TTS 0,009), /nano bis 0,027 $. US-Referenz bei gleichem Verbrauch 0,042 $ (TTS teurer).
 
 ### 3.5 EU-Compliance
 
@@ -123,7 +129,6 @@ sofort auf. Latenzabstand zur Vorgabe bewusst in Kauf genommen, siehe §6.
 
 | Punkt | Wer |
 |---|---|
-| T1 (Gespräch, mini) und Latenz-Kontrollmessung mini | Claude, sobald Azure STT wieder läuft (Tarif F0 → S0 am 2026-10-11) |
 | Barge-in live mit Headset | Pit |
 | Stimmbewertung Blind-A/B | beide Gründer |
 | README-Probelauf | Kollege |
