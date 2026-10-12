@@ -234,7 +234,10 @@ Scoring ab, gilt das Scoring; die Abweichungsquote ist eine Qualitätsmetrik des
    Personas ohne Entwicklereingriff“). Folge für das Gerüst: Das Persona-Format muss von Anfang
    an so gebaut sein, dass ein Kunde es ohne Prompt-Kenntnisse ausfüllen kann (Formular statt
    Prompt) — Verhaltensregeln und Gesprächslogik (§4) bleiben dabei fest in unserer Hand.
-2. **Schwierigkeitsstufen** schon in Phase 1 oder erst Phase 2?
+2. ~~Schwierigkeitsstufen~~ **Entschieden (2026-10-12): erst Phase 2.** Phase 1 hat je Persona
+   genau eine Stufe („mittel“: keine Andeutungen, Stufe 1 aus §4.3 entfällt). Das Datenformat
+   sieht die Felder trotzdem vor (Startwerte, Andeutungen), damit Phase 2 ohne Umbau aufsetzt.
+   Die schaltbare Live-Anzeige (Punkt 3) gehört als Schwierigkeitsmerkmal ebenfalls zu Phase 2.
 3. ~~Stimmung für den SDR sichtbar?~~ **Entschieden (2026-10-12):** schaltbar. Live-Anzeige von
    Offenheit/Geduld/Meilensteinen ist ein Gamification-Feature, das Nutzer bzw. Admin ein- und
    ausschalten; sinngemäß ein Schwierigkeitsgrad (mit Anzeige = leichter). Folgen: Schalter gehört
