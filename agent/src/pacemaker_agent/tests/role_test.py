@@ -30,6 +30,8 @@ from openai import AsyncOpenAI
 
 from ..metrics.collector import _REPO_ROOT
 from ..personas import PERSONAS, PersonaEntry, get_persona
+from ..personas.model import AGREEMENTS
+from ..personas.prompt import AGREEMENT_TOOL_NAME
 from ..personas.protocol import Protocolist
 
 MAX_CALLER_TURNS = 16
@@ -201,6 +203,66 @@ async def _chat(client: AsyncOpenAI, **kwargs):
     return None
 
 
+async def _persona_reply(
+    client: AsyncOpenAI,
+    model: str,
+    persona_msgs: list[dict],
+    entry: PersonaEntry,
+    protocol: Protocolist | None,
+) -> tuple[str, str | None, list[dict]]:
+    """Persona-Antwort inkl. Werkzeug `zusagen` (wie im Sprachpfad: Tor im Code, dann
+    antwortet das LLM erneut). Gibt Text, Abschiedssatz (falls aufgelegt) und Zusagen zurueck.
+    """
+    tools = [_tool_schema(t) for t in entry.tools]
+    effort = os.environ.get("AZURE_OPENAI_REASONING_EFFORT")  # wie im Sprachpfad (stacks.py)
+    extra = {"reasoning_effort": effort} if effort else {}
+    agreements: list[dict] = []
+    for _ in range(3):
+        r = await _chat(client, model=model, messages=persona_msgs, tools=tools, **extra)
+        msg = r.choices[0].message
+        calls = msg.tool_calls or []
+        agree_calls = [c for c in calls if c.function.name == AGREEMENT_TOOL_NAME]
+        if not agree_calls:
+            break
+        persona_msgs.append(
+            {
+                "role": "assistant",
+                "content": msg.content or "",
+                "tool_calls": [
+                    {
+                        "id": c.id,
+                        "type": "function",
+                        "function": {"name": c.function.name, "arguments": c.function.arguments},
+                    }
+                    for c in agree_calls
+                ],
+            }
+        )
+        for c in agree_calls:
+            args = json.loads(c.function.arguments or "{}")
+            kind = AGREEMENTS.get(str(args.get("art", "")))
+            ok = bool(
+                protocol is not None
+                and kind is not None
+                and protocol.request_agreement(kind, str(args.get("details", "")))
+            )
+            agreements.append({**args, "status": "zugesagt" if ok else "abgelehnt"})
+            persona_msgs.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": c.id,
+                    "content": json.dumps({"status": "zugesagt" if ok else "abgelehnt"}),
+                }
+            )
+    text = (msg.content or "").strip()
+    hangups = [c for c in calls if c.function.name == entry.hangup_tool["name"]]
+    farewell = None
+    if hangups:
+        args = json.loads(hangups[0].function.arguments or "{}")
+        farewell = str(args.get("abschiedssatz", "")).strip()
+    return text, farewell, agreements
+
+
 async def converse(
     client: AsyncOpenAI,
     persona_model: str,
@@ -229,26 +291,20 @@ async def converse(
         caller_msgs.append({"role": "assistant", "content": line})
         persona_msgs.append({"role": "user", "content": line})
 
-        r = await _chat(
-            client,
-            model=persona_model,
-            messages=persona_msgs,
-            tools=[_tool_schema(entry.hangup_tool)],
+        text, farewell, agreements = await _persona_reply(
+            client, persona_model, persona_msgs, entry, protocol
         )
-        msg = r.choices[0].message
-        text = (msg.content or "").strip()
-        calls = [c for c in (msg.tool_calls or []) if c.function.name == entry.hangup_tool["name"]]
         if text:
             dialog.append({"sprecher": "Persona", "text": text})
-        farewell = ""
-        if calls:
-            args = json.loads(calls[0].function.arguments or "{}")
-            farewell = str(args.get("abschiedssatz", "")).strip()
+        if farewell is not None:
             dialog.append({"sprecher": "Persona", "text": farewell, "auflegen": True})
+        if agreements:
+            dialog[-1]["zusagen"] = agreements
         if protocol is not None:
-            events = await protocol.observe(line, " ".join(t for t in (text, farewell) if t))
+            reply = " ".join(t for t in (text, farewell) if t)
+            events = await protocol.observe(line, reply)
             dialog[-1]["ereignisse"] = [e.kind.value for e in events]
-        if calls:
+        if farewell is not None:
             hung_up = True
             break
         persona_msgs.append({"role": "assistant", "content": text})
@@ -322,7 +378,7 @@ def _goal_check(entry: PersonaEntry, caller: dict, protocol: Protocolist) -> dic
     }
 
 
-async def main_async(persona_name: str | None) -> None:
+async def main_async(persona_name: str | None, goal_repeats: int = 3) -> None:
     load_dotenv(_REPO_ROOT / "agent" / ".env")
     entry = get_persona(persona_name)
     persona_model = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4.1-nano")
@@ -337,7 +393,11 @@ async def main_async(persona_name: str | None) -> None:
     )
     out_dir.mkdir(parents=True, exist_ok=True)
     results = []
-    callers = CALLERS + (ZIEL_CALLERS if entry.has_logic else [])
+    # Zielanrufer mehrfach: ein Gespraech je Anrufer schwankt zu stark (2026-10-12: 3/3, dann 1/3)
+    goal_callers = [
+        {**c, "id": f"{c['id']}-{i}"} for c in ZIEL_CALLERS for i in range(1, goal_repeats + 1)
+    ]
+    callers = CALLERS + (goal_callers if entry.has_logic else [])
     for caller in callers:  # sequenziell: Ratenlimit
         protocol = Protocolist(entry.persona, client, protocol_model) if entry.persona else None
         dialog, hung_up = await converse(
@@ -392,7 +452,9 @@ async def main_async(persona_name: str | None) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(prog="role-test")
     parser.add_argument("--persona", default=None, choices=PERSONAS)
-    asyncio.run(main_async(parser.parse_args().persona))
+    parser.add_argument("--ziel-wiederholungen", type=int, default=3)
+    args = parser.parse_args()
+    asyncio.run(main_async(args.persona, args.ziel_wiederholungen))
 
 
 if __name__ == "__main__":

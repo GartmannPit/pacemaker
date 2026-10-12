@@ -43,6 +43,8 @@ from .metrics.collector import MetricsCollector
 from .metrics.run_manifest import write_manifest
 from .metrics.transcript import TranscriptRecorder, TranscriptTimingObserver
 from .personas import DEFAULT_PERSONA, PersonaEntry, get_persona
+from .personas.model import AGREEMENTS
+from .personas.prompt import AGREEMENT_TOOL_NAME
 from .personas.protocol import Protocolist
 from .stacks import build_protocol_client, build_stack
 
@@ -131,6 +133,10 @@ class _ConversationDirector:
     ein veraenderter Prompt-Anfang zerstoert Azures Prompt-Caching, siehe ContextWindowLimiter
     unten). Sie wirkt ab dem naechsten Turn -- der Latenzpfad wartet nie auf den Protokollanten.
     Zustandsverlauf: <runs>/zustand/<run_id>.jsonl.
+
+    Zusagen (Mail, Termin) laufen ueber das Werkzeug `zusagen`; ob es "zugesagt" oder
+    "abgelehnt" antwortet, entscheidet das Tor im Code. Kostet in Zusage-Turns einen
+    zusaetzlichen LLM-Durchlauf (Werkzeugaufruf, dann Antwort) -- nur dort.
     """
 
     def __init__(self, entry: PersonaEntry, context: LLMContext, log_path: Path) -> None:
@@ -156,11 +162,22 @@ class _ConversationDirector:
         async def _on_assistant(
             _aggregator: LLMAssistantAggregator, message: AssistantTurnStoppedMessage
         ) -> None:
+            if not str(message.content or "").strip():
+                return  # z. B. abgebrochen vor dem ersten Wort: Anrufertext bleibt vorgemerkt
             user = " ".join(self._pending_user).strip()
             self._pending_user.clear()
             task = asyncio.create_task(self._observe(user, str(message.content or "")))
             self._background.add(task)
             task.add_done_callback(self._background.discard)
+
+    async def agree(self, params) -> None:
+        """Werkzeug `zusagen`: Tor pruefen, Ergebnis an das LLM zurueck (es antwortet danach)."""
+        art = str(params.arguments.get("art", ""))
+        details = str(params.arguments.get("details", "")).strip()
+        kind = AGREEMENTS.get(art)
+        ok = kind is not None and self._protocol.request_agreement(kind, details)
+        logger.info(f"Zusage {art!r} ({details!r}): {'zugesagt' if ok else 'abgelehnt'}")
+        await params.result_callback({"status": "zugesagt" if ok else "abgelehnt"})
 
     async def _observe(self, user: str, reply: str) -> None:
         async with self._lock:  # Reihenfolge der Turns bleibt erhalten
@@ -247,7 +264,7 @@ def build_pipeline_task(
     use_tools = stack_name in _STACKS_WITH_TOOLS
     context = LLMContext(
         messages=[{"role": "system", "content": prompt}],
-        tools=[FunctionSchema(**entry.hangup_tool)] if use_tools else NOT_GIVEN,
+        tools=[FunctionSchema(**t) for t in entry.tools] if use_tools else NOT_GIVEN,
     )
     # vad_analyzer hier (Aggregator-Ebene), nicht am Transport: Pipecat >=1.8 haengt
     # VAD-basierte Turn-Start-Erkennung an LLMUserAggregatorParams, nicht mehr an
@@ -347,6 +364,7 @@ def build_pipeline_task(
             entry, context, collector.path.parent / "zustand" / f"{run_id}.jsonl"
         )
         director.wire(context_aggregator)
+        services.llm.register_function(AGREEMENT_TOOL_NAME, director.agree)
     observers = [
         _build_metrics_observer(collector),
         TranscriptTimingObserver(transcript),

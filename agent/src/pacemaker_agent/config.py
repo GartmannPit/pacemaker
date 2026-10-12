@@ -27,6 +27,8 @@ class AzureConfig:
     openai_endpoint: str
     openai_key: str
     openai_deployment: str
+    # Nur fuer Reasoning-Modelle (z. B. GPT-6 Luna): none, minimal, low, ... None = nicht senden
+    openai_reasoning_effort: str | None = None
 
 
 def load_azure_config() -> AzureConfig:
@@ -37,6 +39,7 @@ def load_azure_config() -> AzureConfig:
         openai_endpoint=_require("AZURE_OPENAI_ENDPOINT"),
         openai_key=_require("AZURE_OPENAI_API_KEY"),
         openai_deployment=os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4.1-mini"),
+        openai_reasoning_effort=os.environ.get("AZURE_OPENAI_REASONING_EFFORT") or None,
     )
 
 

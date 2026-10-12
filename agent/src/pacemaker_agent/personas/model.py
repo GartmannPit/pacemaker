@@ -26,6 +26,7 @@ class EventKind(StrEnum):
     OBJECTION_IGNORED = "einwand_uebergangen"
     EARLY_CLOSING = "druck_zu_frueh"
     EVASION = "ausweichen"
+    # Ueber das Werkzeug `zusagen` (Tor im Code geprueft)
     MAIL_AGREED = "mail_zugestimmt"
     MEETING_AGREED = "termin_zugestimmt"
     # Persona erzaehlt ein Problem, ohne dass danach gefragt wurde (Fehler der Persona, kein
@@ -37,6 +38,13 @@ class EventKind(StrEnum):
 
 
 # Ereignisse mit Bezug auf einen Schmerzpunkt bzw. Einwand (Feld `ref`)
+# Zusagen der Persona: entstehen nur ueber das Werkzeug `zusagen` (prompt.py), das der Code
+# gegen das Tor prueft -- nie aus dem Urteil des Protokollanten.
+AGREEMENTS: dict[str, EventKind] = {
+    "mail": EventKind.MAIL_AGREED,
+    "termin": EventKind.MEETING_AGREED,
+}
+
 PAIN_EVENTS = {EventKind.PAIN_UNCOVERED, EventKind.PAIN_CONFIRMED, EventKind.PAIN_LEAKED}
 OBJECTION_EVENTS = {EventKind.OBJECTION_ADDRESSED, EventKind.OBJECTION_IGNORED}
 

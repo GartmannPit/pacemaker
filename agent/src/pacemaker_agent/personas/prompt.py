@@ -7,9 +7,10 @@ Phase-0-Prompt (personas/kaltakquise_head_of_ops.py, Durchgang 2) und sind dort 
 
 from __future__ import annotations
 
-from .model import Persona
+from .model import AGREEMENTS, Persona
 
 HANGUP_TOOL_NAME = "auflegen"
+AGREEMENT_TOOL_NAME = "zusagen"
 
 # Wortgleich mit der Phase-0-Persona, damit PACEMAKER_SHORT_OPENER fuer alle Personas wirkt.
 OPENER_RULE = """\
@@ -55,9 +56,18 @@ _DIRECTION_RULES = """\
 REGIE
 Du bekommst im Gespraech Systemnachrichten, die mit "[Regie" beginnen. Sie beschreiben deine
 aktuelle Haltung und Geduld und was schon aufgedeckt ist. Richte dein Verhalten danach, sprich
-sie nie aus und erwaehne sie nie. Steht dort, dass etwas "noch nicht moeglich" ist, stimmst du
-dem nicht zu, sondern weichst aus oder bietest hoechstens weniger an. Deine Offenheit steigt
-nur schrittweise; du wirst nie zum begeisterten Kaeufer.
+sie nie aus und erwaehne sie nie. Deine Offenheit steigt nur schrittweise; du wirst nie zum
+begeisterten Kaeufer.
+"""
+
+_AGREEMENT_RULES = """\
+ZUSAGEN
+Ob du einer {options} zustimmst, entscheidest nicht du allein. Schlaegt der Anrufer konkret
+eines davon vor oder willst du selbst zustimmen, rufst du ZUERST das Werkzeug "zusagen" auf
+(art: {arts}), bevor du antwortest. Antwortet es "zugesagt", stimmst du kurz zu. Antwortet es
+"abgelehnt", stimmst du nicht zu, sondern weichst in deiner Rolle aus (keine Zeit, erst
+intern klaeren, wenig ueberzeugt) -- ohne das Werkzeug zu erwaehnen. Sag nie ohne das
+Werkzeug zu.
 """
 
 _ENDING = """\
@@ -92,10 +102,47 @@ def system_prompt(persona: Persona, *, short_opener: bool) -> str:
         _OBJECTION_RULES.format(objections=objections),
         _BEHAVIOR.format(opener=OPENER_RULE if short_opener else "", name=persona.name),
         _DIRECTION_RULES,
+        _agreement_rules(persona),
         _ENDING,
         f"Sprich jetzt als {persona.name}. Der Anrufer hat sich gerade gemeldet.",
     ]
-    return "\n\n".join(s.strip("\n") for s in sections) + "\n"
+    return "\n\n".join(s.strip("\n") for s in sections if s) + "\n"
+
+
+def agreement_options(persona: Persona) -> list[str]:
+    """Zusage-Arten, fuer die die Persona einen Meilenstein hat (z. B. mail, termin)."""
+    events = {m.event for m in persona.milestones}
+    return [art for art, kind in AGREEMENTS.items() if kind in events]
+
+
+def _agreement_rules(persona: Persona) -> str:
+    options = agreement_options(persona)
+    if not options:
+        return ""
+    labels = {"mail": "Mail", "termin": "Folgetermin"}
+    return _AGREEMENT_RULES.format(
+        options=" oder einem ".join(labels[o] for o in options),
+        arts=" oder ".join(f'"{o}"' for o in options),
+    )
+
+
+def agreement_tool(persona: Persona) -> dict:
+    options = agreement_options(persona)
+    return {
+        "name": AGREEMENT_TOOL_NAME,
+        "description": (
+            f"Vor jeder Zusage von {persona.name} aufrufen. Antwortet mit 'zugesagt' oder "
+            "'abgelehnt'; nur bei 'zugesagt' darf zugestimmt werden."
+        ),
+        "properties": {
+            "art": {"type": "string", "enum": options, "description": "Was zugesagt wird."},
+            "details": {
+                "type": "string",
+                "description": "Konkreter Inhalt, z. B. Tag und Uhrzeit des Termins.",
+            },
+        },
+        "required": ["art"],
+    }
 
 
 def hangup_tool(persona: Persona) -> dict:

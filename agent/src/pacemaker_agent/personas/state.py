@@ -53,6 +53,8 @@ class ConversationState:
     pain_stages: dict[str, int] = field(default_factory=dict)
     # Schmerzpunkte, die die Persona von sich aus verraten hat (zaehlen nicht fuer Meilensteine)
     leaked: set[str] = field(default_factory=set)
+    # Zusagen ueber das Werkzeug, gewertet beim naechsten apply()
+    pending: list[Event] = field(default_factory=list)
     milestones: dict[str, MilestoneHit] = field(default_factory=dict)
     history: list[dict] = field(default_factory=list)
 
@@ -84,6 +86,22 @@ class ConversationState:
             r in self.milestones for r in gate.requires
         )
 
+    # -- Zusagen (Werkzeug `zusagen`) -----------------------------------------------------
+
+    def request_agreement(self, kind: EventKind, detail: str = "") -> bool:
+        """Die Persona will zusagen. Der Code entscheidet nach dem Tor, nicht das LLM.
+
+        Erlaubt: Ereignis wird fuer den laufenden Turn vorgemerkt (Meilenstein beim naechsten
+        apply()). Abgelehnt: nichts passiert, die Persona muss ausweichen.
+        """
+        milestone = next((m for m in self.persona.milestones if m.event is kind), None)
+        if milestone is None:
+            return False
+        if milestone.id in self.milestones or self.gate_open(milestone):
+            self.pending.append(Event(kind, evidence=detail or "Zusage per Werkzeug"))
+            return True
+        return False
+
     # -- Fortschreiben --------------------------------------------------------------------
 
     def apply(self, events: list[Event], *, persona_spoke: bool = True) -> list[Event]:
@@ -95,7 +113,8 @@ class ConversationState:
         if persona_spoke:
             self.persona_turns += 1
         turn = self.persona_turns
-        accepted = self._filter(events)
+        accepted = self._filter([*self.pending, *events])
+        self.pending.clear()
 
         gates_before = {m.id: self.gate_open(m) for m in self.persona.milestones}
         for event in accepted:
@@ -215,14 +234,6 @@ class ConversationState:
             f"Aufgedeckt: {', '.join(uncovered) or 'nichts'}. "
             f"Noch verborgen: {', '.join(hidden) or 'nichts'}."
         )
-        gated = [m for m in p.milestones if m.gate is not None and m.id not in self.milestones]
-        if gated:
-            lines.append(
-                " ".join(
-                    f"{m.label}: {'moeglich' if self.gate_open(m) else 'noch nicht moeglich'}."
-                    for m in gated
-                )
-            )
         if self.wants_to_end_call:
             lines.append(
                 "Deine Geduld ist aufgebraucht: Beende das Gespraech jetzt hoeflich ueber "

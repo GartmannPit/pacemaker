@@ -119,20 +119,35 @@ def test_no_hangup_demand_in_first_three_turns() -> None:
     assert not s.wants_to_end_call
 
 
-def test_meeting_gate() -> None:
+def test_agreement_gate() -> None:
     weak = _state()
-    weak.apply([Event(EventKind.MEETING_AGREED, evidence="Donnerstag 10 Uhr")])
-    assert weak.milestones["M6"].gate_violated  # Persona stimmte trotz geschlossenem Tor zu
-    assert "Termin: noch nicht moeglich" not in weak.director_line()  # M6 ist erledigt
+    assert not weak.request_agreement(EventKind.MEETING_AGREED, "Donnerstag 10 Uhr")
+    weak.apply([])
+    assert "M6" not in weak.milestones  # abgelehnt: kein Meilenstein, keine Tor-Verletzung
+    assert weak.request_agreement(EventKind.MAIL_AGREED) is False  # Offenheit 3 < 4
 
     strong = _state()
-    assert "Termin: noch nicht moeglich" in strong.director_line()
     strong.apply([Event(EventKind.GOOD_OPEN_QUESTION), Event(EventKind.PAIN_UNCOVERED, PAIN)])
     strong.apply([Event(EventKind.PAIN_CONFIRMED, PAIN)])
     assert strong.openness >= 6 and "M3" in strong.milestones
-    assert "Termin: moeglich" in strong.director_line()
-    strong.apply([Event(EventKind.MEETING_AGREED, evidence="Dienstag 14 Uhr")])
-    assert not strong.milestones["M6"].gate_violated
+    assert strong.request_agreement(EventKind.MEETING_AGREED, "Dienstag 14 Uhr")
+    assert "M6" not in strong.milestones  # wirkt erst mit dem Turn
+    strong.apply([])
+    hit = strong.milestones["M6"]
+    assert hit.evidence == "Dienstag 14 Uhr" and not hit.gate_violated
+
+
+def test_director_line_has_no_gate_hints() -> None:
+    assert "moeglich" not in _state().director_line()  # Tor entscheidet das Werkzeug
+
+
+def test_agreement_tool_in_prompt_and_entry() -> None:
+    entry = PERSONAS["markus-brandt"]
+    names = [t["name"] for t in entry.tools]
+    assert names == ["auflegen", "zusagen"]
+    assert entry.tools[1]["properties"]["art"]["enum"] == ["mail", "termin"]
+    assert '"zusagen"' in entry.system_prompt(short_opener=False)
+    assert [t["name"] for t in PERSONAS[DEFAULT_PERSONA].tools] == ["auflegen"]
 
 
 def test_history_is_json() -> None:

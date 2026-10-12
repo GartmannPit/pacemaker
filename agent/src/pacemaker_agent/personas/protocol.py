@@ -42,10 +42,6 @@ LLM_EVENTS: dict[EventKind, str] = {
     EventKind.EARLY_CLOSING: "Anrufer draengt auf Abschluss oder Termin, bevor ein Problem "
     "der Persona besprochen wurde.",
     EventKind.EVASION: "Anrufer weicht einer direkten Frage der Persona aus.",
-    EventKind.MAIL_AGREED: "Persona stimmt in ihrer Antwort zu, dass der Anrufer ihr eine Mail "
-    "schickt.",
-    EventKind.MEETING_AGREED: "Persona stimmt in ihrer Antwort einem konkreten Folgetermin zu "
-    "(Tag und Uhrzeit oder fester Zeitraum).",
 }
 
 PROMPT = """Du protokollierst ein Vertriebs-Rollenspiel. Ein Anrufer (SDR) spricht mit der \
@@ -151,6 +147,10 @@ class Protocolist:
         self._model = model
         self._earlier_user: list[str] = []
         self._previous_reply = ""
+
+    def request_agreement(self, kind: EventKind, detail: str = "") -> bool:
+        """Werkzeug `zusagen`: prueft das Tor (state.py). Wirkt mit dem naechsten observe()."""
+        return self.state.request_agreement(kind, detail)
 
     async def observe(self, user: str, reply: str) -> list[Event]:
         """Ein Wechsel Anrufer -> Persona. Gibt die gewerteten Ereignisse zurueck."""

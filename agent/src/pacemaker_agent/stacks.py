@@ -117,10 +117,15 @@ def _build_azure_eu() -> StackServices:
     # "Asynchronous Filter" (Azure-Portal, nicht im Code). Im Default-Modus puffert
     # Azure die komplette Antwort bis zur Filterpruefung: erster Text ~265 ms spaeter
     # (gpt-4.1-nano, Direktmessung 2026-10-04). Siehe experiments/summaries/ §13.
+    # Reasoning-Modelle: Denkaufwand per AZURE_OPENAI_REASONING_EFFORT (z. B. none/low); geht
+    # ueber Settings.extra unveraendert in jede Anfrage. gpt-4.1 kennt den Parameter nicht.
+    effort = cfg.openai_reasoning_effort
+    extra = {"reasoning_effort": effort} if effort else {}
     llm = AzureLLMService(
         api_key=cfg.openai_key,
         endpoint=cfg.openai_endpoint,
         model=cfg.openai_deployment,
+        settings=AzureLLMService.Settings(extra=extra) if extra else None,
     )
     # Azure-TTS fuegt an jede Anfrage Stille an (gemessen 2026-10-07: ~0,1 s vorn,
     # ~1-1,3 s hinten; "Ach so." = 1820 ms Audio statt 450 ms). Pipecat vertont satzweise
@@ -164,6 +169,7 @@ def _build_azure_eu() -> StackServices:
                 model=cfg.openai_deployment,
                 messages=[{"role": "user", "content": "Hallo"}],
                 max_completion_tokens=1,
+                **extra,
             )
         except Exception as e:
             logger.warning(f"LLM-Aufwaermen fehlgeschlagen: {e}")
@@ -174,7 +180,10 @@ def _build_azure_eu() -> StackServices:
         stt=stt,
         llm=llm,
         tts=tts,
-        llm_model=cfg.openai_deployment,
+        # Reasoning-Stufe im Modellnamen, damit die Aggregation die Varianten trennt (wie s2s)
+        llm_model=f"{cfg.openai_deployment} (reasoning={effort})"
+        if effort
+        else cfg.openai_deployment,
         warm_up=warm_up if load_tuning_config().warm_up else None,
     )
 

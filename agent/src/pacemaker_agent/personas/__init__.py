@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import kaltakquise_head_of_ops as _p0
 from .markus_brandt import MARKUS_BRANDT
 from .model import Persona
-from .prompt import HANGUP_TOOL_NAME, hangup_tool, system_prompt
+from .prompt import HANGUP_TOOL_NAME, agreement_tool, hangup_tool, system_prompt
 
 DEFAULT_PERSONA = "markus-brandt-p0"
 
@@ -25,6 +25,11 @@ class PersonaEntry:
     build_prompt: Callable[[bool], str]  # short_opener -> Systemprompt
     hangup_tool: dict
     persona: Persona | None = None  # None: ohne Gespraechslogik (Phase 0)
+    extra_tools: tuple[dict, ...] = field(default=())  # z. B. `zusagen`
+
+    @property
+    def tools(self) -> list[dict]:
+        return [self.hangup_tool, *self.extra_tools]
 
     def system_prompt(self, *, short_opener: bool) -> str:
         return self.build_prompt(short_opener)
@@ -40,6 +45,7 @@ def _entry(persona: Persona) -> PersonaEntry:
         build_prompt=lambda short_opener: system_prompt(persona, short_opener=short_opener),
         hangup_tool=hangup_tool(persona),
         persona=persona,
+        extra_tools=(agreement_tool(persona),),
     )
 
 
