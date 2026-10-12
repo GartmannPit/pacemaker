@@ -53,7 +53,7 @@ def test_prompt_contains_persona_data() -> None:
     for pain in MARKUS_BRANDT.pains:
         assert pain.trigger in prompt and pain.impact in prompt
         assert pain.hint not in prompt  # Andeutungen erst ab Phase 2
-    assert MARKUS_BRANDT.product.name in prompt
+    assert MARKUS_BRANDT.product.name not in prompt  # Produkt nur fuer Briefing/Protokollant
     assert "[Regie" in prompt
     assert "Beginne jeden Redebeitrag" not in prompt
     assert "Beginne jeden Redebeitrag" in PERSONAS["markus-brandt"].system_prompt(short_opener=True)
@@ -163,6 +163,29 @@ def test_parse_events_drops_unknown() -> None:
         (EventKind.OBJECTION_ADDRESSED, None),
     ]
     assert parse_events("kein json", MARKUS_BRANDT) == []
+
+
+def test_parse_events_code_rules() -> None:
+    raw = json.dumps(
+        {
+            "ereignisse": [
+                {"art": "schmerz_aufgedeckt", "bezug": PAIN},
+                {"art": "einwand_behandelt", "bezug": "haben-wir-schon"},
+            ]
+        }
+    )
+    # Pitch ohne Frage, erster Wechsel: Aufdecken wird zu "verraten", Einwand faellt weg
+    events = parse_events(raw, MARKUS_BRANDT, user="PlanWerk besetzt Ausfaelle.", previous="")
+    assert [(e.kind, e.ref) for e in events] == [(EventKind.PAIN_LEAKED, PAIN)]
+
+
+def test_leaked_pain_gives_no_credit() -> None:
+    s = _state()
+    s.apply([Event(EventKind.PAIN_LEAKED, PAIN)])
+    assert s.pain_stages[PAIN] == 2 and s.leaked == {PAIN}
+    assert "M2" not in s.milestones and s.openness == MARKUS_BRANDT.dynamics.openness_start
+    s.apply([Event(EventKind.PAIN_CONFIRMED, PAIN)])
+    assert "M3" not in s.milestones
 
 
 def test_counted_events() -> None:

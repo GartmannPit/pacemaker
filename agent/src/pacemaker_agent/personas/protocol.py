@@ -26,8 +26,11 @@ LLM_EVENTS: dict[EventKind, str] = {
     "(keine Ja/Nein-Frage, kein Pitch in Frageform).",
     EventKind.CONCRETE_REFERENCE: "Anrufer bezieht sich konkret auf etwas, das der Angerufene "
     "gesagt hat (Zahl, Begriff, Problem).",
-    EventKind.PAIN_UNCOVERED: "Anrufer hat gezielt nach dem Ausloeser eines Problems gefragt "
-    "UND die Persona hat dieses Problem in ihrer Antwort konkret geschildert. bezug = Problem-ID.",
+    EventKind.PAIN_UNCOVERED: "Anrufer hat in DIESEM Beitrag eine Frage zum Ausloeser eines "
+    "Problems gestellt UND die Persona schildert dieses Problem in ihrer Antwort konkret. "
+    "bezug = Problem-ID.",
+    EventKind.PAIN_LEAKED: "Persona erzaehlt ein Problem, OHNE dass der Anrufer danach gefragt "
+    "hat (z. B. nach einem Pitch oder einer Produktbeschreibung). bezug = Problem-ID.",
     EventKind.PAIN_CONFIRMED: "Anrufer fasst ein bereits geschildertes Problem zutreffend "
     "zusammen oder fragt nach dessen Folgen, UND die Persona bestaetigt es. bezug = Problem-ID.",
     EventKind.CLAIM_INSTEAD_OF_QUESTION: "Anrufer unterstellt ein Problem, statt danach zu "
@@ -80,8 +83,14 @@ def build_prompt(persona: Persona, *, previous: str, user: str, reply: str) -> s
     )
 
 
-def parse_events(raw: str, persona: Persona) -> list[Event]:
-    """Liest die LLM-Antwort; Unbekanntes wird verworfen statt geraten."""
+def parse_events(
+    raw: str, persona: Persona, *, user: str = "?", previous: str = "x"
+) -> list[Event]:
+    """Liest die LLM-Antwort; Unbekanntes wird verworfen statt geraten.
+
+    Code-Regeln ueber dem LLM-Urteil: Aufdecken setzt eine Frage im Anruferbeitrag voraus
+    (sonst "verraten"); Einwand-Ereignisse setzen einen vorherigen Persona-Beitrag voraus.
+    """
     try:
         data = json.loads(raw or "{}")
     except json.JSONDecodeError:
@@ -98,12 +107,16 @@ def parse_events(raw: str, persona: Persona) -> list[Event]:
             continue
         if kind not in LLM_EVENTS:
             continue
+        if kind in OBJECTION_EVENTS and not previous.strip():
+            continue  # ohne vorherigen Persona-Beitrag gibt es keinen Einwand
         ref = item.get("bezug")
         ref = str(ref) if ref not in (None, "", "null") else None
         if kind in PAIN_EVENTS and (ref is None or persona.pain(ref) is None):
             continue
         if kind in OBJECTION_EVENTS and ref is not None and persona.objection(ref) is None:
             ref = None
+        if kind is EventKind.PAIN_UNCOVERED and "?" not in user:
+            kind = EventKind.PAIN_LEAKED  # ohne Frage kein Aufdecken durch den SDR
         events.append(Event(kind=kind, ref=ref, evidence=str(item.get("beleg", ""))[:200]))
     return events
 
@@ -162,4 +175,9 @@ class Protocolist:
         except Exception as exc:  # noqa: BLE001 -- Ausfall darf das Gespraech nicht stoeren
             logger.warning(f"Protokollant: Aufruf fehlgeschlagen ({exc!s:.120})")
             return []
-        return parse_events(r.choices[0].message.content or "", self.persona)
+        return parse_events(
+            r.choices[0].message.content or "",
+            self.persona,
+            user=user,
+            previous=self._previous_reply,
+        )

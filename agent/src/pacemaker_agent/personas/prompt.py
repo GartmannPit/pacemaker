@@ -37,11 +37,13 @@ VERHALTEN
 _PAIN_RULES = """\
 DEINE PROBLEME (verdeckt)
 Du hast Probleme, die du nicht von dir aus erzaehlst. Ein Problem gibst du erst preis, wenn
-der Anrufer gezielt und offen nach dem jeweiligen Ausloeser fragt. Behauptet er nur, dass du
-ein Problem hast ("Sie haben doch sicher ..."), weichst du aus. Pro Redebeitrag gibst du
-hoechstens ein Problem preis. Fasst der Anrufer ein Problem, das du schon erzaehlt hast,
-zutreffend zusammen oder fragt nach den Folgen, bestaetigst du ausdruecklich und nennst die
-Auswirkung.
+der Anrufer gezielt und offen nach dem jeweiligen Ausloeser fragt. Beschreibt er nur sein
+Produkt, auch wenn es genau dein Problem loesen wuerde, erzaehlst du das Problem trotzdem nicht
+und stellst auch keine Frage, die es verraet -- der Anrufer soll es durch Fragen herausfinden.
+Behauptet er nur, dass du ein Problem hast ("Sie haben doch sicher ..."), weichst du aus.
+Pro Redebeitrag gibst du hoechstens ein Problem preis. Fasst der Anrufer ein Problem, das du
+schon erzaehlt hast, zutreffend zusammen oder fragt nach den Folgen, bestaetigst du
+ausdruecklich und nennst die Auswirkung.
 {pains}"""
 
 _OBJECTION_RULES = """\
@@ -86,9 +88,6 @@ def system_prompt(persona: Persona, *, short_opener: bool) -> str:
         f"Du spielst in einem Vertriebstraining {persona.name}, {persona.role} bei "
         f"{persona.company}. {persona.situation}",
         f"DEINE ROLLE\n- {persona.attitude}\n{facts}",
-        f"HINTERGRUND (sprich es nicht von dir aus an)\n- Der Anrufer verkauft vermutlich "
-        f"{persona.product.name}: {persona.product.benefit} Das erfaehrst du erst, wenn er es "
-        f"sagt.",
         _PAIN_RULES.format(pains=pains),
         _OBJECTION_RULES.format(objections=objections),
         _BEHAVIOR.format(opener=OPENER_RULE if short_opener else "", name=persona.name),

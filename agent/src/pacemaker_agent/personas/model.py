@@ -28,13 +28,16 @@ class EventKind(StrEnum):
     EVASION = "ausweichen"
     MAIL_AGREED = "mail_zugestimmt"
     MEETING_AGREED = "termin_zugestimmt"
+    # Persona erzaehlt ein Problem, ohne dass danach gefragt wurde (Fehler der Persona, kein
+    # Verdienst des SDR): Problem liegt auf dem Tisch, zaehlt aber nicht fuer Meilensteine.
+    PAIN_LEAKED = "schmerz_verraten"
     # Deterministisch im Code erkannt (protocol.py)
     MONOLOGUE = "monolog"
     REPETITION = "wiederholung"
 
 
 # Ereignisse mit Bezug auf einen Schmerzpunkt bzw. Einwand (Feld `ref`)
-PAIN_EVENTS = {EventKind.PAIN_UNCOVERED, EventKind.PAIN_CONFIRMED}
+PAIN_EVENTS = {EventKind.PAIN_UNCOVERED, EventKind.PAIN_CONFIRMED, EventKind.PAIN_LEAKED}
 OBJECTION_EVENTS = {EventKind.OBJECTION_ADDRESSED, EventKind.OBJECTION_IGNORED}
 
 

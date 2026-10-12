@@ -51,6 +51,8 @@ class ConversationState:
     openness: int = 0
     persona_turns: int = 0
     pain_stages: dict[str, int] = field(default_factory=dict)
+    # Schmerzpunkte, die die Persona von sich aus verraten hat (zaehlen nicht fuer Meilensteine)
+    leaked: set[str] = field(default_factory=set)
     milestones: dict[str, MilestoneHit] = field(default_factory=dict)
     history: list[dict] = field(default_factory=list)
 
@@ -127,7 +129,10 @@ class ConversationState:
                 if e.ref is None or self.persona.pain(e.ref) is None or e.ref in moved:
                     continue
                 stage = self.pain_stages[e.ref]
-                if e.kind is EventKind.PAIN_UNCOVERED and stage >= STAGE_UNCOVERED:
+                if (
+                    e.kind in (EventKind.PAIN_UNCOVERED, EventKind.PAIN_LEAKED)
+                    and stage >= STAGE_UNCOVERED
+                ):
                     continue
                 if e.kind is EventKind.PAIN_CONFIRMED and stage != STAGE_UNCOVERED:
                     continue  # bestaetigen setzt aufgedeckt voraus, nie zwei Stufen auf einmal
@@ -142,7 +147,9 @@ class ConversationState:
 
     def _advance_pain(self, event: Event) -> None:
         assert event.ref is not None
-        target = STAGE_UNCOVERED if event.kind is EventKind.PAIN_UNCOVERED else STAGE_CONFIRMED
+        if event.kind is EventKind.PAIN_LEAKED:
+            self.leaked.add(event.ref)
+        target = STAGE_CONFIRMED if event.kind is EventKind.PAIN_CONFIRMED else STAGE_UNCOVERED
         self.pain_stages[event.ref] = max(self.pain_stages[event.ref], target)
 
     def _derive_milestones(
@@ -156,7 +163,11 @@ class ConversationState:
             if m.min_persona_turns is not None and self.persona_turns >= m.min_persona_turns:
                 evidence = f"{self.persona_turns} Beitraege ohne Auflegen"
             elif m.pain_stage is not None:
-                reached = [p for p, s in self.pain_stages.items() if s >= m.pain_stage]
+                reached = [
+                    p
+                    for p, s in self.pain_stages.items()
+                    if s >= m.pain_stage and p not in self.leaked
+                ]
                 if reached:
                     hit = next(
                         (e for e in events if e.kind in PAIN_EVENTS and e.ref in reached), None
@@ -181,6 +192,7 @@ class ConversationState:
             "offenheit": self.openness,
             "haltung": self.attitude,
             "schmerzpunkte": dict(self.pain_stages),
+            "verraten": sorted(self.leaked),
             "meilensteine": {
                 k: {"turn": v.turn, "beleg": v.evidence, "tor_verletzt": v.gate_violated}
                 for k, v in self.milestones.items()
