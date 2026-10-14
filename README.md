@@ -11,7 +11,8 @@ Ergebnisse: [`docs/phase-0-ergebnisse.md`](docs/phase-0-ergebnisse.md)
 Ein Sprachgespräch auf Deutsch mit der Persona „Markus Brandt" (Head of Operations, wird kalt
 angerufen) über Mikrofon und Lautsprecher, plus Messkette (Latenz, Turn-Protokoll, Transkript).
 Empfohlener Stack `azure-eu`: Azure AI Speech (Germany West Central) + Azure OpenAI
-`gpt-4.1-nano` (Data Zone EU). Browser/WebRTC folgt in Phase 1.
+`gpt-4.1-mini` (Data Zone EU; `nano` ist schneller, trägt die Persona aber nicht —
+`docs/phase-0-ergebnisse.md` §4). Browser/WebRTC folgt in Phase 1.
 
 ## Erstes Gespräch in < 30 Minuten
 
@@ -35,7 +36,7 @@ Kurzfassung — **alles in der EU**, sonst ist der Stack nicht produkttauglich (
 1. **Azure AI Speech**, Region **Germany West Central**, Tarif S0 (F0 reicht zum Ausprobieren).
    Unter „Keys and Endpoint" Key 1 notieren.
 2. **Azure OpenAI** (EU-Region, z. B. Sweden Central oder Germany West Central). In Azure AI
-   Foundry ein Deployment **`gpt-4.1-nano`** anlegen, Typ **„Data Zone Standard"** (nicht
+   Foundry ein Deployment **`gpt-4.1-mini`** anlegen, Typ **„Data Zone Standard"** (nicht
    „Global Standard" — das verarbeitet ggf. außerhalb der EU).
 3. **Inhaltsfilter auf „Asynchronous Filter"** stellen (Foundry → Guardrails/Content filters →
    neuen Filter mit Streaming-Modus „Asynchronous Filter" anlegen und dem Deployment zuweisen).
@@ -46,7 +47,7 @@ Kurzfassung — **alles in der EU**, sonst ist der Stack nicht produkttauglich (
 ```bash
 git clone <repo-url> && cd pacemaker/agent
 cp .env.example .env          # AZURE_SPEECH_KEY, AZURE_OPENAI_ENDPOINT (endet auf /openai/v1),
-                              # AZURE_OPENAI_API_KEY eintragen; AZURE_OPENAI_DEPLOYMENT=gpt-4.1-nano
+                              # AZURE_OPENAI_API_KEY eintragen; AZURE_OPENAI_DEPLOYMENT=gpt-4.1-mini
 uv sync
 uv run pacemaker-agent --stack azure-eu --transport local
 ```

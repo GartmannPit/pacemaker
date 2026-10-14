@@ -41,14 +41,14 @@ class StackServices:
     warm_up: Callable[[], Awaitable[None]] | None = None
 
 
-def build_stack(name: str, *, system_prompt: str) -> StackServices:
+def build_stack(name: str, *, system_prompt: str, tools: list[dict] | None = None) -> StackServices:
     """Baut die Services eines Stacks.
 
-    `system_prompt` braucht nur s2s: Kaskadierte Stacks bekommen ihn ueber den
-    LLMContext der Pipeline, der Realtime-Service bei lokaler Turn-Erkennung nicht.
+    `system_prompt` braucht s2s; kaskadierte Stacks bekommen ihn ueber den LLMContext der
+    Pipeline und nutzen ihn (mit `tools`, OpenAI-Format) nur zum Aufwaermen des Prompt-Caches.
     """
     if name == "azure-eu":
-        return _build_azure_eu()
+        return _build_azure_eu(system_prompt, tools)
     if name == "s2s":
         return _build_s2s_azure(system_prompt)
     if name == "baseline":
@@ -60,13 +60,14 @@ def build_stack(name: str, *, system_prompt: str) -> StackServices:
     raise ValueError(f"Unbekannter Stack '{name}'. Erlaubt: {', '.join(STACKS)}")
 
 
-def _build_azure_eu() -> StackServices:
+def _build_azure_eu(system_prompt: str, tools: list[dict] | None) -> StackServices:
     # Importpfade nach `uv sync` gegen die installierte Pipecat-Version pruefen
     # (siehe README-Hinweis). Bei aelteren Versionen: `from pipecat.services.azure import ...`
     import azure.cognitiveservices.speech as speechsdk
     from pipecat.services.azure.llm import AzureLLMService
     from pipecat.services.azure.stt import AzureSTTService
     from pipecat.services.azure.tts import AzureTTSService
+    from pipecat.transcriptions.language import Language
 
     cfg = load_azure_config()
 
@@ -129,16 +130,22 @@ def _build_azure_eu() -> StackServices:
             )
             return ssml.replace(sentence_tag, sentence_tag + edge, 1)
 
+    # Sprache explizit: Pipecats Default ist en-US und landet als xml:lang im SSML, auch bei
+    # deutscher Stimme (bis 2026-10-14 so gemessen; Hinweis aus docs/2026-10-14-recherche-
+    # latenzhebel.md). Pipecat richtet daran auch die Satzerkennung aus.
     tts = EdgeSilenceAzureTTSService(
         api_key=cfg.speech_key,
         region=cfg.speech_region,
-        voice=cfg.tts_voice,
+        settings=AzureTTSService.Settings(voice=cfg.tts_voice, language=Language.DE_DE),
     )
 
     async def warm_up() -> None:
         # Erster Turn war in jedem Lauf ~1,7-1,9 s statt ~1,1 s: LLM-TTFB ~1000 statt ~410 ms
         # (Kaltstart). Daher vor dem ersten Turn TTS-Verbindung oeffnen und eine
         # 1-Token-Anfrage an das LLM schicken (gleicher Client, also gleicher Verbindungspool).
+        # Mit Persona-Prompt und Werkzeugen, damit auch Azures Prompt-Cache den stabilen
+        # Anfang des ersten echten Turns kennt (bis 2026-10-14 nur "Hallo"; Treffer nicht
+        # garantiert).
         try:
             speechsdk.Connection.from_speech_synthesizer(tts._speech_synthesizer).open(True)
         except Exception as e:  # nur Optimierung, nie den Start blockieren
@@ -146,8 +153,12 @@ def _build_azure_eu() -> StackServices:
         try:
             await llm._client.chat.completions.create(
                 model=cfg.openai_deployment,
-                messages=[{"role": "user", "content": "Hallo"}],
+                messages=[
+                    *([{"role": "system", "content": system_prompt}] if system_prompt else []),
+                    {"role": "user", "content": "Hallo"},
+                ],
                 max_completion_tokens=1,
+                **({"tools": tools} if tools else {}),
             )
         except Exception as e:
             logger.warning(f"LLM-Aufwaermen fehlgeschlagen: {e}")

@@ -48,6 +48,22 @@ from .stacks import build_stack
 _STACKS_WITH_TOOLS = {"azure-eu", "baseline"}
 
 
+def _openai_tool(tool: dict) -> dict:
+    """Werkzeug im OpenAI-Format (fuer das Aufwaermen ausserhalb von Pipecats Kontext)."""
+    return {
+        "type": "function",
+        "function": {
+            "name": tool["name"],
+            "description": tool["description"],
+            "parameters": {
+                "type": "object",
+                "properties": tool["properties"],
+                "required": tool["required"],
+            },
+        },
+    }
+
+
 def _build_metrics_observer(collector: MetricsCollector) -> UserBotLatencyObserver:
     """Verdrahtet Pipecats UserBotLatencyObserver mit dem JSONL-Collector.
 
@@ -183,9 +199,10 @@ def build_pipeline_task(
     """
     tuning = load_tuning_config()
     prompt = system_prompt(short_opener=tuning.short_opener)
-    services = build_stack(stack_name, system_prompt=prompt)
-
     use_tools = stack_name in _STACKS_WITH_TOOLS
+    openai_tools = [_openai_tool(HANGUP_TOOL)] if use_tools else None
+    services = build_stack(stack_name, system_prompt=prompt, tools=openai_tools)
+
     context = LLMContext(
         messages=[{"role": "system", "content": prompt}],
         tools=[FunctionSchema(**HANGUP_TOOL)] if use_tools else NOT_GIVEN,
