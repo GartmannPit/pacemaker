@@ -3,7 +3,7 @@
 **Stand:** 2026-10-14 · **Verfasser:** Claude · **Status:** ENTWURF — alle Messungen von Claude
 abgeschlossen; Gründer-Bewertungen sind mit **[offen]** markiert.
 **Bezug:** [Phase-0-Plan](./phase-0-proof-of-concept.md) · [Bestandsaufnahme](./2026-10-08-bestandsaufnahme-muss-kriterien.md) ·
-[Testablauf](./phase-0-testablauf-gespraech.md) · Messprotokoll: [Summary §1–§24](../experiments/summaries/2026-10-03-llm-modellvergleich-deployment-typen.md)
+[Testablauf](./phase-0-testablauf-gespraech.md) · Messprotokoll: [Summary §1–§25](../experiments/summaries/2026-10-03-llm-modellvergleich-deployment-typen.md)
 
 ## 1. Kurzfassung
 
@@ -14,7 +14,8 @@ Phase 0 sollte beantworten, ob eine deutsche Sprach-Persona mit **< 900 ms p90**
   p50 ~980 ms. Das Modell, das die Persona trägt (`gpt-4.1-mini`), liegt bei p90 1250–1455 ms.
   Auch die US-Referenz und der Realtime-Stack lagen darüber. Danach geprüft und ohne
   ausreichenden Gewinn: neuere Modelle (`gpt-5.4-mini`, `gpt-6-luna`, §22), spekulativer LLM-Start
-  (−126 ms p50, §23), andere EU-STT-Dienste (Deepgram Flux EU, Gladia, §24).
+  (−126 ms p50, §23), andere EU-STT-Dienste (Deepgram Flux EU, Gladia, §24), Azure
+  TTS-Text-Streaming (langsamer, §25).
 - **Barge-in: verfehlt.** Serverseitig ≤ 300 ms nur in 0/10 (Default) bzw. 3/10 Fällen; die Zeit
   steckt in der Bestätigung des Sprechbeginns. Hörersignale („Mhm") unterbrechen die Persona fast
   immer.
@@ -143,9 +144,14 @@ Entscheidung treffen die Gründer.**
   Risikotabelle des Plans („Falls knapp verfehlt: S2S-Stack und aggressiveres
   Streaming/Endpointing prüfen, bevor No-Go") und darüber hinaus: Speech-to-Speech (§9–§12),
   Endpointing/VAD/Segmentierung (§13–§19), Modelle (§14, §20, §22), spekulativer Start (§23),
-  drei EU-STT-Dienste (§24). Bester Aufbau, der die Persona trägt: `azure-eu`/`gpt-4.1-mini`,
-  **p50 ~1,05–1,3 s, p90 ~1,3–1,8 s** je nach Tageszeit und Optionen. Die Lücke liegt bei
-  ~400–500 ms, nicht bei einzelnen Millisekunden.
+  drei EU-STT-Dienste (§24), Azure TTS-Text-Streaming (§25). Bester gemessener Aufbau, der die
+  Persona trägt: `azure-eu`/`gpt-4.1-mini`, **p50 ~1,05–1,3 s, p90 ~1,3–1,8 s** je nach
+  Tageszeit und Optionen.
+- **Korrektur (2026-10-14):** Eine erste Fassung dieses Abschnitts nannte „alle Hebel geprüft".
+  Für den Abschnitt nach dem LLM traf das nicht zu; nachgeprüft in §25. Übrig sind nur kleine,
+  teils ungemessene Hebel (kurzer Einstieg, TTS am Komma, Region, Stimme). Mit ihnen und dem
+  spekulativen Start geschätzt **p50 ~0,9 s, p90 ~1,15–1,2 s** — die Lücke zu 900 ms p90 liegt
+  dann bei ~250–300 ms statt ~400–500 ms, bleibt aber.
 - **Inhaltlich trägt der Stack:** Rollentreue erfüllt (§20), im Sprachgespräch Information in 3/53
   Fällen übergangen, kein Rollenbruch (§21). Kosten ~2,7 ct/Gesprächsminute.
 - **Das größere Gesprächsproblem ist das Turn-Taking, nicht die Latenz:** Mit echter Sprache

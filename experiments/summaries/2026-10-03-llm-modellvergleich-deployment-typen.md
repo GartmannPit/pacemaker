@@ -1077,3 +1077,33 @@ Branch `stt-vergleich`, Schalter `PACEMAKER_STT`. LLM und TTS unverändert (Azur
   Turn-Ende).
 - AVV/Unterauftragsverarbeiter von Deepgram und Gladia nicht geprüft; vor einem Produkteinsatz
   nötig.
+
+## 25. Azure TTS Text-Streaming und Abschnitt „erster Text → erstes Audio" (2026-10-14)
+
+Offener Punkt aus dem Plausibilitätscheck vom 07.09. (§1: „Azure TextStream existiert — offen").
+
+**Kurzmessung** (VM, 30 Durchgänge je Weg, abwechselnd, vorgewärmte Verbindungen, Skript
+`~/probe/tts_stream_probe.py` auf der VM): LLM `gpt-4.1-mini` (Phase-0-Persona, eine typische
+Anruferäußerung, gestreamt); **satzweise** = Tokens bis zum ersten Satzende sammeln, dann SSML
+mit Randstille 0 (wie die Pipeline); **Text-Streaming** = Tokens sofort in den `TextStream`
+des WebSocket-v2-Endpunkts. Gemessen bis zum ersten **hörbaren** Sample (Amplitude ≥ 500), nicht
+bis zum ersten Paket.
+
+| Weg | Erstes Token p50 | Erstes Paket p50 / p90 | Hörbar p50 / p90 | Token → hörbar p50 / p90 |
+|---|--:|--:|--:|--:|
+| satzweise | 392 | 682 / 966 | **704 / 988** | 301 / 492 |
+| Text-Streaming | 364 | 745 / 1119 | 871 / 1254 | 474 / 646 |
+
+**Befund:** Text-Streaming ist **~170 ms (p50) langsamer**: das erste Paket kommt später, und
+vorne stehen ~125 ms Stille. Verworfen.
+
+**Zerlegung in der Pipeline** (Logs `latenz-mini-2`, typischer Turn): Nutzer fertig → erstes
+LLM-Token 305 ms → erster Satz komplett / TTS-Anfrage +86 ms (Spanne 86–150 ms je nach Satzlänge)
+→ erstes TTS-Audio +250 ms (Spanne 250–390 ms) → Ausgabe startet +8 ms. Pipecat selbst kostet in
+diesem Abschnitt nur ~8 ms; der Abschnitt besteht aus Warten aufs Satzende und Azure-TTS.
+
+**Verbleibende kleine Hebel** (nicht gemessen, außer wo vermerkt): kurzer Einstieg
+(`PACEMAKER_SHORT_OPENER`, §14: ~50–100 ms bis zum ersten Laut, Inhalt später), erste TTS-Anfrage am
+Komma statt Satzende (~30–70 ms, Risiko abgehackter Betonung), OpenAI-Ressource nach Germany West
+Central (~20–50 ms Netz), Stimmen mit kürzerer TTS-Antwortzeit (ungeprüft). Zusammen mit dem
+spekulativen Start (§23) grob p50 ~0,9 s, p90 ~1,15–1,2 s.
