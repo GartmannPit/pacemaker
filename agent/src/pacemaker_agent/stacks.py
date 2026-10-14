@@ -39,6 +39,8 @@ class StackServices:
     llm_input_sample_rate: int | None = None
     # Optional: baut Verbindungen vor dem ersten Turn auf (Kaltstart vermeiden).
     warm_up: Callable[[], Awaitable[None]] | None = None
+    # Zusaetzliche Manifest-Eintraege (nur abweichende Schalter, config_hash sonst gleich)
+    manifest_extra: dict | None = None
 
 
 def build_stack(name: str, *, system_prompt: str, tools: list[dict] | None = None) -> StackServices:
@@ -63,6 +65,8 @@ def build_stack(name: str, *, system_prompt: str, tools: list[dict] | None = Non
 def _build_azure_eu(system_prompt: str, tools: list[dict] | None) -> StackServices:
     # Importpfade nach `uv sync` gegen die installierte Pipecat-Version pruefen
     # (siehe README-Hinweis). Bei aelteren Versionen: `from pipecat.services.azure import ...`
+    import os
+
     import azure.cognitiveservices.speech as speechsdk
     from pipecat.services.azure.llm import AzureLLMService
     from pipecat.services.azure.stt import AzureSTTService
@@ -119,7 +123,26 @@ def _build_azure_eu(system_prompt: str, tools: list[dict] | None) -> StackServic
 
     # Name muss "TTSService" enthalten: pipeline.py ordnet die TTFB-Werte daran zu
     # (mit dem frueheren Namen fehlte tts_ttfb_ms in allen Laeufen ab e327b1c).
+    # Default an seit 2026-10-14 (docs/2026-10-14-tts-vorverbindung.md, Nachtrag 1); "0" schaltet ab
+    preconnect = os.environ.get("PACEMAKER_TTS_PRECONNECT", "1") == "1"
+
     class EdgeSilenceAzureTTSService(AzureTTSService):
+        async def _handle_interruption(self, frame, direction):
+            # Pipecat unterbricht bei jedem Sprechbeginn des Nutzers, auch wenn die Persona
+            # schweigt; die Azure-TTS ruft dabei stop_speaking_async() auf, und das schliesst die
+            # Verbindung. Der erste Satz jedes Turns zahlte dann ~250-300 ms Neuaufbau
+            # (SDK-Wert SynthesisConnectionLatencyMs, Diagnose 2026-10-14). Deshalb direkt nach
+            # dem Stopp im Hintergrund neu oeffnen -- bis zur Antwort vergeht mindestens das
+            # Turn-Ende. Ein Oeffnen vor dem Stopp (bei Sprechbeginn) wurde wieder geschlossen.
+            await super()._handle_interruption(frame, direction)
+            if preconnect and self._speech_synthesizer is not None:
+                try:
+                    speechsdk.Connection.from_speech_synthesizer(self._speech_synthesizer).open(
+                        True
+                    )
+                except Exception as e:  # nur Optimierung, nie den Ablauf stoeren
+                    logger.warning(f"TTS-Vorverbindung fehlgeschlagen: {e}")
+
         def _construct_ssml(self, text: str) -> str:
             ssml = super()._construct_ssml(text)
             if edge_silence_ms is None or sentence_tag not in ssml:
@@ -133,7 +156,14 @@ def _build_azure_eu(system_prompt: str, tools: list[dict] | None) -> StackServic
     # Sprache explizit: Pipecats Default ist en-US und landet als xml:lang im SSML, auch bei
     # deutscher Stimme (bis 2026-10-14 so gemessen; Hinweis aus docs/2026-10-14-recherche-
     # latenzhebel.md). Pipecat richtet daran auch die Satzerkennung aus.
-    tts = EdgeSilenceAzureTTSService(
+    from .metrics import tts_diag
+
+    tts_class = (
+        tts_diag.instrument(EdgeSilenceAzureTTSService)
+        if tts_diag.enabled()
+        else EdgeSilenceAzureTTSService
+    )
+    tts = tts_class(
         api_key=cfg.speech_key,
         region=cfg.speech_region,
         settings=AzureTTSService.Settings(voice=cfg.tts_voice, language=Language.DE_DE),
@@ -171,6 +201,8 @@ def _build_azure_eu(system_prompt: str, tools: list[dict] | None) -> StackServic
         tts=tts,
         llm_model=cfg.openai_deployment,
         warm_up=warm_up if load_tuning_config().warm_up else None,
+        # Abweichung vom frueheren Verhalten im Manifest (config_hash trennt alte und neue Laeufe)
+        manifest_extra={"tts_preconnect": True} if preconnect else None,
     )
 
 

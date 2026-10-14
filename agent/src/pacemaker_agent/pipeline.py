@@ -281,6 +281,8 @@ def build_pipeline_task(
     ]
     pipeline = Pipeline([p for p in processors if p is not None])
 
+    if services.manifest_extra:
+        manifest_extra = {**(manifest_extra or {}), **services.manifest_extra}
     write_manifest(
         run_id,
         stack=stack_name,
