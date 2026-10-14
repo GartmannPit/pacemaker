@@ -264,6 +264,8 @@ def build_pipeline_task(
     ]
     pipeline = Pipeline([p for p in processors if p is not None])
 
+    if services.stt_label:  # nur abweichendes STT im Manifest: config_hash bisheriger Laeufe bleibt
+        manifest_extra = {**(manifest_extra or {}), "stt": services.stt_label}
     write_manifest(
         run_id,
         stack=stack_name,

@@ -39,6 +39,8 @@ class StackServices:
     llm_input_sample_rate: int | None = None
     # Optional: baut Verbindungen vor dem ersten Turn auf (Kaltstart vermeiden).
     warm_up: Callable[[], Awaitable[None]] | None = None
+    # Gesetzt, wenn STT nicht der Stack-Default ist (PACEMAKER_STT); landet im Manifest
+    stt_label: str | None = None
 
 
 def build_stack(name: str, *, system_prompt: str) -> StackServices:
@@ -60,6 +62,83 @@ def build_stack(name: str, *, system_prompt: str) -> StackServices:
     raise ValueError(f"Unbekannter Stack '{name}'. Erlaubt: {', '.join(STACKS)}")
 
 
+STT_CHOICES = ("azure", "deepgram-flux", "gladia")
+# EU-Endpunkt (api.eu.deepgram.com, /v2/listen = Flux; Verarbeitung in der EU laut Deepgram)
+DEEPGRAM_FLUX_EU_URL = "wss://api.eu.deepgram.com/v2/listen"
+
+
+def _float_env(name: str) -> float | None:
+    import os
+
+    value = os.environ.get(name)
+    return float(value) if value else None
+
+
+def _build_eu_stt(choice: str) -> object:
+    """STT-Alternative fuer den azure-eu-Stack (STT-Vergleich, 2026-10-14).
+
+    Nur EU-Verarbeitung: Deepgram ausschliesslich ueber den EU-Host, Gladia mit Region
+    eu-west. AVV/Unterauftragsverarbeiter sind vor einem Produkteinsatz zu pruefen
+    (docs/phase-0-eu-compliance.md).
+    """
+    import os
+
+    from pipecat.transcriptions.language import Language
+
+    if choice == "deepgram-flux":
+        from pipecat.services.deepgram.flux.stt import DeepgramFluxSTTService
+
+        url = os.environ.get("DEEPGRAM_FLUX_URL", DEEPGRAM_FLUX_EU_URL)
+        if ".eu." not in url:
+            raise ValueError(f"Deepgram nur ueber den EU-Endpunkt (CLAUDE.md), nicht {url}")
+        return DeepgramFluxSTTService(
+            api_key=os.environ["DEEPGRAM_API_KEY"],
+            url=url,
+            # Kein Audio fuer Deepgrams Model Improvement Program (Default waere Teilnahme)
+            mip_opt_out=True,
+            # Flux entscheidet das Turn-Ende selbst (Default eot_threshold 0,7); niedriger =
+            # frueher, aber oefter zu frueh. DEEPGRAM_FLUX_EOT_THRESHOLD fuer Experimente.
+            settings=DeepgramFluxSTTService.Settings(
+                model="flux-general-multi",
+                language_hints=[Language.DE],
+                eot_threshold=_float_env("DEEPGRAM_FLUX_EOT_THRESHOLD"),
+            ),
+        )
+    if choice == "gladia":
+        from pipecat.frames.frames import TranscriptionFrame
+        from pipecat.services.gladia.config import LanguageConfig
+        from pipecat.services.gladia.stt import GladiaSTTService
+
+        class FinalizingGladiaSTTService(GladiaSTTService):
+            """Markiert Gladias finale Transkripte als `finalized` (wie Azure und Flux).
+
+            Pipecats Gladia-Anbindung setzt die Markierung nicht; die Turn-Stop-Strategie wartet
+            dann bei jedem Turn die Sicherheitsfrist GLADIA_TTFS_P99 (1,49 s) ab, statt beim
+            finalen Transkript sofort zu schliessen (Test 2026-10-14).
+            """
+
+            async def push_frame(self, frame, direction=None):
+                if isinstance(frame, TranscriptionFrame) and not frame.finalized:
+                    frame.finalized = True
+                if direction is None:
+                    await super().push_frame(frame)
+                else:
+                    await super().push_frame(frame, direction)
+
+        return FinalizingGladiaSTTService(
+            api_key=os.environ["GLADIA_API_KEY"],
+            region="eu-west",
+            # Ohne endpointing schliesst Gladia Aeusserungen spaet ab; Pipecat wartet dann
+            # bis GLADIA_TTFS_P99 (1,49 s) auf das finale Transkript (Test 2026-10-14: Turn-Ende
+            # in jedem Turn genau ~1492 ms). GLADIA_ENDPOINTING_SECS fuer Experimente.
+            settings=GladiaSTTService.Settings(
+                language_config=LanguageConfig(languages=["de"], code_switching=False),
+                endpointing=_float_env("GLADIA_ENDPOINTING_SECS") or 0.1,
+            ),
+        )
+    raise ValueError(f"Unbekannte STT-Wahl '{choice}'. Erlaubt: {', '.join(STT_CHOICES)}")
+
+
 def _build_azure_eu() -> StackServices:
     # Importpfade nach `uv sync` gegen die installierte Pipecat-Version pruefen
     # (siehe README-Hinweis). Bei aelteren Versionen: `from pipecat.services.azure import ...`
@@ -69,7 +148,9 @@ def _build_azure_eu() -> StackServices:
     from pipecat.services.azure.tts import AzureTTSService
 
     cfg = load_azure_config()
+    import os
 
+    stt_choice = os.environ.get("PACEMAKER_STT", "azure")
     stt = AzureSTTService(
         api_key=cfg.speech_key,
         region=cfg.speech_region,
@@ -97,6 +178,8 @@ def _build_azure_eu() -> StackServices:
         speechsdk.PropertyId.Speech_SegmentationSilenceTimeoutMs,
         str(load_tuning_config().stt_segmentation_ms),
     )
+    if stt_choice != "azure":
+        stt = _build_eu_stt(stt_choice)
     # Azure-OpenAI-Deployments brauchen den Inhaltsfilter im Streaming-Modus
     # "Asynchronous Filter" (Azure-Portal, nicht im Code). Im Default-Modus puffert
     # Azure die komplette Antwort bis zur Filterpruefung: erster Text ~265 ms spaeter
@@ -160,6 +243,7 @@ def _build_azure_eu() -> StackServices:
         tts=tts,
         llm_model=cfg.openai_deployment,
         warm_up=warm_up if load_tuning_config().warm_up else None,
+        stt_label=None if stt_choice == "azure" else stt_choice,
     )
 
 
