@@ -1016,3 +1016,64 @@ der starke Anrufer deshalb den Termin, einmal direkt nach bestätigtem Schmerzpu
 6. **Folge:** Ein Modellwechsel bringt das Latenzkriterium nicht in Reichweite (LLM-Anteil
    ~400 ms von ~1,35–1,45 s p90). `gpt-4.1-mini` bleibt Empfehlung. Größere Hebel: spekulativer
    LLM-Start vor dem finalen STT-Ergebnis, Turn-Erkennung bei echter Sprache.
+
+## 23. Spekulativer LLM-Start (2026-10-12)
+
+Präregistriert: [`docs/2026-10-12-spekulativer-start.md`](../../docs/2026-10-12-spekulativer-start.md)
+(Branch `spekulativer-start`). Eine zweite, schnelle Silero-VAD (Pausenschwelle 0,08 s) startet
+LLM und TTS bei Beginn einer Pause mit dem bisherigen Text; eine Schleuse hält das Audio zurück,
+bis die reguläre Turn-Erkennung denselben Text bestätigt. Schalter `PACEMAKER_SPECULATION=1`.
+
+**Messung:** VM, `azure-eu`/`gpt-4.1-mini`, Referenzkonfiguration, 3 × 30 Turns ohne und 3 × 30
+mit Spekulation, abwechselnd. Daten `experiments/runs/spekulation-mini/` (VM-Kopie
+`~/pacemaker-spec`). **Abweichung:** Der erste Anlauf lief mit veralteten Test-Clips vom Laptop
+(lange Satzpausen, Äußerungen zerfielen auch ohne Spekulation) und ist ungültig
+(`spekulation-mini-ungueltig-alte-clips/`); wiederholt mit den Clips des `main`-Checkouts. Eine
+Sitzung mit Azure-STT-Dienstfehler („Quota exceeded", 1007) wurde automatisch wiederholt.
+
+| Bedingung | Turns | Turn-Ende p50 | Erster Text p50 | Erstes Audio p50 / p90 |
+|---|--:|--:|--:|--:|
+| ohne | 68 | 347 | 717 | 1182 / 1362 |
+| mit | 72 | 344 | 629 | 1056 / 1298 |
+
+- **Primärkriterium (≥ 150 ms bei p50) verfehlt:** −126 ms p50, −64 ms p90. Keine neuen Fehler
+  (keine vorzeitig hörbare oder doppelte Antwort, Auflegen erst nach Bestätigung).
+- 181 Starts für 81 Bestätigungen: ~1,4 verworfene LLM-Aufrufe je beantwortetem Turn, fast alle
+  wegen neuen Zwischentranskripts während der Pause. Vorsprung bestätigter Spekulationen p50 73 ms,
+  max. 253 ms.
+- **Befund:** Der Abschnitt bis zum Turn-Ende besteht im Wesentlichen aus dem Warten auf das finale
+  Azure-Transkript; das Zwischentranskript ist bei Pausenbeginn meist unvollständig (letztes Wort
+  fehlt). Die Spekulation kann daran nichts ändern.
+- Nicht in die Referenzkonfiguration übernommen; Code bleibt abschaltbar auf dem Branch. Vor einem
+  Einsatz: T1-Lauf mit echter Sprache und gemessene Mehrkosten (Überschlag +0,5–2 ct/Min.).
+
+## 24. STT-Vergleich: Azure, Deepgram Flux (EU), Gladia (EU) (2026-10-14)
+
+Branch `stt-vergleich`, Schalter `PACEMAKER_STT`. LLM und TTS unverändert (Azure). Deepgram Flux
+`flux-general-multi` mit Sprachhinweis Deutsch, ausschließlich über `api.eu.deepgram.com`,
+`mip_opt_out`; Gladia `solaria-1`, Region `eu-west`, Deutsch.
+
+**Gladia-Korrektur:** Pipecats Gladia-Anbindung markiert finale Transkripte nicht als
+`finalized`; die Turn-Stop-Strategie wartet dann in jedem Turn die Sicherheitsfrist
+`GLADIA_TTFS_P99` (1,49 s) ab (Turn-Ende konstant ~1492 ms). Unser Adapter setzt die Markierung
+(wie Azure und Flux); `endpointing` allein half nicht.
+
+**Messung:** VM, `gpt-4.1-mini`, je 2 × 30 Turns, abwechselnd (Azure, Flux, Gladia), Flux mit
+`eot_threshold` 0,5 (lokal schneller als der Default 0,7). Daten `experiments/runs/stt-vergleich/`.
+
+| STT | Turn-Ende p50 / p90 | Erster Text p50 | Erstes Audio p50 / p90 |
+|---|--:|--:|--:|
+| Azure | 357 / 463 | 832 | 1312 / 1837 |
+| Deepgram Flux (EU) | 367 / 685 | 946 | 1362 / 1718 |
+| Gladia (EU) | 597 / 746 | 1022 | 1546 / 1840 |
+
+- **Kein Anbieter schneller als Azure.** Flux gleichauf (p50 +50 ms, p90 −120 ms beim ersten Audio;
+  im Rahmen der Streuung), Gladia ~240 ms langsamer bis zum Turn-Ende und mit einem zu früh
+  beendeten Turn je Sitzung.
+- Azure OpenAI war an diesem Vormittag insgesamt langsamer als am 12.10. (erster Text p50 832 statt
+  717 ms ohne Spekulation, §23) — absolute Werte schwanken mit der Tageszeit, der Vergleich bleibt
+  durch die abwechselnde Reihenfolge fair.
+- Lokal (Laptop) gleiche Rangfolge (Azure 392, Flux 0,5: 464, Gladia 590, Flux 0,7: 665 ms
+  Turn-Ende).
+- AVV/Unterauftragsverarbeiter von Deepgram und Gladia nicht geprüft; vor einem Produkteinsatz
+  nötig.

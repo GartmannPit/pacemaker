@@ -1,9 +1,9 @@
 # Phase 0 — Ergebnisse
 
-**Stand:** 2026-10-12 · **Verfasser:** Claude · **Status:** ENTWURF — alle Messungen von Claude
+**Stand:** 2026-10-14 · **Verfasser:** Claude · **Status:** ENTWURF — alle Messungen von Claude
 abgeschlossen; Gründer-Bewertungen sind mit **[offen]** markiert.
 **Bezug:** [Phase-0-Plan](./phase-0-proof-of-concept.md) · [Bestandsaufnahme](./2026-10-08-bestandsaufnahme-muss-kriterien.md) ·
-[Testablauf](./phase-0-testablauf-gespraech.md) · Messprotokoll: [Summary §1–§21](../experiments/summaries/2026-10-03-llm-modellvergleich-deployment-typen.md)
+[Testablauf](./phase-0-testablauf-gespraech.md) · Messprotokoll: [Summary §1–§24](../experiments/summaries/2026-10-03-llm-modellvergleich-deployment-typen.md)
 
 ## 1. Kurzfassung
 
@@ -12,7 +12,9 @@ Phase 0 sollte beantworten, ob eine deutsche Sprach-Persona mit **< 900 ms p90**
 
 - **Latenz: verfehlt.** Bester EU-Stack (`azure-eu`, `gpt-4.1-nano`) p90 1058–1231 ms je Lauf,
   p50 ~980 ms. Das Modell, das die Persona trägt (`gpt-4.1-mini`), liegt bei p90 1250–1455 ms.
-  Auch die US-Referenz und der Realtime-Stack lagen darüber.
+  Auch die US-Referenz und der Realtime-Stack lagen darüber. Danach geprüft und ohne
+  ausreichenden Gewinn: neuere Modelle (`gpt-5.4-mini`, `gpt-6-luna`, §22), spekulativer LLM-Start
+  (−126 ms p50, §23), andere EU-STT-Dienste (Deepgram Flux EU, Gladia, §24).
 - **Barge-in: verfehlt.** Serverseitig ≤ 300 ms nur in 0/10 (Default) bzw. 3/10 Fällen; die Zeit
   steckt in der Bestätigung des Sprechbeginns. Hörersignale („Mhm") unterbrechen die Persona fast
   immer.
@@ -30,7 +32,7 @@ Die Go/No-Go-Einschätzung in §6 behandelt, ob und wie es trotzdem weitergehen 
 
 | # | Kriterium | Status | Ergebnis | Beleg |
 |---|---|---|---|---|
-| 1 | Latenz p90 < 900 ms (EU, ≥ 30 Turns, VM) | **verfehlt** | nano p90 1058–1231 ms; mini 1250–1455 ms | §15, §14, §21, §9, §12 |
+| 1 | Latenz p90 < 900 ms (EU, ≥ 30 Turns, VM) | **verfehlt** | nano p90 1058–1231 ms; mini 1250–1455 ms; alle weiteren Hebel ohne ausreichenden Gewinn | §15, §14, §21–§24, §9, §12 |
 | 2 | Sprachqualität ≥ 3,5 (beide Gründer) | **[offen]** | Blind-A/B-Paket bereit (`tests/voice_samples.py`) | — |
 | 3 | Barge-in ≤ 300 ms in ≥ 9/10 | **verfehlt** | 0/10 (VAD-Start 0,2 s), 3/10 (0,1 s), serverseitig; Live-Test **[offen]** | §19 |
 | 4 | Rollen-Konsistenz, 10 Gespräche | **erfüllt (Textmodus, mini)** | 0/10 Rollenbrüche, Gespräche 4–6 Beiträge; nano verfehlt | §20 |
@@ -53,10 +55,16 @@ EU-Stack (souverän) nicht gebaut.
 | `azure-eu` / `mini`, mit Einstieg | VM, 3 × 30 Turns | 1043–1119 | 1227–1324 | §14 |
 | `azure-eu` / `mini`, optimiert | VM, 3 × 30 Turns | 1084–1270 | 1250–1455 je Sitzung | §21 |
 | `azure-eu` / `mini`, Gespräch T1 | VM, Pits Aufnahmen, ohne F1/F2 | 1187 | 1830 | §21 |
+| `azure-eu` / `mini` + spekulativer Start | VM, 3 × 30 Turns (gepoolt) | 1056 | 1298 | §23 |
+| `mini` mit Deepgram Flux (EU) statt Azure STT | VM, 2 × 30 Turns (gepoolt, Vormittag) | 1362 | 1718 | §24 |
+| `mini` mit Gladia (EU) statt Azure STT | VM, 2 × 30 Turns (gepoolt, Vormittag) | 1546 | 1840 | §24 |
 | Realtime `gpt-realtime-2.1` (`minimal`) | Laptop | 1208 | 2048 | §11/§12 |
 | US-Referenz (Deepgram, OpenAI, ElevenLabs) | Laptop, nicht optimiert | 1224 | 1501 | §12 |
 
 Zerlegung (nano, p50): Turn-Erkennung ~350 ms, LLM bis erster Text ~360 ms, TTS ~110–130 ms.
+Zerlegung (mini, p50, 72 Turns): Sprechende → Turn-Ende 348 ms, → erster Text +344 ms, → erstes
+Audio +414 ms. Der erste Abschnitt ist im Wesentlichen das Warten auf das finale Azure-Transkript;
+selbst ein Start genau beim Sprechende ließe ~760 ms p50 / ~1070 ms p90 übrig (§23).
 Wirksame Hebel waren asynchroner Inhaltsfilter (−265 ms), TTS-Randstille 0 (−330 ms Inhalt),
 Aufwärmen, Segmentierung 100 ms; nicht wirksam: längerer VAD-Stopp, Kontextkürzung, Smart-Turn-CPU.
 
@@ -105,7 +113,10 @@ DPA/AVV, Product Terms, Missbrauchsüberwachung (30 Tage), Smart Turn vs. Prosod
 **`azure-eu` mit `gpt-4.1-mini`** (Data Zone EU), Azure Speech S0 Germany West Central, Stimme
 **[offen: Blind-A/B]**, asynchroner Inhaltsfilter, Prompt-Durchgang 2. Begründung: einziger
 getesteter EU-Stack, der die Persona trägt (§20); `nano` ist ~150 ms schneller, legt aber fast
-sofort auf. Latenzabstand zur Vorgabe bewusst in Kauf genommen, siehe §6.
+sofort auf. Latenzabstand zur Vorgabe bewusst in Kauf genommen, siehe §6. Neuere Modelle
+(`gpt-5.4-mini`, `gpt-6-luna`) sind langsamer bis zum ersten Satz (§22); Deepgram Flux (EU) ist als
+STT gleich schnell und als Alternative vorbereitet (§24), AVV ungeprüft. Spekulativer Start als
+abschaltbare Option vorhanden, nicht empfohlen ohne T1-Lauf und Kostenmessung (§23).
 
 ## 5. Was uns überrascht hat
 
@@ -123,7 +134,46 @@ sofort auf. Latenzabstand zur Vorgabe bewusst in Kauf genommen, siehe §6.
 
 ## 6. Go/No-Go-Einschätzung
 
-**[Entwurf — wird nach den offenen Messungen finalisiert.]**
+**Entscheidungsgrundlage für das Gespräch Pit/Marvin (Plan, Woche 4, Schritt 24). Die
+Entscheidung treffen die Gründer.**
+
+### 6.1 Was feststeht
+
+- **900 ms p90 sind mit heutigen EU-Diensten nicht erreichbar.** Geprüft wurden alle Hebel aus der
+  Risikotabelle des Plans („Falls knapp verfehlt: S2S-Stack und aggressiveres
+  Streaming/Endpointing prüfen, bevor No-Go") und darüber hinaus: Speech-to-Speech (§9–§12),
+  Endpointing/VAD/Segmentierung (§13–§19), Modelle (§14, §20, §22), spekulativer Start (§23),
+  drei EU-STT-Dienste (§24). Bester Aufbau, der die Persona trägt: `azure-eu`/`gpt-4.1-mini`,
+  **p50 ~1,05–1,3 s, p90 ~1,3–1,8 s** je nach Tageszeit und Optionen. Die Lücke liegt bei
+  ~400–500 ms, nicht bei einzelnen Millisekunden.
+- **Inhaltlich trägt der Stack:** Rollentreue erfüllt (§20), im Sprachgespräch Information in 3/53
+  Fällen übergangen, kein Rollenbruch (§21). Kosten ~2,7 ct/Gesprächsminute.
+- **Das größere Gesprächsproblem ist das Turn-Taking, nicht die Latenz:** Mit echter Sprache
+  spricht die Persona bei Denkpausen in ~1/3 der Äußerungen hinein (T1, F3 23/63), und Hörersignale
+  („Mhm") unterbrechen sie (§19). Das merkt ein Nutzer vermutlich stärker als 300 ms mehr
+  Antwortzeit.
+
+### 6.2 Was noch fehlt (Gründer)
+
+Stimmbewertung Blind-A/B (Muss 2), Barge-in live mit Headset, README-Probelauf (Muss 8),
+AVV-/DPA-Prüfung (Muss 5), Einordnung Smart Turn vs. Prosodie-Verbot. Fällt die Stimmbewertung
+durch oder ist ein AVV nicht zu bekommen, ändert das die Lage stärker als jede Latenzzahl.
+
+### 6.3 Optionen
+
+| Option | Inhalt | Voraussetzung | Risiko |
+|---|---|---|---|
+| **A — Go mit angepasstem Ziel** | Phase 1 mit `azure-eu`/`mini`. Latenzziel neu: z. B. p50 ≤ 1,2 s, p90 ≤ 1,5 s. Früh ein Nutzertest: Empfinden SDRs ~1,2 s im Training als störend? Schwerpunkt Turn-Taking (Denkpausen, Hörersignale) | Muss 2, 5, 8 bestanden; Lasttest (Prio 0) | Nutzer empfinden die Pausen als unnatürlich; das Produktversprechen „ohne Verzögerung" (Landingpage) muss angepasst werden |
+| **B — No-Go / Umbau** | Wenn ~900 ms für das Produkt unverzichtbar sind: Projekt in dieser Form anhalten | — | Kein Weg innerhalb der EU-Vorgaben in Sicht; Lockerung der Vorgaben (US-Dienste) widerspricht der Positionierung |
+| **C — Warten und nachmessen** | Kein Phase-1-Start; Messwerkzeuge stehen, Nachmessung bei neuen Diensten (z. B. Flux-Updates, schnellere EU-Modelle) | — | Zeitverlust ohne Garantie |
+
+### 6.4 Einschätzung (Claude)
+
+Option A ist vertretbar, **wenn** die offenen Gründer-Punkte bestehen und ein früher Nutzertest
+zeigt, dass ~1,2 s im Trainingskontext akzeptiert werden. Ob das so ist, kann ich aus den Messungen
+nicht ableiten — normale Gesprächspausen liegen deutlich darunter, ein Trainingsgespräch mit einer
+erkennbaren KI ist aber kein normales Telefonat. Unabhängig von der Option sollte die
+Landingpage-Aussage „ohne Verzögerung" angepasst werden, solange das Ziel nicht erreicht ist.
 
 ## 7. Offene Punkte
 
@@ -135,5 +185,7 @@ sofort auf. Latenzabstand zur Vorgabe bewusst in Kauf genommen, siehe §6.
 | DPA, Hetzner-AVV, Product Terms, Missbrauchsüberwachung | Pit |
 | Smart Turn vs. Prosodie-Verbot | Pit |
 | Aufnahmen der Robustheitsprobe löschen (Einwilligung) | nach Abschluss Phase 0 |
-| **Prio 0 für Phase 1 — Lasttest gleichzeitiger Gespräche:** Alle Phase-0-Messungen laufen mit genau einem Gespräch (Messhygiene, Summary §13.6). Ob das System mehrere Nutzer gleichzeitig trägt, ist ungeprüft; im Tarif F0 scheiterte bereits die zweite STT-Verbindung („Quota exceeded“, Testablauf Nachtrag 2). Vorgehen: tatsächliche Kontingente auslesen (Azure Speech S0: gleichzeitige STT-Verbindungen; Azure OpenAI: TPM/RPM des Deployments), dann 1 / 5 / 10 synthetische Anrufer gleichzeitig (`synthetic_caller` parallel), je Stufe E2E-p50/p90, Fehlerquote und CPU-Last des Agents (Silero VAD + Smart Turn je Sitzung). Kriterium: p90 < 900 ms und keine Dienstfehler auch unter Last. Nur ohne andere laufende Messung. Ergebnis bestimmt Kontingent-Anhebung, Deployment-Typ (Standard vs. reservierte Kapazität) und Agent-Dimensionierung. | Phase 1, Claude — vor allem anderen |
+| Go/No-Go-Gespräch (§6) | Pit, Marvin |
+| AVV Deepgram/Gladia prüfen, falls Flux als STT-Alternative in Frage kommt (§24) | Pit |
+| **Prio 0 für Phase 1 — Lasttest gleichzeitiger Gespräche:** Alle Phase-0-Messungen laufen mit genau einem Gespräch (Messhygiene, Summary §13.6). Ob das System mehrere Nutzer gleichzeitig trägt, ist ungeprüft; im Tarif F0 scheiterte bereits die zweite STT-Verbindung („Quota exceeded“, Testablauf Nachtrag 2). Vorgehen: tatsächliche Kontingente auslesen (Azure Speech S0: gleichzeitige STT-Verbindungen; Azure OpenAI: TPM/RPM des Deployments), dann 1 / 5 / 10 synthetische Anrufer gleichzeitig (`synthetic_caller` parallel), je Stufe E2E-p50/p90, Fehlerquote und CPU-Last des Agents (Silero VAD + Smart Turn je Sitzung). Kriterium: keine Dienstfehler und Latenz unter Last nicht spürbar schlechter als im Einzelgespräch (Grenze mit dem neuen Latenzziel aus §6 festlegen; 900 ms sind auch einzeln nicht erreichbar). Hinweis: Auch mit Speech S0 trat am 2026-10-12 einmal „Quota exceeded" auf (§23). Nur ohne andere laufende Messung. Ergebnis bestimmt Kontingent-Anhebung, Deployment-Typ (Standard vs. reservierte Kapazität) und Agent-Dimensionierung. | Phase 1, Claude — vor allem anderen |
 | **Kosten-ToDo STT-Streaming:** Die Pipeline streamt das Mikrofon das ganze Gespräch lang an Azure STT; abgerechnet wird gestreamtes Audio (~1,7 ct/Min., über die Hälfte der Speech-Kosten). Audio nur senden, wenn die lokale VAD Sprache erkennt (mit kurzem Vorlauf-Puffer, damit Wortanfänge nicht fehlen), könnte die Persona-Redezeit und Stille einsparen — grob bis zur Hälfte der STT-Kosten. Vorher prüfen: Abrechnungsbasis bei Azure bestätigen, Wiedereinstieg/Latenz des STT-Streams, Erkennungsgenauigkeit, Barge-in unverändert (läuft über die lokale VAD). | Phase 1, Claude |
