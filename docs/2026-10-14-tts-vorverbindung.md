@@ -64,3 +64,21 @@ p50.
   `tts_preconnect` im Manifest; ihr `config_hash` unterscheidet sie von früheren.
 - Offen: Die Azure-Server-Zeit (130–190 ms in der Pipeline gegenüber ~30 ms erstes Paket im
   isolierten Test); Kandidaten Abtastrate 24 kHz, Wort-Zeitmarken, SSML.
+
+## Nachtrag 2 (2026-10-14): Offene Server-Zeit — Abtastrate und Wort-Zeitmarken ohne Einfluss
+
+Kurzmessung auf der VM (`~/probe/azure_rate_wb.py`): 16 gegen 24 kHz × Wort-Zeitmarken an/aus,
+sonst wie die Pipeline (Sprache, WebSocket-Property, Pipecat-SSML); je Variante mehrere frisch
+aufgebaute Verbindungen, Varianten abwechselnd, 1 s Abstand. Messwert
+`SynthesisServiceLatencyMs` (Server-Zeit), Median je Verbindungsrunde:
+
+| Lauf | 16 kHz / aus | 16 kHz / an | 24 kHz / aus | 24 kHz / an |
+|---|---|---|---|---|
+| 1 (5 Runden) | 228, 214, 201, 201, 28 | 47, 37, 33, 29, 24 | 202, 216, 202, 210, 28 | 220, 211, 202, 176, 38 |
+| 2 (4 Runden, Aufbau-Reihenfolge rotiert) | 10, 36, 37, 28 | 20, 29, 29, 20 | 10, 37, 38, 38 | 11, 34, 48, 28 |
+
+**Befund:** Kein konsistenter Einfluss von Abtastrate oder Wort-Zeitmarken. Die Server-Zeit
+schwankt zeitlich zwischen ~10–40 ms und ~200 ms für alle Varianten gleichzeitig (Lauf 2 eine halbe
+Stunde nach Lauf 1: durchgehend schnell). Die Lücke zwischen isolierten Tests (~30 ms) und der
+Pipeline-Messung (130–190 ms) ist damit Messzeitpunkt, keine Konfiguration. Kein weiterer Hebel auf
+unserer Seite; A/B-Vergleiche bleiben nur mit abwechselnder Reihenfolge gültig.
