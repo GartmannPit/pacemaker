@@ -3,7 +3,7 @@
 **Stand:** 2026-10-14 · **Verfasser:** Claude · **Status:** ENTWURF — alle Messungen von Claude
 abgeschlossen; Gründer-Bewertungen sind mit **[offen]** markiert.
 **Bezug:** [Phase-0-Plan](./phase-0-proof-of-concept.md) · [Bestandsaufnahme](./2026-10-08-bestandsaufnahme-muss-kriterien.md) ·
-[Testablauf](./phase-0-testablauf-gespraech.md) · Messprotokoll: [Summary §1–§25](../experiments/summaries/2026-10-03-llm-modellvergleich-deployment-typen.md)
+[Testablauf](./phase-0-testablauf-gespraech.md) · Messprotokoll: [Summary §1–§26](../experiments/summaries/2026-10-03-llm-modellvergleich-deployment-typen.md)
 
 ## 1. Kurzfassung
 
@@ -15,7 +15,8 @@ Phase 0 sollte beantworten, ob eine deutsche Sprach-Persona mit **< 900 ms p90**
   Auch die US-Referenz und der Realtime-Stack lagen darüber. Danach geprüft und ohne
   ausreichenden Gewinn: neuere Modelle (`gpt-5.4-mini`, `gpt-6-luna`, §22), spekulativer LLM-Start
   (−126 ms p50, §23), andere EU-STT-Dienste (Deepgram Flux EU, Gladia, §24), Azure
-  TTS-Text-Streaming (langsamer, §25).
+  TTS-Text-Streaming (langsamer, §25), Deepgram Aura-2 als TTS (langsamer, §26). Übernommen:
+  TTS-Vorverbindung (−95 ms p50 / −107 ms p90, §26).
 - **Barge-in: verfehlt.** Serverseitig ≤ 300 ms nur in 0/10 (Default) bzw. 3/10 Fällen; die Zeit
   steckt in der Bestätigung des Sprechbeginns. Hörersignale („Mhm") unterbrechen die Persona fast
   immer.
@@ -57,6 +58,7 @@ EU-Stack (souverän) nicht gebaut.
 | `azure-eu` / `mini`, optimiert | VM, 3 × 30 Turns | 1084–1270 | 1250–1455 je Sitzung | §21 |
 | `azure-eu` / `mini`, Gespräch T1 | VM, Pits Aufnahmen, ohne F1/F2 | 1187 | 1830 | §21 |
 | `azure-eu` / `mini` + spekulativer Start | VM, 3 × 30 Turns (gepoolt) | 1056 | 1298 | §23 |
+| `azure-eu` / `mini` + TTS-Vorverbindung (Default seit 14.10.) | VM, 3 × 30 Turns (gepoolt) | 1106 | 1335 | §26 |
 | `mini` mit Deepgram Flux (EU) statt Azure STT | VM, 2 × 30 Turns (gepoolt, Vormittag) | 1362 | 1718 | §24 |
 | `mini` mit Gladia (EU) statt Azure STT | VM, 2 × 30 Turns (gepoolt, Vormittag) | 1546 | 1840 | §24 |
 | Realtime `gpt-realtime-2.1` (`minimal`) | Laptop | 1208 | 2048 | §11/§12 |
@@ -117,7 +119,8 @@ getesteter EU-Stack, der die Persona trägt (§20); `nano` ist ~150 ms schneller
 sofort auf. Latenzabstand zur Vorgabe bewusst in Kauf genommen, siehe §6. Neuere Modelle
 (`gpt-5.4-mini`, `gpt-6-luna`) sind langsamer bis zum ersten Satz (§22); Deepgram Flux (EU) ist als
 STT gleich schnell und als Alternative vorbereitet (§24), AVV ungeprüft. Spekulativer Start als
-abschaltbare Option vorhanden, nicht empfohlen ohne T1-Lauf und Kostenmessung (§23).
+abschaltbare Option vorhanden, nicht empfohlen ohne T1-Lauf und Kostenmessung (§23). TTS mit
+Sprache `de-DE` und Vorverbindung nach Unterbrechungen (Default, §26).
 
 ## 5. Was uns überrascht hat
 
@@ -148,10 +151,15 @@ Entscheidung treffen die Gründer.**
   Persona trägt: `azure-eu`/`gpt-4.1-mini`, **p50 ~1,05–1,3 s, p90 ~1,3–1,8 s** je nach
   Tageszeit und Optionen.
 - **Korrektur (2026-10-14):** Eine erste Fassung dieses Abschnitts nannte „alle Hebel geprüft".
-  Für den Abschnitt nach dem LLM traf das nicht zu; nachgeprüft in §25. Übrig sind nur kleine,
-  teils ungemessene Hebel (kurzer Einstieg, TTS am Komma, Region, Stimme). Mit ihnen und dem
-  spekulativen Start geschätzt **p50 ~0,9 s, p90 ~1,15–1,2 s** — die Lücke zu 900 ms p90 liegt
-  dann bei ~250–300 ms statt ~400–500 ms, bleibt aber.
+  Für den Abschnitt nach dem LLM traf das nicht zu; nachgeprüft in §25/§26: TTS-Text-Streaming
+  und Aura-2 sind langsamer, die TTS-Vorverbindung bringt −95 ms p50 / −107 ms p90 und ist
+  übernommen, die Azure-Server-Zeit schwankt zeitlich ohne Hebel auf unserer Seite. Eine
+  zwischenzeitliche Schätzung „p50 ~0,9 s, p90 ~1,15–1,2 s" war zu optimistisch: Sie rechnete den
+  kurzen Einstieg als Gewinn (er bringt nur den ersten Laut früher, der Inhalt kommt ~500 ms später,
+  §15) und ~300 ms TTS-Neuaufbau (auf der VM ~80 ms). **Stand jetzt gemessen: p50 ~1,1 s, p90
+  ~1,34 s** (mit Vorverbindung); mit spekulativem Start geschätzt ~1,0 s / ~1,27 s. Ungemessen
+  bleiben nur kleine Hebel (erste TTS-Anfrage an sicherer Teilsatzgrenze, OpenAI-Region). Die
+  Lücke zu 900 ms p90 liegt bei ~350–450 ms.
 - **Inhaltlich trägt der Stack:** Rollentreue erfüllt (§20), im Sprachgespräch Information in 3/53
   Fällen übergangen, kein Rollenbruch (§21). Kosten ~2,7 ct/Gesprächsminute.
 - **Das größere Gesprächsproblem ist das Turn-Taking, nicht die Latenz:** Mit echter Sprache

@@ -1107,3 +1107,46 @@ diesem Abschnitt nur ~8 ms; der Abschnitt besteht aus Warten aufs Satzende und A
 Komma statt Satzende (~30–70 ms, Risiko abgehackter Betonung), OpenAI-Ressource nach Germany West
 Central (~20–50 ms Netz), Stimmen mit kürzerer TTS-Antwortzeit (ungeprüft). Zusammen mit dem
 spekulativen Start (§23) grob p50 ~0,9 s, p90 ~1,15–1,2 s.
+
+## 26. TTS: Aura-2, Verbindungsneuaufbau, Server-Zeit (2026-10-14)
+
+Anlass: Recherche [`docs/2026-10-14-recherche-latenzhebel.md`](../../docs/2026-10-14-recherche-latenzhebel.md)
+(GPT, von Claude geprüft) mit drei Hinweisen, umgesetzt in `56e5c14`: Azure-TTS lief mit Pipecats
+Default-Sprache `en-US` (jetzt `de-DE`), Warm-up ohne Persona-Prompt (jetzt mit Prompt und
+Werkzeugen), README/`.env.example` empfahlen noch `nano`.
+
+**Deepgram Aura-2 (EU) gegen Azure, isoliert** (VM, 30 echte erste Sätze der Persona × 2 Runden,
+vorgewärmt, abwechselnd; Skript `~/probe/tts_vergleich.py`):
+
+| Stimme | Erstes Paket p50 / p90 | Erstes hörbares Sample p50 / p90 |
+|---|--:|--:|
+| Azure `de-DE-ConradNeural` | 30 / 43 | 51 / 66 |
+| Aura-2 `julius-de` | 138 / 146 | 792 / 925 |
+| Aura-2 `fabian-de` | 68 / 145 | 770 / 1001 |
+
+Aura-2 setzt vor jede Ausgabe ~700 ms nahezu Stille; selbst abgeschnitten ist Azure schneller.
+Zusätzlich begrenzt Deepgram Flush-Nachrichten je Verbindung (Warnung `EXCESSIVE_FLUSH` bei
+schneller Folge). **Verworfen.**
+
+**Diagnose in der Pipeline** (`metrics/tts_diag.py`, `PACEMAKER_TTS_DIAG=1`, SDK-Werte
+`Synthesis*LatencyMs`): Pipecat ruft das SDK ohne Verzögerung auf (< 1 ms), die Event-Loop
+verspätet sich höchstens um ~5 ms. Beim **ersten Satz jedes Turns** baute das SDK die Verbindung
+neu auf. Ursache: Pipecat unterbricht bei jedem Sprechbeginn des Nutzers, Pipecats Azure-TTS ruft
+dabei `stop_speaking_async()` auf, und das schließt die Verbindung (isoliert nachgestellt).
+
+**TTS-Vorverbindung** (präregistriert [`docs/2026-10-14-tts-vorverbindung.md`](../../docs/2026-10-14-tts-vorverbindung.md)):
+Verbindung nach der Unterbrechungsbehandlung neu öffnen. VM, 3 × 30 Turns je Bedingung, abwechselnd:
+
+| Bedingung | Text → Audio p50 / p90 | Erstes Audio p50 / p90 | Neuaufbau bei ersten Sätzen |
+|---|--:|--:|--:|
+| ohne | 456 / 604 | 1201 / 1442 | 79/80 (p50 79 ms) |
+| mit | 351 / 579 | 1106 / 1335 | 0/80 |
+
+Primärkriterium (≥ 150 ms p50) verfehlt (−95 ms; die Erwartung von ~300 ms stammte aus
+Laptop-Läufen), als Gründerentscheidung dennoch übernommen (keine Mehrkosten, keine neuen Fehler),
+Default seit `98c450c`.
+
+**Azure-Server-Zeit** (`SynthesisServiceLatencyMs`): Abtastrate 16/24 kHz und Wort-Zeitmarken ohne
+Einfluss; die Server-Zeit schwankt zeitlich für alle Varianten zugleich zwischen ~10–40 ms und
+~200 ms. Die Lücke isoliert (~30 ms) gegen Pipeline (130–190 ms) ist Messzeitpunkt. Kein weiterer
+Hebel auf unserer Seite; A/B-Vergleiche nur mit abwechselnder Reihenfolge gültig.
