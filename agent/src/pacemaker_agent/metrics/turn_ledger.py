@@ -19,6 +19,13 @@ Zeitpunkte je Aeusserung (Unix-Zeit, im Protokoll als ms ab Sprechende):
 - main_sentence:   Hoerbeginn des ersten Worts nach dem ersten Satzende (Hilfsmetrik
   "Beginn des Hauptsatzes"; ob das inhaltlich relevant ist, bleibt manuelle Bewertung)
 
+GPT-Live (Stack `live`, 2026-10-15) hat keine lokale VAD und keine Turn-Enden im bisherigen
+Sinn; Persona-Audio kann auch waehrend des Clips kommen (Hoerersignale). Dafuer zusaetzlich,
+ab Sprechende laut Clip:
+- first_audio_after_clip_ms: erster Sprechbeginn der Persona nach dem Clip-Ende
+- first_text_after_clip_ms:  erstes Textdelta der Persona nach dem Clip-Ende
+- bot_starts_during_clip:    Sprechbeginne der Persona vor dem Clip-Ende
+
 Ablage: experiments/runs/turns/<run_id>.jsonl
 """
 
@@ -70,6 +77,7 @@ class UtteranceEvents:
     turn_ends: list[float] = field(default_factory=list)
     text_deltas: list[float] = field(default_factory=list)
     first_audio: float | None = None
+    bot_starts: list[float] = field(default_factory=list)
     words: list[tuple[float, str]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     interrupted: bool = False
@@ -103,6 +111,13 @@ def _ms(later: float | None, earlier: float | None) -> float | None:
     return round((later - earlier) * 1000, 1)
 
 
+def after_clip(times: list[float], clip_end: float | None) -> float | None:
+    """Erster Zeitpunkt nach dem Sprechende laut Clip."""
+    if clip_end is None:
+        return None
+    return next((t for t in times if t >= clip_end), None)
+
+
 def summarize(u: UtteranceEvents) -> dict:
     turn_end = u.turn_ends[0] if u.turn_ends else None
     # VAD-Sprechende: das letzte vor dem (ersten) Turn-Ende
@@ -125,6 +140,17 @@ def summarize(u: UtteranceEvents) -> dict:
         "main_sentence_ms": _ms(main_ts, vad_end),
         # Gegenprobe: ms ab Sprechende laut Clip (unabhaengig von der VAD)
         "first_audio_from_clip_ms": _ms(u.first_audio, u.speech_end_clip),
+        "first_audio_after_clip_ms": _ms(
+            after_clip(u.bot_starts, u.speech_end_clip), u.speech_end_clip
+        ),
+        "first_text_after_clip_ms": _ms(
+            after_clip(u.text_deltas, u.speech_end_clip), u.speech_end_clip
+        ),
+        "bot_starts_during_clip": (
+            sum(1 for t in u.bot_starts if t < u.speech_end_clip)
+            if u.speech_end_clip is not None
+            else None
+        ),
         "first_sentence": first_sentence,
     }
 
@@ -223,6 +249,7 @@ class TurnLedger(BaseObserver):
                 u.text_deltas.append(now)
         elif isinstance(frame, BotStartedSpeakingFrame):
             self._bot_speaking = True
+            u.bot_starts.append(now)
             if u.first_audio is None:
                 u.first_audio = now
         elif isinstance(frame, BotStoppedSpeakingFrame):

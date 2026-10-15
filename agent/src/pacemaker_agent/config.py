@@ -88,6 +88,35 @@ def load_baseline_config() -> BaselineConfig:
 
 
 @dataclass(frozen=True)
+class LiveConfig:
+    """Stack `live`: OpenAI GPT-Live (Gruenderentscheidung 2026-10-15).
+
+    `region`: `eu` nutzt die EU-Residenz-Endpunkte (EWR + Schweiz, erst nach Freigabe des
+    OpenAI-Projekts); sonst `api.openai.com` -- solche Laeufe sind Referenzlaeufe.
+    """
+
+    api_key: str
+    region: str
+    voice: str | None
+    backend_model: str
+
+    @property
+    def base_url(self) -> str:
+        host = "eu.api.openai.com" if self.region == "eu" else "api.openai.com"
+        return f"wss://{host}/v1/live/sessions"
+
+
+def load_live_config() -> LiveConfig:
+    return LiveConfig(
+        api_key=_require("OPENAI_API_KEY"),
+        region=os.environ.get("OPENAI_LIVE_REGION", "global"),
+        voice=os.environ.get("OPENAI_LIVE_VOICE") or None,
+        # Hintergrundmodell fuer delegierte Arbeit (hier: Werkzeuge wie `auflegen`)
+        backend_model=os.environ.get("OPENAI_LIVE_BACKEND_MODEL", "gpt-4.1-mini"),
+    )
+
+
+@dataclass(frozen=True)
 class TuningConfig:
     """Stellschrauben der Pipeline, die per Umgebungsvariable fuer Experimente
     ueberschrieben werden koennen. Einzige Quelle der Defaults -- das Run-Manifest

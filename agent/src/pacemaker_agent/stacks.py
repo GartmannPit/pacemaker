@@ -4,7 +4,7 @@ Der einzige Ort im Code, an dem konkrete Provider-SDKs vorkommen. Die Pipeline
 (pipeline.py) kennt nur STT/LLM/TTS-Objekte, nicht deren Herkunft. Neuer Stack
 => hier eine `_build_*`-Funktion ergaenzen, sonst nirgends.
 
-Speech-to-Speech-Stacks (`s2s`) haben kein separates STT/TTS: `stt` und `tts` sind
+Speech-to-Speech-Stacks (`s2s`, `live`) haben kein separates STT/TTS: `stt` und `tts` sind
 dann None, das LLM nimmt Audio entgegen und liefert Audio.
 
 Siehe docs/phase-0-proof-of-concept.md §1.3 (Provider-Matrix).
@@ -21,10 +21,15 @@ from .config import (
     load_azure_config,
     load_azure_realtime_config,
     load_baseline_config,
+    load_live_config,
     load_tuning_config,
 )
 
-STACKS = ("azure-eu", "baseline", "sovereign", "s2s")
+STACKS = ("live", "azure-eu", "baseline", "sovereign", "s2s")
+
+# Stacks, die Turn-Erkennung und Unterbrechungen selbst steuern (keine lokale VAD, kein
+# Smart Turn, keine InterruptionFrames).
+SELF_TURNING_STACKS = {"live"}
 
 
 @dataclass
@@ -49,6 +54,8 @@ def build_stack(name: str, *, system_prompt: str, tools: list[dict] | None = Non
     `system_prompt` braucht s2s; kaskadierte Stacks bekommen ihn ueber den LLMContext der
     Pipeline und nutzen ihn (mit `tools`, OpenAI-Format) nur zum Aufwaermen des Prompt-Caches.
     """
+    if name == "live":
+        return _build_live(system_prompt)
     if name == "azure-eu":
         return _build_azure_eu(system_prompt, tools)
     if name == "s2s":
@@ -57,7 +64,7 @@ def build_stack(name: str, *, system_prompt: str, tools: list[dict] | None = Non
         return _build_baseline()
     if name == "sovereign":
         raise NotImplementedError(
-            f"Stack '{name}' ist noch nicht implementiert. Aktuell: 'azure-eu', 'baseline', 's2s'."
+            f"Stack '{name}' ist noch nicht implementiert. Aktuell: {', '.join(STACKS)}."
         )
     raise ValueError(f"Unbekannter Stack '{name}'. Erlaubt: {', '.join(STACKS)}")
 
@@ -203,6 +210,41 @@ def _build_azure_eu(system_prompt: str, tools: list[dict] | None) -> StackServic
         warm_up=warm_up if load_tuning_config().warm_up else None,
         # Abweichung vom frueheren Verhalten im Manifest (config_hash trennt alte und neue Laeufe)
         manifest_extra={"tts_preconnect": True} if preconnect else None,
+    )
+
+
+def _build_live(system_prompt: str) -> StackServices:
+    """OpenAI GPT-Live (`gpt-live-1`): full-duplex Speech-to-Speech.
+
+    Das Modell hoert und spricht gleichzeitig und entscheidet selbst ueber Antwortbeginn und
+    Unterbrechungen; die Pipeline streamt nur Audio hinein und hinaus. Werkzeuge (z. B.
+    `auflegen`) ruft nicht das Live-Modell auf, sondern das Hintergrundmodell
+    (Responses-Delegation, gehostet bei OpenAI); die Handler laufen in unserer Pipeline.
+    Werkzeuge kommen aus dem LLMContext der Pipeline.
+    """
+    from pipecat.services.openai.live.llm import OpenAILiveLLMService
+    from pipecat.services.openai.responses.llm import OpenAIResponsesLLMService
+
+    cfg = load_live_config()
+    llm = OpenAILiveLLMService(
+        api_key=cfg.api_key,
+        base_url=cfg.base_url,
+        settings=OpenAILiveLLMService.Settings(system_instruction=system_prompt, voice=cfg.voice),
+        delegation=OpenAILiveLLMService.ResponsesDelegation(
+            settings=OpenAIResponsesLLMService.Settings(model=cfg.backend_model),
+        ),
+    )
+    return StackServices(
+        name="live",
+        stt=None,
+        llm=llm,
+        tts=None,
+        llm_model=f"gpt-live-1 (Backend {cfg.backend_model})",
+        manifest_extra={
+            "live_region": cfg.region,
+            "live_voice": cfg.voice,
+            "live_backend": cfg.backend_model,
+        },
     )
 
 

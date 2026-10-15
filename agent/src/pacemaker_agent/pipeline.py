@@ -1,6 +1,8 @@
 """Pipecat-Pipeline-Aufbau. Stack-unabhaengig: bekommt fertige STT/LLM/TTS-Objekte.
 
-Bei Speech-to-Speech-Stacks fehlen STT und TTS; das LLM verarbeitet Audio direkt.
+Bei Speech-to-Speech-Stacks fehlen STT und TTS; das LLM verarbeitet Audio direkt. Der Stack
+`live` (GPT-Live) steuert zusaetzlich Turn-Erkennung und Unterbrechungen selbst: keine lokale
+VAD, kein Smart Turn, Turn-Grenzen kommen aus den Transkripten des Dienstes.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from pipecat.frames.frames import (
     BotStoppedSpeakingFrame,
     EndWorkerFrame,
     FunctionCallResultProperties,
+    LLMRunFrame,
     TTSSpeakFrame,
     UserStartedSpeakingFrame,
 )
@@ -41,11 +44,16 @@ from .metrics.collector import MetricsCollector
 from .metrics.run_manifest import write_manifest
 from .metrics.transcript import TranscriptRecorder, TranscriptTimingObserver
 from .personas.kaltakquise_head_of_ops import HANGUP_TOOL, HANGUP_TOOL_NAME, system_prompt
-from .stacks import build_stack
+from .stacks import SELF_TURNING_STACKS, build_stack
 
-# Werkzeuge nur fuer Kaskaden-Stacks; der Realtime-Stack bekommt den Prompt ueber
-# system_instruction und ist fuer Werkzeuge nicht geprueft.
-_STACKS_WITH_TOOLS = {"azure-eu", "baseline"}
+# Werkzeuge fuer Kaskaden-Stacks und GPT-Live (dort ueber das Hintergrundmodell); der
+# Azure-Realtime-Stack bekommt den Prompt ueber system_instruction und ist fuer Werkzeuge
+# nicht geprueft.
+_STACKS_WITH_TOOLS = {"live", "azure-eu", "baseline"}
+
+# GPT-Live: spricht die Persona nach `auflegen` nicht innerhalb dieser Zeit, endet das
+# Gespraech trotzdem (sonst haengt die Sitzung, falls das Modell den Abschied auslaesst).
+_FAREWELL_TIMEOUT_SECS = 8.0
 
 
 def _openai_tool(tool: dict) -> dict:
@@ -139,6 +147,11 @@ def _wire_transcript(
 class _HangupController(BaseObserver):
     """Persona legt auf (Werkzeug `auflegen`): Abschied sprechen, danach Gespraech beenden.
 
+    Kaskade: der Abschiedssatz geht als TTSSpeakFrame an die TTS. GPT-Live hat keine TTS:
+    Das Ergebnis des Werkzeugs geht an das Hintergrundmodell, das Live-Modell spricht den
+    Abschied selbst (`speak_farewell=False`); Ende nach dessen Sprechende oder nach
+    `_FAREWELL_TIMEOUT_SECS`.
+
     Das Ende folgt erst, wenn der Abschied ohne Unterbrechung ausgegeben wurde (Sprechbeginn
     und -ende am Ausgabe-Transport). Spricht der Anrufer vorher oder dazwischen, laeuft das
     Gespraech weiter -- sonst legte die Persona stumm oder mitten im Satz auf (synthetische
@@ -146,9 +159,11 @@ class _HangupController(BaseObserver):
     trotzdem durch).
     """
 
-    def __init__(self, transcript: TranscriptRecorder) -> None:
+    def __init__(self, transcript: TranscriptRecorder, *, speak_farewell: bool = True) -> None:
         super().__init__()
         self._transcript = transcript
+        self._speak_farewell = speak_farewell
+        self._timeout: asyncio.Task | None = None
         self._task: PipelineTask | None = None
         self._pending = False
         self._spoken = False
@@ -160,12 +175,30 @@ class _HangupController(BaseObserver):
     async def hangup(self, params) -> None:
         farewell = str(params.arguments.get("abschiedssatz", "")).strip() or "Auf Wiederhoeren."
         logger.info(f"Persona legt auf: {farewell!r}")
-        await params.result_callback(
-            {"status": "aufgelegt"}, properties=FunctionCallResultProperties(run_llm=False)
-        )
         self._transcript.record(role="event", text="auflegen")
         self._pending, self._spoken = True, False
-        await params.llm.push_frame(TTSSpeakFrame(farewell))
+        if self._speak_farewell:
+            await params.result_callback(
+                {"status": "aufgelegt"}, properties=FunctionCallResultProperties(run_llm=False)
+            )
+            await params.llm.push_frame(TTSSpeakFrame(farewell))
+            return
+        await params.result_callback(
+            {
+                "status": "aufgelegt",
+                "anweisung": f"Verabschiede dich jetzt mit genau diesem Satz: {farewell}",
+            }
+        )
+        self._timeout = asyncio.create_task(self._end_after_timeout())
+
+    async def _end_after_timeout(self) -> None:
+        await asyncio.sleep(_FAREWELL_TIMEOUT_SECS)
+        if self._pending:
+            logger.warning("Abschied nicht gesprochen -- Gespraech endet nach Zeitgrenze")
+            self._pending = False
+            self._transcript.record(role="event", text="aufgelegt")
+            if self._task is not None:
+                await self._task.queue_frame(EndWorkerFrame(reason="persona_aufgelegt"))
 
     async def on_push_frame(self, data: FramePushed) -> None:
         if not self._pending or data.frame.id in self._seen:
@@ -176,10 +209,14 @@ class _HangupController(BaseObserver):
             self._spoken = True
         elif isinstance(frame, BotStoppedSpeakingFrame) and self._spoken:
             self._pending = False
+            if self._timeout is not None:
+                self._timeout.cancel()
             self._transcript.record(role="event", text="aufgelegt")
             if self._task is not None:
                 await self._task.queue_frame(EndWorkerFrame(reason="persona_aufgelegt"))
-        elif isinstance(frame, UserStartedSpeakingFrame):
+        elif isinstance(frame, UserStartedSpeakingFrame) and self._speak_farewell:
+            # Nur Kaskade: GPT-Live haelt Hoerersignale und Ueberlappung selbst aus, der
+            # Abschied laeuft dort weiter.
             self._pending = False
             logger.info("Abschied unterbrochen -- Gespraech laeuft weiter")
             self._transcript.record(role="event", text="auflegen_unterbrochen")
@@ -200,6 +237,7 @@ def build_pipeline_task(
     tuning = load_tuning_config()
     prompt = system_prompt(short_opener=tuning.short_opener)
     use_tools = stack_name in _STACKS_WITH_TOOLS
+    self_turning = stack_name in SELF_TURNING_STACKS
     openai_tools = [_openai_tool(HANGUP_TOOL)] if use_tools else None
     services = build_stack(stack_name, system_prompt=prompt, tools=openai_tools)
 
@@ -237,7 +275,11 @@ def build_pipeline_task(
     # Gespraech, nicht Synthetic-Caller-Daten.
     context_aggregator = LLMContextAggregatorPair(
         context,
-        user_params=LLMUserAggregatorParams(
+        # GPT-Live: keine lokale VAD; der Dienst empfiehlt per Metadaten-Frame externe
+        # Turn-Strategien ohne Unterbrechungen, die der Aggregator selbst uebernimmt.
+        user_params=LLMUserAggregatorParams()
+        if self_turning
+        else LLMUserAggregatorParams(
             # stop_secs: Stille, bis Silero das Sprechende meldet (Pipecat-Default 0.2 s).
             # Steckt vollstaendig in der Turn-Erkennung. Per PACEMAKER_VAD_STOP_SECS
             # ueberschreibbar fuer Experimente (config.TuningConfig).
@@ -303,7 +345,7 @@ def build_pipeline_task(
         TranscriptTimingObserver(transcript),
         BargeInObserver(run_id),
     ]
-    hangup = _HangupController(transcript) if use_tools else None
+    hangup = _HangupController(transcript, speak_farewell=not self_turning) if use_tools else None
     if hangup is not None:
         services.llm.register_function(HANGUP_TOOL_NAME, hangup.hangup)
         observers.append(hangup)
@@ -320,6 +362,13 @@ def build_pipeline_task(
     )
     if hangup is not None:
         hangup.attach(task)
+
+    if self_turning:
+        # GPT-Live startet die Sitzung mit dem ersten LLMContextFrame. Die Persona spricht
+        # nicht zuerst: der Anrufer (SDR) eroeffnet das Gespraech.
+        @task.event_handler("on_pipeline_started")
+        async def _start_live_session(_task: PipelineTask, _frame) -> None:
+            await _task.queue_frame(LLMRunFrame())
 
     if services.warm_up is not None:
         warm_up = services.warm_up
