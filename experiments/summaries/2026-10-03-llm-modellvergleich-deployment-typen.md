@@ -1150,3 +1150,38 @@ Default seit `98c450c`.
 Einfluss; die Server-Zeit schwankt zeitlich für alle Varianten zugleich zwischen ~10–40 ms und
 ~200 ms. Die Lücke isoliert (~30 ms) gegen Pipeline (130–190 ms) ist Messzeitpunkt. Kein weiterer
 Hebel auf unserer Seite; A/B-Vergleiche nur mit abwechselnder Reihenfolge gültig.
+
+## 27. Spekulativer Start mit TTS-Vorverbindung, Vorbereitungszeit, Korrekturen (2026-10-14)
+
+Präregistriert: [`docs/2026-10-14-spekulation-kombiniert.md`](../../docs/2026-10-14-spekulation-kombiniert.md)
+(Ergebnis dort als Nachtrag 1). Branch `spekulation-kombi`, VM, `azure-eu`/`gpt-4.1-mini`,
+Vorverbindung in beiden Bedingungen an. **A** = Spekulation nur beobachtend (gleiche Messpunkte,
+Regelpfad unverändert), **B** = aktiv. Drei Reihen, je A/B abwechselnd × 3: L (synthetische
+3 × 30), T1 (Pits Aufnahmen), K (8 neue Selbstkorrekturen mit 220–600 ms Pause).
+
+**Latenz (Reihe L, alle beantworteten Turns, n = 81 je Bedingung):** A 1076 / 1337 ms, B 1060 /
+1340 ms (p50 / p90). Primärkriterium (≥ 150 ms p50) klar verfehlt.
+
+**Wann ist der Text vollständig? (ms ab Sprechende, p50 / p90)**
+
+| Reihe | Text vollständig | reguläres Turn-Ende | verfügbare Vorbereitungszeit |
+|---|--:|--:|--:|
+| L (A) | 295 / 478 | 371 / 484 | 73 / 188 |
+| T1 (A) | 330 / 983 | 400 / 988 | 48 / 234 |
+| K (A, n = 3 ungeteilte) | 440 (locker 355) | 446 | 5 (locker ~90) |
+
+Das letzte Wort erscheint im Zwischentranskript meist erst kurz vor dem Final-Transkript, und
+das Final-Transkript löst praktisch sofort das Turn-Ende aus. Der spekulative Lauf hat deshalb
+~70 ms Vorsprung, LLM + TTS brauchen ab Start ~700 ms (Wartezeit nach Freigabe p50 713 ms, L).
+Audio bei Freigabe fertig: 0 von 110. **Der Engpass vor dem LLM ist die Finalisierung des
+Azure-Transkripts (~300 ms nach Sprechende), nicht der Startzeitpunkt des LLM.**
+
+**Nebenwirkungen:** F3 (vorzeitiges Hineinsprechen) T1 + K: A 28/90, B 26/90, unverändert.
+Korrekturen (F4, von Hand): A 0/32, B 3/30. Neuer Fehler nur in B: **Persona verstummt** bei K04
+in allen drei B-Sitzungen. Ursache: Eine Unterbrechung des Regelpfads bricht den gerade
+gestarteten spekulativen LLM-Lauf ab, der offene Spekulationszustand wird beim Turn-Ende trotzdem
+bestätigt, der reguläre Aufruf verworfen. Behebbar, aber bei ~70 ms möglichem Gewinn ohne Nutzen.
+Kosten: 1,3–2,1 verworfene LLM-Aufrufe je Turn.
+
+**Ergebnis:** nicht übernommen, Spekulation bleibt Option (Default aus). Gemessener Stand der
+Referenz unverändert: mit Vorverbindung p50 ~1,06–1,1 s, p90 ~1,34 s (Reihe L hier: 1076 / 1337).
