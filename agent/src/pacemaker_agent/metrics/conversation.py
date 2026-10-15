@@ -198,7 +198,13 @@ def utterances(run: dict) -> list[dict]:
                 "F3": f3,
                 "first_audio_ms": turn.get("first_audio_ms"),
                 "user_texts": user_texts,
-                "reply": replies[0]["text"] if replies else "",
+                # GPT-Live teilt eine Antwort an Sprechpausen > 0,8 s in mehrere Eintraege;
+                # der Judge sah sonst nur das erste Bruchstueck (T1-Lauf 2026-10-15).
+                "reply": (
+                    " ".join(r["text"].strip() for r in replies)
+                    if run["config"].get("stack") == "live"
+                    else (replies[0]["text"] if replies else "")
+                ),
                 "reply_interrupted": bool(replies and replies[0].get("interrupted")),
                 "hangup": any(r["role"] == "event" and r["text"] == "aufgelegt" for r in window),
             }

@@ -1,0 +1,8 @@
+{
+  "venvPath": "agent",
+  "venv": ".venv",
+  "extraPaths": ["agent/src"],
+  "include": ["agent/src", "agent/tests"],
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "basic"
+}

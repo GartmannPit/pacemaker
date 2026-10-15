@@ -158,7 +158,15 @@ class SyntheticOutputTransport(BaseOutputTransport):
     den Antworttext weiter im Sprechtempo freigab. Der naechste Clip markierte die
     Antwort dann als unterbrochen und kuerzte sie im Gespraechsverlauf (2026-10-04).
     Die E2E-Messung endet beim ersten Audio-Frame und ist davon unberuehrt.
+
+    Absolute Taktung wie beim Einspeisen: Mit relativem sleep() je Frame spielte der
+    "Lautsprecher" langsamer als Echtzeit. Bei GPT-Live, das ununterbrochen Audio (auch
+    Stille) sendet, wuchs dadurch ein Rueckstau von ~0,1 auf ~0,7 s ueber ein Gespraech und
+    verzoegerte jeden Sprechbeginn (T1-Lauf 2026-10-15). Laeuft nichts nach, setzt die Uhr
+    auf jetzt zurueck (Lautsprecher im Leerlauf).
     """
+
+    _clock: float = 0.0
 
     async def start(self, frame: StartFrame) -> None:
         await super().start(frame)
@@ -166,7 +174,8 @@ class SyntheticOutputTransport(BaseOutputTransport):
 
     async def write_audio_frame(self, frame: OutputAudioRawFrame) -> bool:
         bytes_per_second = frame.sample_rate * frame.num_channels * 2  # 16-bit PCM
-        await asyncio.sleep(len(frame.audio) / bytes_per_second)
+        self._clock = max(self._clock, time.monotonic()) + len(frame.audio) / bytes_per_second
+        await asyncio.sleep(max(0.0, self._clock - time.monotonic()))
         return True
 
 
