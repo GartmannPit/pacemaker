@@ -1185,3 +1185,43 @@ Kosten: 1,3–2,1 verworfene LLM-Aufrufe je Turn.
 
 **Ergebnis:** nicht übernommen, Spekulation bleibt Option (Default aus). Gemessener Stand der
 Referenz unverändert: mit Vorverbindung p50 ~1,06–1,1 s, p90 ~1,34 s (Reihe L hier: 1076 / 1337).
+
+## 28. OpenAI GPT-Live (`gpt-live-1`), erste Messungen (2026-10-15/16)
+
+Anlass: Gründerentscheidung 2026-10-15 nach Browser-Schnelltest („Stimme, Latenz, Gespräch deutlich
+besser“). Branch `gpt-live`, Stack `live` (Pipecat 1.12, `OpenAILiveLLMService`, WebSocket,
+Responses-Delegation mit `gpt-4.1-mini` für `auflegen`). Alle Läufe über `api.openai.com`
+(Referenz, EU-Residenz beantragt). Pits Aufnahmen mit seiner ausdrücklichen Freigabe (CLAUDE.md).
+Nicht präregistriert: orientierende Läufe, je eine Sitzung bzw. 3 × 10 Clips.
+
+**Messpunkt:** Ende des hörbaren Clips → erstes Persona-Audio am Ausgabe-Transport der VM
+(`first_audio_after_clip_ms`); daneben Ankunft des ersten hörbaren Audios vom Server
+(`metrics/live_diag.py`). Ein erster T1-Lauf war durch einen Fehler im synthetischen
+Ausgabetransport verzerrt (relativer Takt, Rückstau bis 0,7 s; behoben, absolute Taktung); unten
+nur die Läufe danach.
+
+| Lauf | n | Agent-Ausgabe p50 / p90 | Server-Audio p50 / p90 |
+|---|--:|--:|--:|
+| synthetische Clips, 3 × 10 (`live-l`) | 29 | 1622 / 2452 | 1433 / 2303 |
+| T1, Pits Aufnahmen (`live-t1b`) | 19 | 2454 / 3324 | 2065 / 3542 |
+| zum Vergleich Kaskade + Vorverbindung, synthetisch (§27, A) | 81 | 1076 / 1337 | – |
+
+Browser direkt (WebRTC, Laptop, 9 synthetische Clips, Empfang vor Lautsprecher): Median 1215 ms,
+Spanne 781–2107; Pipecat vom Laptop direkt danach: Median 1493 ms.
+
+**Befunde:**
+1. **Langsamer als die Kaskade**, synthetisch ~+550 ms p50; mit echter Sprache (Füllwörter,
+   Denkpausen) p50 ~2,1–2,8 s beim Server (zwei T1-Läufe). Das Nutzertranskript kommt konstant
+   ~1,0–1,2 s nach Sprechende; danach wartet das Modell je nach Äußerung weitere 0,1–2,5 s.
+2. **Kaum Hineinsprechen:** T1 je Lauf 3/21 Fälle mit Persona-Audio während der Äußerung, davon
+   ein „Mhm“ und eine passende Reaktion auf eine Zwischenfrage („Darf ich noch eine Frage
+   stellen?“ – „Ja, machen Sie“); verfrüht nur der Gruß in R01. Kaskade T1: F3 23/63.
+   Auf „Okay“/„Verstehe“ antwortet GPT-Live nicht (Hörersignal).
+3. **Inhalt:** F4 0/19 (Judge) bzw. 0/18 (von Hand, erster Lauf); Rolle durchgehend gehalten,
+   Auflegen über das Hintergrundmodell funktioniert.
+4. **Direkter Browserweg** (WebRTC) ~250–300 ms schneller als Pipecat/WebSocket (kleine
+   Stichprobe, nacheinander gemessen).
+5. Kurze Audio-Blips (~0,5 s, ohne Text) zu Sitzungsbeginn; kein Inhalt.
+
+Offen: präregistrierte Messung mit mehr Sitzungen, EU-Endpunkt nach Freigabe, Browser-Weg auf
+gleicher Basis, Ursache der längeren Wartezeit bei echter Sprache (Modellverhalten vs. Einstellung).
