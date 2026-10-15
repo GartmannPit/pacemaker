@@ -225,8 +225,13 @@ def _build_live(system_prompt: str) -> StackServices:
     from pipecat.services.openai.live.llm import OpenAILiveLLMService
     from pipecat.services.openai.responses.llm import OpenAIResponsesLLMService
 
+    from .metrics import live_diag
+
     cfg = load_live_config()
-    llm = OpenAILiveLLMService(
+    service_cls = (
+        live_diag.instrument(OpenAILiveLLMService) if live_diag.enabled() else OpenAILiveLLMService
+    )
+    llm = service_cls(
         api_key=cfg.api_key,
         base_url=cfg.base_url,
         settings=OpenAILiveLLMService.Settings(system_instruction=system_prompt, voice=cfg.voice),
