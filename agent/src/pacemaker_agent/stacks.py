@@ -228,6 +228,11 @@ def _build_live(system_prompt: str) -> StackServices:
     from .metrics import live_diag
 
     cfg = load_live_config()
+    if cfg.region != "eu":
+        logger.warning(
+            "GPT-Live ueber api.openai.com (OPENAI_LIVE_REGION=referenz): Referenzlauf, keine "
+            "EU-Residenz -- nur synthetische Clips ohne reale Personendaten verwenden."
+        )
     service_cls = (
         live_diag.instrument(OpenAILiveLLMService) if live_diag.enabled() else OpenAILiveLLMService
     )

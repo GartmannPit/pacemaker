@@ -91,8 +91,10 @@ def load_baseline_config() -> BaselineConfig:
 class LiveConfig:
     """Stack `live`: OpenAI GPT-Live (Gruenderentscheidung 2026-10-15).
 
-    `region`: `eu` nutzt die EU-Residenz-Endpunkte (EWR + Schweiz, erst nach Freigabe des
-    OpenAI-Projekts); sonst `api.openai.com` -- solche Laeufe sind Referenzlaeufe.
+    `region` muss ausdruecklich gesetzt sein (CLAUDE.md: kein stiller Rueckfall):
+    `eu` = EU-Residenz-Endpunkte (EWR + Schweiz, nach Freigabe des OpenAI-Projekts);
+    `referenz` = `api.openai.com`, nur fuer als Baseline/Referenz markierte Laeufe mit
+    synthetischen Clips ohne reale Personendaten.
     """
 
     api_key: str
@@ -106,10 +108,19 @@ class LiveConfig:
         return f"wss://{host}/v1/live/sessions"
 
 
+LIVE_REGIONS = ("eu", "referenz")
+
+
 def load_live_config() -> LiveConfig:
+    region = _require("OPENAI_LIVE_REGION")
+    if region not in LIVE_REGIONS:
+        raise RuntimeError(
+            f"OPENAI_LIVE_REGION={region!r} unzulaessig. Erlaubt: {', '.join(LIVE_REGIONS)} "
+            "(referenz = api.openai.com, nur markierte Referenzlaeufe mit synthetischen Clips)."
+        )
     return LiveConfig(
         api_key=_require("OPENAI_API_KEY"),
-        region=os.environ.get("OPENAI_LIVE_REGION", "global"),
+        region=region,
         voice=os.environ.get("OPENAI_LIVE_VOICE") or None,
         # Hintergrundmodell fuer delegierte Arbeit (hier: Werkzeuge wie `auflegen`)
         backend_model=os.environ.get("OPENAI_LIVE_BACKEND_MODEL", "gpt-4.1-mini"),
