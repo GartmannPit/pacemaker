@@ -1,6 +1,6 @@
 # Phase 1 — Architekturversuch Hybrid (Präregistrierung)
 
-Stand: 2026-10-27 · Status: **Plan, von Codex geprüft und überarbeitet; Läufe nicht begonnen**
+Stand: 2026-10-27 · Status: **abgeschlossen, Entscheidung Hybrid (§6)**
 · Bezug: [Phase-1-Entwurf](./phase-1-mvp.md) §3
 
 Änderungen nach dem ersten Versuchslauf nur als gekennzeichneter Nachtrag am Ende.
@@ -148,11 +148,35 @@ class SidebandSession:
 **Review:** Teil A prüft Claude (danach feste Basis für B). Teil B und der integrierte Stand
 inklusive Fehlerpfaden prüft Codex (`codex exec review`).
 
-## 6. Entscheidung
+## 6. Ergebnis und Entscheidung
 
-Ergebnis je Kriterium hier eintragen, dann Entscheidung durch Pit (Hybrid / B / Hybrid mit
-Restrisiko). Übertrag in `phase-1-mvp.md` §3.
+Läufe 2026-10-27, 20:56–22:3x MEZ, Laptop, Region `referenz`, Pit am Mikrofon (Headset).
+20 Sitzungen, 1354 s Live-Zeit ≈ **1,13 $**, Hintergrundmodell 28.234 Tokens.
+Auswertung mit `agent/tools/gptlive_browser/auswertung.py`; Rohdaten
+`experiments/runs/hybrid/` (gitignored).
+
+| # | Ergebnis | Beleg |
+|---|---|---|
+| K1 | **erfüllt.** In allen Sitzungen mit regulärem Ende sind Sideband- und Browser-Transkript je Rolle zeichengleich. Bei Tab-Schließen/Prozessabbruch hat der Sideband mehr als der Browser (Browser-Export endet früher). | V1, V2 |
+| K2 | **erfüllt.** Auflegen (Abschied vollständig, Ende 3–5 s nach dem letzten Satz), Beenden durch den Nutzer, Zeitlimit 90 s. Tab schließen und Tab-Prozess beenden: Ende erst durch OpenAI nach ~21 bzw. ~27 s (`connection_lost`); für Tab schließen inzwischen behoben (Beacon auf `/api/end`, Commit `3953f7c`, live noch nicht nachgemessen). | V1 |
+| K3 | **erfüllt.** Alle 8 Angriffe mit Sperre sofort abgewiesen (`event_not_allowed`, 0,1–0,2 s), ohne Wirkung; auch das gefälschte Werkzeugergebnis mit echter `call_id` (Angriff 5) im Wettlauf mit dem Server. Positivkontrolle über den Sideband wirkt (Persona sagt zu allem zu). Gegenkontrolle ohne Sperre: Angriffe 1 und 3 von der API angenommen (Sideband sieht `session.instructions.appended` bzw. `session.updated` mit fremder ID), eine Verhaltensänderung der Persona hat Pit dabei nicht bemerkt; Gegenkontrolle 5 kam nicht zustande. Abgewiesene Browserbefehle sieht der Sideband nicht. | V2 |
+| K5 | **erfüllt.** Sideband getrennt → als `unvollstaendig` markiert, Server schließt die Sitzung über eine neue Verbindung, Browser erhält das Ende. | V1 |
+| K6 | **offen** bis zur EU-Freigabe; Konfiguration ohne Fallback umgesetzt. | – |
+
+**Entscheidung (Pit, 2026-10-27): Hybrid.** Übertragen in `phase-1-mvp.md` §3.
+
+**Nebenbefunde:**
+
+- **Rollenbruch:** In einer Sitzung sprach die Persona nach ~9 s selbst den Pitch des Anrufers
+  (laut Sideband als Persona-Ausgabe), vor jedem Angriff; danach Echo (Persona-Audio als
+  Nutzer-Transkript). 1 von 20 Sitzungen. → Persona-Arbeit Phase 1.
+- `session.delegation.responses.store` lehnt die Live-API ab (`unknown_parameter`). Ob
+  delegierte Responses bei OpenAI gespeichert werden, ist damit nicht abschaltbar → mit dem
+  DPA klären.
+- Im Debug-Modus sieht der Browser auch Backend-Texte (z. B. den Abschiedssatz vorab); im
+  Normalbetrieb sind die Serverereignisse an den Browser begrenzt.
 
 ## Nachträge
 
-Keine.
+- 2026-10-27, vor den Läufen: V3 gestrichen, Zeitlimit 90 s für alle Sitzungen, Debug-Auslöser
+  für Sideband-Abbruch und Positivkontrolle ergänzt (siehe §4); `store` entfernt.

@@ -26,7 +26,7 @@ KI-Natur jederzeit erkennbar.
 | EU-Freigabe des OpenAI-Projekts (`eu.api.openai.com`) | Pit / OpenAI | beantragt |
 | OpenAI-DPA geprüft und abgeschlossen | Pit | [offen] |
 | Hetzner-AVV (falls Architektur B oder Hybrid, §3) | Pit | [offen] |
-| Lasttest bestanden für **20 Nutzer** beim ersten Kunden (Pit, 2026-10-27) | Claude/Codex | läuft; Stufe `L20` wird nach Abschluss der Harness-Umsetzung ergänzt |
+| Lasttest für **20 Nutzer** beim ersten Kunden (Pit, 2026-10-27) | Claude/Codex | gelaufen: kein Lasteffekt bis 20, keine Rate-Limits ([Summary](../experiments/summaries/2026-10-27-lasttest-live.md)); Guthaben im Betrieb absichern |
 
 Bis dahin: nur synthetische Daten und Pits eigene Stimme, Region `referenz` (CLAUDE.md).
 
@@ -35,7 +35,7 @@ Bis dahin: nur synthetische Daten und Pits eigene Stimme, Region `referenz` (CLA
 | Schritt | Inhalt | Ergebnis |
 |---|---|---|
 | 0 | Lasttest gleichzeitiger Gespräche (Prio 0) | trägt / trägt nicht, Token-Verbrauch je Gespräch |
-| 1 | Architekturversuch Browser-Anbindung (§3) | Entscheidung A / B / Hybrid |
+| 1 | Architekturversuch Browser-Anbindung (§3) | **erledigt: Hybrid** (2026-10-27) |
 | 2 | `web/`: Verbinden, Sprechen, Hören, Transkript, KI-Hinweis | erstes Gespräch im Browser über die gewählte Architektur |
 | 3 | Persona-Gerüst und Markus Brandt überarbeitet ([Entwurf](./phase-1-personas-entwurf.md)) | Persona mit Gesprächslogik |
 | 4 | Übrige drei Personas / Szenarien | vier Szenarien |
@@ -62,7 +62,10 @@ Schritt 1 entscheidet über Aufbau von 2–5 und kommt deshalb vor jedem Fronten
 und erhält Transkript und Werkzeugaufrufe serverseitig. Ob `gpt-live-1` eine solche
 serverseitige Zusatzverbindung anbietet, ist **[offen]**.
 
-**Richtung (Pit, 2026-10-27): Hybrid.** Anforderungen:
+**Entschieden (Pit, 2026-10-27): Hybrid**, nach dem Architekturversuch: K1, K2, K3, K5
+erfüllt, K6 offen bis zur EU-Freigabe ([Ergebnis](./phase-1-architekturversuch-hybrid.md) §6).
+Umsetzung: Datenkanal des Browsers gesperrt (`allowed_client_events: []`), Transkript,
+Werkzeuge und Gesprächsende über den Sideband. Anforderungen:
 
 - Keine Manipulation durch den Nutzer: Transkript, Werkzeugaufrufe, Gesprächsende und
   Scoring-Grundlage entstehen serverseitig; der Browser liefert nur Audio.
@@ -73,7 +76,7 @@ serverseitige Zusatzverbindung anbietet, ist **[offen]**.
 - Bietet `gpt-live-1` keine serverseitige Zusatzverbindung, ist B die Lösung, die diese
   Anforderungen erfüllt.
 
-**Versuch (Schritt 1), zeitlich begrenzt:**
+**Versuch (Schritt 1), durchgeführt 2026-10-27** ([Plan und Ergebnis](./phase-1-architekturversuch-hybrid.md)):
 
 1. Offizielle Doku `gpt-live-1` prüfen: serverseitige Verbindung zu einer WebRTC-Sitzung,
    Transkript- und Werkzeug-Ereignisse, Sitzungsende durch den Server.
@@ -108,14 +111,13 @@ möglicher Ausgangspunkt. Voraussetzung: Das Transkript ist nicht vom Nutzer man
 
 ## 6. Offene Entscheidungen (Gründer)
 
-Entschieden (Pit, 2026-10-27): Richtung Hybrid (§3), kein Kaskaden-Rückfall, erster Kunde mit 20 Nutzern (§1),
+Entschieden (Pit, 2026-10-27): Hybrid (§3), kein Kaskaden-Rückfall, erster Kunde mit 20 Nutzern (§1),
 kein Rohaudio, möglichst wenig speichern, Schlüsselmomente aus dem Transkript (§4, §5).
 
 Offen:
 
-1. Hybrid oder B, nach dem Versuch (§3)
-2. Neue Latenz-Zielwerte für Phase 1, falls gewünscht
-3. Wie viele der 20 Nutzer gleichzeitig sprechen sollen (z. B. Teamtraining) → Laststufe
-4. Scoring-Kriterien je Szenario
-5. Login-Anbieter und Datenhaltung
-6. Aufbewahrungsfristen für Transkript, Schlüsselmomente, Scoring
+1. Neue Latenz-Zielwerte für Phase 1, falls gewünscht
+2. Scoring-Kriterien je Szenario
+3. Login-Anbieter und Datenhaltung
+4. Aufbewahrungsfristen für Transkript, Schlüsselmomente, Scoring
+5. Speicherung delegierter Responses bei OpenAI (nicht per `store` abschaltbar) im DPA klären
