@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GPT-Live Schnelltest</title>
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 820px; margin: 24px auto; padding: 0 16px; }
+  button, select { font: inherit; padding: 6px 12px; margin: 0 8px 8px 0; }
+  #log { margin-top: 16px; border-top: 1px solid #ccc; padding-top: 8px; }
+  .u { color: #0a5; } .a { color: #05a; } .s { color: #888; font-size: 13px; }
+  table { border-collapse: collapse; margin-top: 12px; font-size: 14px; }
+  td, th { border-bottom: 1px solid #ddd; padding: 3px 10px; text-align: left; }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; }
+  .warn { background: #fff4d6; padding: 8px 12px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<h2>GPT-Live · Markus Brandt</h2>
+<p class="warn">Region: <b>{{REGION}}</b> (referenz = api.openai.com, keine EU-Residenz).
+Mikrofon nur durch Pit (Gründerfreigabe 2026-10-15); keine Stimmen anderer Personen, solange
+die EU-Freigabe fehlt.</p>
+<p>Stimme:
+  <select id="voice">
+    <option value="">Standard</option>
+    <option>vesper</option><option>meridian</option><option>stone</option><option>ripple</option>
+    <option>gleam</option><option>willow</option><option>quartz</option><option>delta</option>
+  </select>
+</p>
+<p>
+  <button id="measure">Clip-Messung starten (10 Clips)</button>
+  <button id="start">Gespräch mit Mikrofon</button>
+  <button id="stop" disabled>Beenden</button>
+</p>
+<p id="status" class="s">Bereit.</p>
+<audio id="audio" autoplay controls></audio>
+<table id="results" hidden>
+  <thead><tr><th>Clip</th><th>Persona-Audio ab Clip-Ende (ms)</th><th>Persona während Clip</th></tr></thead>
+  <tbody></tbody>
+</table>
+<p id="summary" class="s"></p>
+<div id="log"></div>
+<script type="module">
+const $ = (id) => document.getElementById(id);
+let peer, events, mic, ctx, ready = false;
+let t0 = 0;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function line(cls, text) {
+  const p = document.createElement("div");
+  p.className = cls;
+  p.textContent = `${((performance.now() - t0) / 1000).toFixed(1)} s  ${text}`;
+  $("log").append(p);
+}
+function cleanup() {
+  mic?.getTracks().forEach((t) => t.stop()); events?.close(); peer?.close();
+  ready = false; $("start").disabled = false; $("measure").disabled = false; $("stop").disabled = true;
+}
+
+// Verbindung aufbauen; inputStream = Mikrofon oder synthetische Quelle
+async function connect(inputStream) {
+  $("log").innerHTML = "";
+  peer = new RTCPeerConnection();
+  const remote = new Promise((res) => {
+    peer.ontrack = (e) => {
+      const stream = new MediaStream([e.track]);
+      $("audio").srcObject = stream; $("audio").play().catch(() => {});
+      res(stream);
+    };
+  });
+  inputStream.getAudioTracks().forEach((t) => peer.addTrack(t, inputStream));
+  const started = new Promise((res) => {
+    events = peer.createDataChannel("oai-events");
+    events.onmessage = ({ data }) => {
+      const ev = JSON.parse(data);
+      if (ev.type === "session.started") { ready = true; t0 = performance.now(); $("stop").disabled = false; res(); }
+      else if (ev.type === "session.closed") { $("status").textContent = "Beendet."; cleanup(); }
+      else if (/transcript/.test(ev.type) && /(done|completed|final)/.test(ev.type)) {
+        const who = /input|user/.test(ev.type) ? "u" : "a";
+        line(who, (who === "u" ? "Anrufer: " : "Brandt: ") + (ev.transcript ?? ev.text ?? ""));
+      } else if (/error/.test(ev.type)) line("s", JSON.stringify(ev).slice(0, 300));
+    };
+  });
+  const offer = await peer.createOffer(); await peer.setLocalDescription(offer);
+  if (peer.iceGatheringState !== "complete") await new Promise((res) => {
+    const f = () => { if (peer.iceGatheringState === "complete") { peer.removeEventListener("icegatheringstatechange", f); res(); } };
+    peer.addEventListener("icegatheringstatechange", f); setTimeout(res, 5000);
+  });
+  const r = await fetch("/api/session", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sdp: peer.localDescription.sdp, voice: $("voice").value }) });
+  if (!r.ok) throw new Error(await r.text());
+  const result = await r.json();
+  await peer.setRemoteDescription({ type: "answer", sdp: result.transport.sdp });
+  await started;
+  return remote;
+}
+
+$("start").onclick = async () => {
+  $("start").disabled = true; $("measure").disabled = true; $("status").textContent = "Verbinde …";
+  try {
+    mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+    await connect(mic);
+    $("status").textContent = "Verbunden – sprechen Sie.";
+  } catch (e) { $("status").textContent = "Fehler: " + (e.message || e); cleanup(); }
+};
+$("stop").onclick = () => {
+  if (ready && events?.readyState === "open") events.send(JSON.stringify({ type: "session.close" }));
+  setTimeout(cleanup, 5000);
+};
+
+// --- Clip-Messung -----------------------------------------------------------------------
+// Letztes hörbares Sample: 10-ms-Frames, still unter 5 % des lautesten Frames (wie
+// synthetic_transport.last_voiced_sample im Agent).
+function lastVoicedSec(buf) {
+  const d = buf.getChannelData(0), step = Math.round(buf.sampleRate / 100);
+  const rms = [];
+  for (let i = 0; i + step <= d.length; i += step) {
+    let s = 0; for (let j = i; j < i + step; j++) s += d[j] * d[j];
+    rms.push(Math.sqrt(s / step));
+  }
+  const thr = Math.max(...rms) * 0.05;
+  let last = 0; rms.forEach((v, i) => { if (v >= thr) last = i; });
+  return ((last + 1) * step) / buf.sampleRate;
+}
+
+// Pegel der Persona: alle 5 ms abgefragt, Zeitbasis performance.now() (gleiche Uhr wie Clip-Ende)
+function remoteMeter(stream) {
+  const an = ctx.createAnalyser(); an.fftSize = 512;
+  ctx.createMediaStreamSource(stream).connect(an);
+  const buf = new Float32Array(an.fftSize);
+  const state = { speaking: false, lastLoud: 0, onsets: [] };
+  setInterval(() => {
+    an.getFloatTimeDomainData(buf);
+    let s = 0; for (const v of buf) s += v * v;
+    const loud = Math.sqrt(s / buf.length) > 0.01, now = performance.now();
+    if (loud) { if (!state.speaking) state.onsets.push(now); state.speaking = true; state.lastLoud = now; }
+    else if (state.speaking && now - state.lastLoud > 350) state.speaking = false;  // wie BOT_VAD_STOP_SECS
+  }, 5);
+  return state;
+}
+
+$("measure").onclick = async () => {
+  $("start").disabled = true; $("measure").disabled = true;
+  $("results").hidden = false; $("results").tBodies[0].innerHTML = ""; $("summary").textContent = "";
+  try {
+    ctx = new AudioContext({ sampleRate: 48000 });
+    const dest = ctx.createMediaStreamDestination();  // liefert Stille, solange kein Clip läuft
+    const names = await (await fetch("/api/clips")).json();
+    const clips = [];
+    for (const n of names) {
+      const ab = await (await fetch("/clips/" + n)).arrayBuffer();
+      const b = await ctx.decodeAudioData(ab);
+      clips.push({ name: n, buf: b, end: lastVoicedSec(b) });
+    }
+    $("status").textContent = "Verbinde …";
+    const remote = await connect(dest.stream);
+    const meter = remoteMeter(remote);
+    await sleep(1500);
+    const lat = [];
+    for (const c of clips) {
+      $("status").textContent = "Spiele " + c.name;
+      const src = ctx.createBufferSource(); src.buffer = c.buf; src.connect(dest);
+      const startCtx = ctx.currentTime + 0.05;
+      src.start(startCtx);
+      // Clip-Ende in performance.now()-Zeit: Audiouhr -> Wanduhr über getOutputTimestamp
+      const ts = ctx.getOutputTimestamp();
+      const clipStartPerf = ts.performanceTime + (startCtx - ts.contextTime) * 1000;
+      const clipEndPerf = clipStartPerf + c.end * 1000;
+      // warten: Persona antwortet und ist 1 s still, höchstens 15 s nach Clip-Ende
+      while (performance.now() < clipEndPerf + 15000) {
+        await sleep(50);
+        const after = meter.onsets.find((t) => t >= clipEndPerf);
+        if (after && !meter.speaking && performance.now() - meter.lastLoud > 1000) break;
+      }
+      const after = meter.onsets.find((t) => t >= clipEndPerf);
+      const during = meter.onsets.filter((t) => t >= clipStartPerf && t < clipEndPerf).length;
+      const ms = after ? Math.round(after - clipEndPerf) : null;
+      if (ms !== null) lat.push(ms);
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${c.name}</td><td class="n">${ms ?? "keine Antwort"}</td><td class="n">${during}</td>`;
+      $("results").tBodies[0].append(tr);
+      fetch("/api/result", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ t: Date.now(), clip: c.name, ms_ab_clip_ende: ms, persona_waehrend_clip: during,
+                               stimme: $("voice").value || null }) });
+    }
+    lat.sort((a, b) => a - b);
+    const q = (p) => lat.length ? lat[Math.min(lat.length - 1, Math.round((lat.length - 1) * p))] : "–";
+    $("summary").textContent = `n = ${lat.length}, Median ${q(0.5)} ms, Maximum ${lat.at(-1) ?? "–"} ms (Messpunkt: Empfang im Browser vor Lautsprecher)`;
+    $("status").textContent = "Messung fertig.";
+    if (events?.readyState === "open") events.send(JSON.stringify({ type: "session.close" }));
+    setTimeout(cleanup, 3000);
+  } catch (e) { $("status").textContent = "Fehler: " + (e.message || e); cleanup(); }
+};
+</script>
+</body>
+</html>
