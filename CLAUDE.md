@@ -4,9 +4,9 @@
 
 Deutschsprachiger KI-Sprachrollenspielpartner für B2B-SaaS-Vertriebstraining.
 SDRs üben Gespräche mit einer Echtzeit-KI-Persona; Transkript und Scoring sind das Produktziel.
-Aktuell: **Übergang Phase 0 → Phase 1.** Phase 0 ist abgeschlossen (`docs/phase-0-ergebnisse.md` §8);
-der Phase-1-Plan `docs/phase-1-mvp.md` ist ein Entwurf. Bis zu seiner Freigabe gelten die
-Grenzen unter „Nicht in Phase 0“; Scoring wird noch nicht implementiert.
+Aktuell: **Phase 1 — MVP für Pilotkunden**, Plan `docs/phase-1-mvp.md` freigegeben
+(Pit, 2026-10-27). Phase 0 ist abgeschlossen (`docs/phase-0-ergebnisse.md` §8). Umsetzung in
+der Reihenfolge von Plan §2; Grenzen unter „Nicht in Phase 1“.
 Strategie: `Pacemaker.md`. Phasenpläne: `docs/phase-0-proof-of-concept.md`, `docs/phase-1-mvp.md`.
 
 ## Arbeitsweise
@@ -214,9 +214,9 @@ Infra, aus infra/: `docker compose config --quiet`, danach bei Bedarf `docker co
 Bei Änderungen betroffene Agent-Tests ausführen; externe Provider nur für den beauftragten Lauf
 ansprechen. Mocks für normale Unit-Tests verwenden. Messpfad-Änderungen zusätzlich messen.
 
-## Nicht in Phase 0
+## Nicht in Phase 1
 
-Scoring, Dashboard, Auth, Multi-Tenancy, Persistenz über Flatfiles hinaus, mehrere Szenarien
-oder Personas, konfigurierbare Personas, Produktionshärtung und CI/CD.
-AVVs in Phase 0 auf Verfügbarkeit prüfen; Datenbeschränkungen oben gelten weiterhin.
-Details: `docs/phase-0-proof-of-concept.md` §0.
+Manager-Dashboard, konfigurierbare Personas, CRM-/LMS-Anbindung, SLA, Mandantentrennung über
+die Mindestanforderung in `docs/phase-1-mvp.md` §5 hinaus. Reale Nutzerdaten erst nach den
+Voraussetzungen in Plan §1 (EU-Freigabe, DPA/AVV aller Dienste). Persistenz, Scoring und
+Modellanbindungen erst im jeweiligen Planschritt nach Datenflussprüfung.

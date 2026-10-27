@@ -1,8 +1,8 @@
-# Phase 1 — MVP für Pilotkunden (Entwurf)
+# Phase 1 — MVP für Pilotkunden
 
-**Stand:** 2026-10-27 · **Verfasser:** Claude, geprüft von Codex · **Status:** ENTWURF zur
-Freigabe durch die Gründer; nichts davon ist umgesetzt. Offene Punkte sind mit **[offen]**
-markiert, vor der Freigabe zu entscheidende mit **[vor Freigabe]**.
+**Stand:** 2026-10-27 · **Verfasser:** Claude, geprüft von Codex · **Status:** **FREIGEGEBEN**
+(Pit, 2026-10-27) mit den Entscheidungen in §6; Umsetzung beginnt mit Schritt 1. Offene Punkte
+sind mit **[offen]** markiert.
 **Bezug:** [Strategiepapier](../Pacemaker.md) §5 · [Phase-0-Ergebnisse](./phase-0-ergebnisse.md) §8 ·
 [Architekturversuch Hybrid](./phase-1-architekturversuch-hybrid.md) ·
 [Lasttest](./phase-1-lasttest.md) · [Personas-Entwurf](./phase-1-personas-entwurf.md)
@@ -50,7 +50,7 @@ beiden umgesetzt (CLAUDE.md, Zusammenarbeit).
 |---|---|---|
 | 1 | **Hybrid-Server und Sitzungslebenszyklus** (§3), mit minimaler Anmeldung und Nutzerzuordnung | Sitzungen nur für angemeldete Nutzer; Parallelitäts- und Kostenlimits atomar; Zeitlimit; Aufräumen bei Abbruch und Neustart; Logs ohne Inhalte; Debug-/Unlock serverseitig ausgeschlossen |
 | 2 | **`web/`** mit einer Persona: Verbinden, Sprechen, Hören, Transkript, KI-Hinweis, Beenden | Gespräch im Browser über den Server aus Schritt 1; manuelle Prüfung nach CLAUDE.md |
-| 3 | **Persona-Gerüst** und Markus Brandt überarbeitet, inkl. Protokollant ([Entwurf](./phase-1-personas-entwurf.md)); dessen Stimmen-/Anbieterangaben (Azure) auf GPT-Live umstellen | Regressionen für Rollentreue, Rollenwechsel und Echo; Regel für Turn-Zuordnung verspäteter Protokollant-Ergebnisse und für Ausfall |
+| 3 | **Persona-Gerüst** und Markus Brandt überarbeitet, inkl. Protokollant ([Entwurf](./phase-1-personas-entwurf.md)), aufbauend auf Branch `persona-extension` (§4a); Stimmen-/Anbieterangaben (Azure) auf GPT-Live umstellen | Regressionen für Rollentreue, Rollenwechsel und Echo; Regel für Turn-Zuordnung verspäteter Protokollant-Ergebnisse und für Ausfall |
 | 4 | Übrige drei Personas / Szenarien | dieselben Regressionen je Persona |
 | 5 | **Self-Service-Login und vollständiger Zugriffsschutz** | Mindesttrennung nach §5 nachgewiesen |
 | 6 | **Persistenz, Scoring, Schlüsselmomente, Löschung** (§4, §5) | erst nach beschlossenen Fristen und Löschwegen inkl. Dienstleistern und Backups |
@@ -95,16 +95,40 @@ Stimme oder Prosodie (CLAUDE.md). Unvollständige oder technisch gestörte Gespr
 Begründung. Grundlage ist ausschließlich Text. Gespeichert werden nur diese Ausschnitte und
 die Auswertung. Ziel: später Muster über viele Gespräche erkennen.
 
-- Grundprinzipien des Scorings (was bewertet wird, wie unvollständige Gespräche behandelt
-  werden) **[vor Freigabe]**; Kriterien je Szenario **[offen]** bis Schritt 6.
+- Grundprinzipien des Scorings (entschieden, §6); Kriterien je Szenario **[offen]** bis Schritt 6.
 - Modell und Anbieter **[offen]**; Modellanbindung erst nach Datenflussprüfung (§1).
 - Ausgangspunkt: Judge-Werkzeuge aus Phase 0 (`tests/judge.py`, `metrics/conversation.py`).
 
+## 4a. Persona-Logik: Branch `persona-extension`
+
+Stand 2026-10-12, drei Commits auf Basis `7781ac8`, **42 Tests grün** (geprüft 2026-10-27).
+Umgesetzt nach Personas-Entwurf §2–§4:
+
+- `personas/model.py`: Persona als reine Daten (Rolle, Übungsprodukt, Fakten, verdeckte
+  Schmerzpunkte, Einwände, Stimmungsparameter, Meilensteine mit Toren)
+- `personas/state.py`: deterministischer Gesprächszustand ohne LLM (Schmerzpunkt-Stufen,
+  Geduld, Offenheit, Meilensteine), Eingabe nur Ereignisse aus Transkripttext
+- `personas/protocol.py`: Protokollant, ordnet je Turn Ereignisse zu (Zählbares per Code,
+  Inhaltliches per kleinem LLM-Aufruf), wirkt ab dem nächsten Turn als Regiezeile; inkl.
+  „geleakte“ Schmerzpunkte und Zusage-Werkzeug
+- `personas/prompt.py`: Systemprompt und Werkzeuge aus den Daten; Verhaltensregeln
+  (KI-Transparenz, kurze Antworten, Auflegen) zentral und nicht wegkonfigurierbar
+- `personas/markus_brandt.py`: Brandt im neuen Format (Prompt-Durchgang 3, **noch nicht im
+  Gespräch getestet**)
+- `tests/test_personas.py`, erweiterter `role_test.py`
+
+**Übernahme in Schritt 3:** Die neuen Module konfliktfrei übernehmen. Nicht übernehmen: die
+Anbindung an die Pipecat-Pipeline (`pipeline.py`, `stacks.py`; Merge-Konflikte mit `gpt-live`).
+Stattdessen im Hybrid: Protokollant auf dem Server, gespeist aus dem Sideband-Transkript; die
+Regiezeile geht über den Sideband (`session.instructions.append` bzw. `session.thinking.append`,
+höchstens 500 Tokens). Der LLM-Aufruf des Protokollanten nutzt derzeit Azure OpenAI EU;
+Anbieter für Phase 1 **[offen]** (Azure EU mit AVV oder OpenAI nach EU-Freigabe, §1).
+
 ## 5. Login, Zugriffsschutz und Löschkonzept
 
-- **Mindesttrennung [vor Freigabe]:** Nutzer können ausschließlich eigene Sitzungen und
+- **Mindesttrennung (entschieden):** Nutzer können ausschließlich eigene Sitzungen und
   Ergebnisse lesen oder verändern. Kundenübergreifender Zugriff ist ausgeschlossen.
-  Ob Kunden-Admins Ergebnisse ihrer Nutzer sehen, **[vor Freigabe]**.
+  Kunden-Admins sehen in Phase 1 keine Ergebnisse ihrer Nutzer (Manager-Dashboard: Phase 2).
 - Self-Service-Login; Anbieter und Datenhaltung in der EU **[offen]** bis Schritt 5.
 - **Datensparsamkeit (Pit, 2026-10-27):**
   - **Kein Rohaudio**, weder Nutzer- noch Persona-Audio.
@@ -116,12 +140,17 @@ die Auswertung. Ziel: später Muster über viele Gespräche erkennen.
 
 ## 6. Entscheidungen
 
-**Vor der Freigabe zu entscheiden:**
+**Entschieden mit der Freigabe (Pit, 2026-10-27):**
 
-1. Mindesttrennung und Sichtbarkeit von Ergebnissen (§5)
-2. Grundprinzipien des Scorings, Umgang mit unvollständigen Gesprächen (§4)
-3. Umfang des Protokollanten bzw. der Persona-Logik für Phase 1 (Personas-Entwurf §4)
-4. Kosten- und Sitzungsgrenzen je Nutzer/Kunde und Monatsbudget (§3)
+1. **Sichtbarkeit:** Jeder Nutzer sieht nur eigene Sitzungen und Ergebnisse; Kunden-Admins
+   sehen in Phase 1 nichts (§5).
+2. **Scoring-Grundprinzip:** Bewertet wird nur, was gesagt wurde und wie das Gespräch
+   aufgebaut war. Technisch abgebrochene oder unvollständige Gespräche erhalten keinen Score,
+   nur einen Hinweis (§4).
+3. **Persona-Logik:** Zuerst Markus Brandt mit Stimmung, Schmerzpunkten und Meilensteinen auf
+   Basis von `persona-extension` (§4a), danach die übrigen drei Personas nach demselben Muster.
+4. **Grenzen:** höchstens 1 laufendes Gespräch je Nutzer, Gesprächsdauer höchstens 10 Minuten,
+   Monatsbudget mit Warnung bei 80 % und Startverweigerung bei Erreichen; Betrag **[offen, Pit]**.
 
 **Darf bis zum jeweiligen Schritt offen bleiben** (Verantwortliche: Pit für Verträge, Claude
 für technische Auswahl): Hosting-, Login-, Datenbank- und Scoring-Anbieter, Scoring-Kriterien je
