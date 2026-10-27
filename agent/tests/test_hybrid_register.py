@@ -845,3 +845,21 @@ def test_warning_exact_threshold_and_cumulative_live_seconds(tmp_path):
             )  # Kumulativ 20 Sekunden, nicht 5 + 10 + 20.
 
     asyncio.run(run())
+
+
+def test_provider_block_of_running_session_blocks_new_starts(tmp_path):
+    # Codex-Nachprüfung: Sperre sofort, nicht erst beim Ende des betroffenen Gesprächs.
+    async def run():
+        journal, log, budget, starter, registry = make(tmp_path)
+        await registry.recover()
+        await registry.start("a", "SDP", None)
+        handle = next(iter(registry._sessions.values())).handle
+        handle.blocked = True
+        with pytest.raises(StartsBlocked):
+            await registry.start("b", "SDP", None)
+        assert budget.status().blocked
+        await registry.shutdown()
+        journal.close()
+        log.close()
+
+    asyncio.run(run())

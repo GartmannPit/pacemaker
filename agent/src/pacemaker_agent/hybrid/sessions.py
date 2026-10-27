@@ -209,8 +209,19 @@ class SessionRegistry:
             return
         await self.end(user_id, result.session_ref, reason="server_ende")
 
+    def _sync_provider_block(self) -> None:
+        """Guthabenfehler laufender Gespräche sofort übernehmen, nicht erst bei deren Ende."""
+        for other in self._sessions.values():
+            try:
+                if other.handle is not None and other.handle.provider_blocked():
+                    self.budget.set_provider_blocked()
+                    return
+            except Exception:
+                continue
+
     async def _start(self, user_id: str, sdp: str, voice: str | None) -> StartResult:
         async with self._lock:
+            self._sync_provider_block()  # Budget.reserve() prüft danach die Sperre
             if not self.ready:
                 raise StartsBlocked
             if not user_id:
@@ -306,16 +317,15 @@ class SessionRegistry:
         try:
             async with asyncio.timeout(max(0, session.deadline - self._clock())):
                 closure, usage = await session.handle.wait_closed()
-            if session.handle.provider_blocked():
-                # Guthaben-/Quota-Fehler während des Gesprächs: keine neuen Starts (Review).
-                self.budget.set_provider_blocked()
         except TimeoutError:
             await self._request_close(session, "zeitlimit")
+            self._sync_provider_block()
             return
         except Exception as error:
             if isinstance(error, ProviderBlocked):
                 self.budget.set_provider_blocked()
             closure, usage = CloseOutcome(False, "sideband_abbruch"), self._usage(session)
+        self._sync_provider_block()
         if not closure.confirmed:
             # Mit einem gleichzeitig laufenden end() wird höchstens ein Notschluss ausgeführt.
             await self._request_close(session, session.reason or closure.reason, usage=usage)
