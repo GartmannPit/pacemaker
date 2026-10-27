@@ -158,3 +158,14 @@ def test_shutdown_waits_for_emergency_close(server, monkeypatch, tmp_path) -> No
     assert FakeSideband.forced == ["sess_3"]
     assert "notschluss_extern" in (tmp_path / "sitzungen.jsonl").read_text()
     assert not hub.thread.is_alive()
+
+
+def test_debug_triggers_only_for_known_session(server, monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(server, "HYBRID", tmp_path)
+    hub = server.Hub(server.Config("referenz", "k", "https://h", "wss://h/v1/live/sessions", "m"))
+    try:
+        assert not hub.debug("unbekannt", "sideband_trennen")
+        token = hub.attach("sess_4")
+        assert not hub.debug(token, "unbekannte_aktion")
+    finally:
+        hub.shutdown()

@@ -65,8 +65,10 @@ Stimme (CLAUDE.md). Ausgangspunkt `agent/tools/gptlive_browser`. Sitzungen mit
 `allowed_client_events: []`, sofern nicht als Gegenkontrolle gekennzeichnet.
 
 - **V1 Funktion** (K1, K2, K5): je eine Sitzung mit Pit am Mikrofon für Persona-Auflegen,
-  Beenden durch den Nutzer, Tab schließen, WebRTC-Abbruch, Zeitlimit (90 s); dazu ein
-  künstlich getrennter Sideband. Je ≤ 2 Min.
+  Beenden durch den Nutzer, Tab schließen, WebRTC-Abbruch (Tab-Prozess im
+  Chrome-Task-Manager beenden), Zeitlimit; dazu ein Sideband-Abbruch bei laufendem Server
+  (Debug-Knopf, schließt nur die Sideband-Verbindung). Zeitlimit für alle Sitzungen 90 s
+  (`GPTLIVE_MAX_DURATION_S=90`), zugleich Kostendeckel.
 - **V2 Manipulation** (K3), Debug-Modus `?debug=1`, nur lokal. Je Angriff eine frische
   Sitzung, gültiges Payload, Protokoll von Annahme/Ablehnung, Wirkung und Sichtbarkeit auf
   beiden Verbindungen:
@@ -80,15 +82,16 @@ Stimme (CLAUDE.md). Ausgangspunkt `agent/tools/gptlive_browser`. Sitzungen mit
   7. `session.input_audio.mute`, `session.close`
   8. Befehlsflut und wiederverwendete IDs während Start und Abschluss
 
-  Positivkontrolle: Angriff 1 über den Sideband. Gegenkontrolle: Angriffe 1, 3 und 5 ohne
-  Sperre.
-- **V3 Latenz (Funktionsbefund):** Clip-Messung der Seite, 10 synthetische Clips mit Sideband.
+  Positivkontrolle: Angriff 1 über den Sideband (Debug-Knopf, Server mit `GPTLIVE_DEBUG=1`).
+  Gegenkontrolle: Angriffe 1, 3 und 5 ohne Sperre.
+- **V3 entfällt** (Pit, 2026-10-27, vor dem ersten Lauf): vom Laptop ohnehin keine
+  Latenzaussage. Ursprünglich geplant: **V3 Latenz (Funktionsbefund):** Clip-Messung der Seite, 10 synthetische Clips mit Sideband.
   Laptop statt VM, weil die VM keinen Browser hat; laut Messvertrag deshalb **keine
   Latenzaussage und kein Vergleich**, nur Plausibilität (Fehler, Unterbrechungen, Kaltstart,
   Verzögerung bis zum Antwortinhalt mitführen). Eine Browser-Messung auf der VM folgt, wenn
   `web/` steht.
 
-**Kosten:** erwartet 1–2 $ (rund 20–30 Sitzungsminuten plus Anlaufkosten je Sitzung plus
+**Kosten:** V1 + V2 ~19 Sitzungen, ~25 Min., **~1,25 $** (freigegeben bis 3 $). Ursprünglich: erwartet 1–2 $ (rund 20–30 Sitzungsminuten plus Anlaufkosten je Sitzung plus
 Hintergrundmodell); **Freigabedeckel 3 $**. Zeitlimit je Sitzung serverseitig, höchstens
 40 Sitzungen, Ausgabetokens des Hintergrundmodells begrenzt. Sprachdauer und Backend-Tokens
 getrennt auswerten. Läufe erst nach Pits Freigabe.

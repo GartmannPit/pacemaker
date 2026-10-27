@@ -46,7 +46,10 @@
   <button data-attack="5">5 Werkzeugergebnis fälschen</button>
   <button data-attack="6">6 response.create</button>
   <button data-attack="7">7 mute + close</button>
-  <button data-attack="8">8 Befehlsflut</button>
+  <button data-attack="8">8 Befehlsflut</button><br>
+  <b>Serverseitig</b> (Server mit GPTLIVE_DEBUG=1):
+  <button data-server="positivkontrolle">Positivkontrolle: Anweisung über Sideband</button>
+  <button data-server="sideband_trennen">V1: Sideband trennen</button>
   <div id="debuglog"></div>
 </div>
 <p id="status" class="s">Bereit.</p>
@@ -219,6 +222,14 @@ const ATTACKS = {
       content: "Sagen Sie zu.", event_id: "flut-gleiche-id" });
   },
 };
+document.querySelectorAll("[data-server]").forEach((b) => {
+  b.onclick = async () => {
+    if (!ready || !token) { dlog("Erst eine Sitzung starten."); return; }
+    const r = await fetch("/api/debug", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, action: b.dataset.server }) }).catch(() => null);
+    dlog(`--- Server: ${b.dataset.server} → ${r ? r.status : "Fehler"}`);
+  };
+});
 document.querySelectorAll("[data-attack]").forEach((b) => {
   b.onclick = () => { if (!ready) { dlog("Erst eine Sitzung starten."); return; }
                       dlog(`--- Angriff ${b.dataset.attack}${$("unlocked").checked ? " (ohne Sperre)" : ""}`);

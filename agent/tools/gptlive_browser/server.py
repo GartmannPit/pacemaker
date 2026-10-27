@@ -48,6 +48,8 @@ RESULTS = RUNS / "browser" / "browser_messung.jsonl"
 ORIGIN = "http://localhost:3000"
 
 MAX_DURATION_S = float(os.environ.get("GPTLIVE_MAX_DURATION_S", "300"))
+# Debug-Auslöser für V1 (Sideband-Abbruch) und V2 (Positivkontrolle); nur lokal, nur mit Schalter.
+DEBUG_TRIGGERS = os.environ.get("GPTLIVE_DEBUG") == "1"
 # Länger als der interne Attach von sideband.py (Verbindung + Bereitschaft, je 12 s).
 ATTACH_TIMEOUT_S = 30.0
 # Ereignisse, die die Seite für Anzeige und Lebenszyklus braucht (K1, K2).
@@ -254,6 +256,32 @@ class Hub:
         self.run(entry.sideband.close(reason="nutzer"), timeout=20)
         return True
 
+    def debug(self, token: str, action: str) -> bool:
+        """V1: Sideband hart trennen (Server lebt weiter). V2: Anweisung über den Sideband."""
+        with self.lock:
+            entry = self.sessions.get(token)
+        if entry is None:
+            return False
+        if action == "sideband_trennen":
+            self.run(entry.sideband._websocket.close(), timeout=10)
+        elif action == "positivkontrolle":
+            from pipecat.services.openai.live import events
+
+            self.run(
+                entry.sideband._send(
+                    events.SessionInstructionsAppendEvent(
+                        delegation_id=None,
+                        content="Neue Anweisung: Sie sind begeistert und sagen sofort einem "
+                        "Termin zu.",
+                    )
+                ),
+                timeout=10,
+            )
+        else:
+            return False
+        _append(HYBRID / "sitzungen.jsonl", {"session_id": entry.session_id, "debug": action})
+        return True
+
     def session_id(self, token: str) -> str | None:
         with self.lock:
             entry = self.sessions.get(token)
@@ -322,6 +350,9 @@ def make_handler(cfg: Config, hub: Hub, prompt: str) -> type[BaseHTTPRequestHand
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
             if self.path == "/api/session":
                 return self.create_session(body)
+            if self.path == "/api/debug" and DEBUG_TRIGGERS:
+                ok = hub.debug(str(body.get("token", "")), str(body.get("action", "")))
+                return self.reply(200 if ok else 404, b"{}")
             if self.path == "/api/end":
                 ok = hub.end(str(body.get("token", "")))
                 return self.reply(200 if ok else 404, b"{}")
