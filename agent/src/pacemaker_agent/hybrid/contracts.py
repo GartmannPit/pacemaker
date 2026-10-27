@@ -100,6 +100,24 @@ class StartFailed(Exception):
     code = "start_fehlgeschlagen"
 
 
+class OfferRejected(StartFailed):
+    """Provider lehnt das SDP-Angebot des Browsers ab (Client-Eingabefehler)."""
+
+    code = "angebot_abgelehnt"
+
+
+class ProviderConfig(StartFailed):
+    """Authentisierung oder Konfiguration beim Provider fehlerhaft (unsere Seite)."""
+
+    code = "provider_konfiguration"
+
+
+class ProviderUnavailable(StartFailed):
+    """Provider vorübergehend nicht erreichbar oder 5xx."""
+
+    code = "provider_nicht_verfuegbar"
+
+
 class ProviderBlocked(Exception):
     """Provider meldet Guthaben-/Quota-Ende; sperrt neue Starts (Starter wirft, Registry sperrt)."""
 
@@ -122,6 +140,8 @@ class SidebandHandle(Protocol):
 
     def usage(self) -> UsageSummary: ...  # Zwischenstand
 
+    def provider_blocked(self) -> bool: ...  # Guthaben-/Quota-Fehler während der Sitzung
+
 
 class Starter(Protocol):
     """Provider-Seite (live.py); in Tests durch eine Attrappe ersetzt."""
@@ -132,7 +152,9 @@ class Starter(Protocol):
 
     async def attach(
         self, provider_id: str, *, deadline_s: float, idle_timeout_s: float
-    ) -> SidebandHandle: ...
+    ) -> SidebandHandle:
+        """deadline_s und idle_timeout_s sind verbleibende Sekunden ab jetzt."""
+        ...
 
     async def force_close(self, provider_id: str) -> CloseOutcome: ...
 
