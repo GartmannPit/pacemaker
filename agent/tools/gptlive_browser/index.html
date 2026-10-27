@@ -109,7 +109,12 @@ async function flushDeltas(grund, beacon = false) {
     else if (!r.ok) dlog(`Transkript-Export HTTP ${r.status}`);
   } catch (e) { dlog("Transkript-Export fehlgeschlagen"); }
 }
-addEventListener("pagehide", () => flushDeltas("pagehide", true));
+addEventListener("pagehide", () => {
+  flushDeltas("pagehide", true);
+  if (token && !finished && !closedSeen) {
+    navigator.sendBeacon("/api/end", new Blob([JSON.stringify({ token })], { type: "application/json" }));
+  }
+});
 async function finish() {
   if (finished) return;
   finished = true;
