@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import io
+import json
 import sys
 import types
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -169,3 +172,39 @@ def test_debug_triggers_only_for_known_session(server, monkeypatch, tmp_path) ->
         assert not hub.debug(token, "unbekannte_aktion")
     finally:
         hub.shutdown()
+
+
+@pytest.mark.parametrize(
+    "origin,referer,status",
+    [
+        (None, "http://localhost:3000/", 200),
+        (None, "http://localhost:3000/?debug=1", 200),
+        (None, None, 403),
+        (None, "http://localhost:3000", 403),
+        (None, "http://localhost:3000.evil/", 403),
+        (None, "https://fremd.example/", 403),
+        ("https://fremd.example", "http://localhost:3000/", 403),
+        ("http://localhost:3000", None, 200),
+    ],
+)
+def test_end_beacon_origin_and_referer(server, origin, referer, status) -> None:
+    # Handler direkt mit Bytes aufrufen: keine Netzwerkverbindung, auch kein localhost.
+    hub = types.SimpleNamespace(end=Mock(return_value=True))
+    cfg = server.Config("referenz", "k", "https://h", "wss://h/v1/live/sessions", "m")
+    handler_class = server.make_handler(cfg, hub, "synthetisch")
+    handler = handler_class.__new__(handler_class)
+    handler.path = "/api/end"
+    body = json.dumps({"token": "synthetisches-token"}).encode()
+    handler.headers = {"Content-Length": str(len(body)), "Content-Type": "application/json"}
+    if origin is not None:
+        handler.headers["Origin"] = origin
+    if referer is not None:
+        handler.headers["Referer"] = referer
+    handler.rfile = io.BytesIO(body)
+    handler.reply = Mock()
+    handler.do_POST()
+    assert handler.reply.call_args.args[0] == status
+    if status == 200:
+        hub.end.assert_called_once_with("synthetisches-token")
+    else:
+        hub.end.assert_not_called()

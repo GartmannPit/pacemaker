@@ -340,7 +340,7 @@ def make_handler(cfg: Config, hub: Hub, prompt: str) -> type[BaseHTTPRequestHand
         def do_POST(self) -> None:
             origin = self.headers.get("Origin") or ""
             beacon = (
-                self.path == "/api/browser_transcript"
+                self.path in {"/api/browser_transcript", "/api/end"}
                 and not origin
                 and (self.headers.get("Referer", "").startswith(ORIGIN + "/"))
             )
