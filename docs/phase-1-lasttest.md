@@ -1,6 +1,6 @@
 # Phase 1 — Lasttest gleichzeitiger Gespräche (Stack `live`)
 
-Stand: 2026-10-27 · Status: **Präregistrierung; Harness lokal umgesetzt, noch kein Messlauf** · Prio 0 für Phase 1
+Stand: 2026-10-27 · Status: **Messlauf abgeschlossen, siehe Nachtrag** · Prio 0 für Phase 1
 
 Dieses Dokument ist Anleitung und Präregistrierung zugleich (CLAUDE.md, Messvertrag).
 Änderungen nach dem ersten Messlauf nur als gekennzeichneter Nachtrag am Ende.
@@ -185,3 +185,11 @@ Lasttest-Ergebnisse sind **[offen]**.
   Manifest, aus dem Transkript-Ereignis `auflegen`). Ohne das hätte die Reihe nach dem ersten
   Block abgebrochen: In allen vollständigen GPT-Live-Sitzungen vom 2026-10-15 legte die
   Persona vor dem letzten Clip auf.
+
+### Nachtrag nach dem Messlauf (2026-10-27, Claude)
+
+Reihe vollständig gelaufen, Ergebnis: [Summary](../experiments/summaries/2026-10-27-lasttest-live.md).
+p90 je Laststufe 1,00–1,11 × Einzelgespräch, keine Rate-Limit-Fehler bis 20 Gespräche. Die
+formalen Urteile (L5/L10 „unklar“, L20 „nicht bestanden“) gehen auf das während L20
+aufgebrauchte OpenAI-Guthaben zurück (`credit_balance_exhausted`), nicht auf Last. Keine
+Wiederholung geplant (Kostenvorgabe Pit, 2026-10-27).

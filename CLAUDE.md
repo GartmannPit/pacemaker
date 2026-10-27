@@ -39,8 +39,9 @@ auf diese Datei; Codex liest damit dieselben Regeln.
   `codex exec -s read-only -C "<repo>" -o "<absoluter-berichtspfad>" - < "<auftrag>"`.
   Claude arbeitet die Punkte ein oder begründet die Ablehnung; ungeklärte Widersprüche
   entscheidet Pit. Ein Codex-Review ersetzt keine Gründerfreigabe.
-- **Code prüft der jeweils andere.** Claudes Code:
-  `codex exec -s read-only -C "<worktree>" review --uncommitted` bzw. `review --base "<branch>"`.
+- **Code prüft der jeweils andere.** Claudes Code: `codex exec -s read-only -C "<worktree>"
+  review --uncommitted` bzw. `review --base "<branch>"` (beide ohne eigenen Prüftext); mit
+  Prüfauftrag stattdessen `codex exec -s read-only … - < "<auftrag>"` mit Verweis auf den Diff.
   Codex' Code: Review durch Claude (Diff lesen, Fachwissen aus früheren Läufen gegenprüfen,
   Tests selbst ausführen). Während eines Reviews bleibt der Stand eingefroren; relevante
   Änderungen danach brauchen ein neues Review. Integriert wird erst nach Review und grünen
