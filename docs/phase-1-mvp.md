@@ -150,7 +150,7 @@ Anbieter für Phase 1 **[offen]** (Azure EU mit AVV oder OpenAI nach EU-Freigabe
 3. **Persona-Logik:** Zuerst Markus Brandt mit Stimmung, Schmerzpunkten und Meilensteinen auf
    Basis von `persona-extension` (§4a), danach die übrigen drei Personas nach demselben Muster.
 4. **Grenzen:** höchstens 1 laufendes Gespräch je Nutzer, Gesprächsdauer höchstens 10 Minuten,
-   Monatsbudget mit Warnung bei 80 % und Startverweigerung bei Erreichen; Betrag **[offen, Pit]**.
+   Monatsbudget **25 $** (Pit, 2026-10-27) mit Warnung bei 80 % und Startverweigerung vor Erreichen.
 
 **Darf bis zum jeweiligen Schritt offen bleiben** (Verantwortliche: Pit für Verträge, Claude
 für technische Auswahl): Hosting-, Login-, Datenbank- und Scoring-Anbieter, Scoring-Kriterien je
