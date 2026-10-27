@@ -538,3 +538,82 @@ def test_server_build_recovers_and_serves_health(monkeypatch, tmp_path) -> None:
             assert "KI-Trainingsfigur" in await r.text()
 
     asyncio.run(run())
+
+
+# --- Korrekturen aus dem Codex-Review (Schritt 1) ----------------------------------------------
+
+
+def test_review_sideband_usage_and_block(monkeypatch) -> None:
+    async def run() -> None:
+        ws = FakeWS(closes_on_close=False)
+        sb = await attached(monkeypatch, ws)
+        ws.feed({"type": "session.usage.updated", "usage": {"seconds": 30.0}})
+        ws.feed(
+            {
+                "type": "response.event",
+                "event": {"type": "response.created", "response": {"id": "r9"}},
+            }
+        )
+        ws.feed({"type": "error", "error": {"code": "credit_balance_exhausted", "message": "x"}})
+        ws.feed({"type": "session.closed"})  # ohne Usage
+        _, usage = await asyncio.wait_for(sb.wait_closed(), 3)
+        assert usage.final and usage.live_seconds is None  # Reserve statt Zwischenstand
+        assert not usage.backend_complete  # offene Response r9
+        assert sb.provider_blocked()
+
+    asyncio.run(run())
+
+
+def test_review_disable_enable_keeps_logins_revoked(tmp_path) -> None:
+    async def run() -> None:
+        users = auth_mod.UserFile(tmp_path / "nutzer.json")
+        users.upsert("pit", "ein-langes-passwort")
+        auth = auth_mod.Auth(users)
+        first = await auth.login("pit", "ein-langes-passwort", "1.1.1.1")
+        second = await auth.login("pit", "ein-langes-passwort", "1.1.1.1")
+        users.set_disabled("pit", True)
+        assert auth.resolve(first) is None
+        users.set_disabled("pit", False)
+        assert auth.resolve(second) is None  # auch der zweite bleibt widerrufen
+
+    asyncio.run(run())
+
+
+def test_review_payload_without_raw_errors_and_transport_unclear(monkeypatch) -> None:
+    assert "error" not in live.BROWSER_SERVER_EVENTS
+
+    class Boom:
+        def post(self, *_a, **_k):
+            raise ConnectionResetError("nach dem Senden")
+
+    async def run() -> None:
+        starter = live.LiveStarter(settings(), Boom())
+        with pytest.raises(CreateUnclear):
+            await starter.create("SDP", None)
+
+    asyncio.run(run())
+
+
+def test_review_fragmented_body_is_read_completely(tmp_path) -> None:
+    async def run() -> None:
+        registry, oplog = FakeRegistry(), FakeOpLog()
+        client = await client_for(tmp_path, registry, oplog)
+        h = {"Origin": ORIGIN}
+        try:
+            await client.post(
+                "/api/login", json={"name": "pit", "passwort": "ein-langes-passwort"}, headers=h
+            )
+
+            async def chunks():
+                for part in (b'{"sdp": "OF', b'FER", "stim', b'me": "vesper"}'):
+                    yield part
+                    await asyncio.sleep(0.01)
+
+            r = await client.post(
+                "/api/session", data=chunks(), headers={**h, "Content-Type": "application/json"}
+            )
+            assert r.status == 200 and registry.started[-1][1:] == ("OFFER", "vesper")
+        finally:
+            await client.close()
+
+    asyncio.run(run())

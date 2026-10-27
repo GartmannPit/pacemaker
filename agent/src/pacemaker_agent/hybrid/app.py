@@ -58,6 +58,9 @@ MELDUNGEN = {
     "provider_gesperrt": (503, "Gespräche sind vorübergehend nicht möglich."),
     "start_fehlgeschlagen": (502, "Das Gespräch konnte nicht gestartet werden."),
     "erzeugung_ungeklaert": (504, "Das Gespräch konnte nicht sicher gestartet werden."),
+    "angebot_abgelehnt": (400, "Ihr Browser hat eine ungültige Verbindung angeboten."),
+    "provider_konfiguration": (503, "Gespräche sind vorübergehend nicht möglich."),
+    "provider_nicht_verfuegbar": (503, "Der Sprachdienst ist gerade nicht erreichbar."),
     "nicht_gefunden": (404, "Nicht gefunden."),
     "interner_fehler": (500, "Ein interner Fehler ist aufgetreten."),
 }
@@ -150,13 +153,15 @@ def create_app(
     async def read_json(request: web.Request, limit: int) -> dict:
         if request.content_length is not None and request.content_length > limit:
             raise Fehler("zu_gross")
+        raw = bytearray()
         try:
             async with asyncio.timeout(READ_TIMEOUT_S):
-                raw = await request.content.read(limit + 1)
+                while chunk := await request.content.read(limit + 1 - len(raw)):
+                    raw += chunk  # bis EOF lesen, auch bei fragmentierten Bodies
+                    if len(raw) > limit:
+                        raise Fehler("zu_gross")
         except TimeoutError as exc:
             raise Fehler("anfrage_ungueltig") from exc
-        if len(raw) > limit:
-            raise Fehler("zu_gross")
         try:
             data = json.loads(raw)
         except ValueError as exc:

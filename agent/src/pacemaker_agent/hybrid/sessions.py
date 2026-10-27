@@ -13,6 +13,7 @@ from .budget import Budget
 from .contracts import (
     CapacityExhausted,
     CloseOutcome,
+    CreateUnclear,
     EndReason,
     OpLog,
     ProviderBlocked,
@@ -234,15 +235,17 @@ class SessionRegistry:
             except ProviderBlocked:
                 self.budget.set_provider_blocked()
                 await self._uncreated(session)
-                raise StartFailed from None
+                raise  # Fehlerklasse bis zur App erhalten (Codex-Review)
             except StartFailed:
                 await self._uncreated(session)
-                raise StartFailed from None
-            except Exception:
+                raise
+            except Exception as error:
                 # CreateUnclear und unerwartete Fehler dürfen keine zweite Erzeugung auslösen.
                 await self._record(session, "erzeugung_ungeklaert")
                 session.initializing = False
-                raise StartFailed from None
+                if isinstance(error, CreateUnclear):
+                    raise
+                raise CreateUnclear from None
 
             # Die Provider-ID muss vor dem Attach dauerhaft sein.
             await self._record(session, "startend")
@@ -303,6 +306,9 @@ class SessionRegistry:
         try:
             async with asyncio.timeout(max(0, session.deadline - self._clock())):
                 closure, usage = await session.handle.wait_closed()
+            if session.handle.provider_blocked():
+                # Guthaben-/Quota-Fehler während des Gesprächs: keine neuen Starts (Review).
+                self.budget.set_provider_blocked()
         except TimeoutError:
             await self._request_close(session, "zeitlimit")
             return

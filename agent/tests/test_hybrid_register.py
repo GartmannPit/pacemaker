@@ -53,6 +53,9 @@ class Handle:
     def usage(self):
         return self.summary
 
+    def provider_blocked(self):
+        return getattr(self, "blocked", False)
+
     def finish(self, reason="auflegen", *, confirmed=True):
         self.future.set_result((CloseOutcome(confirmed, reason), self.summary))
 
@@ -255,20 +258,20 @@ def test_parallel_different_users_and_ending_places(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "error,state,bound,blocked",
+    "error,state,bound,blocked,raised",
     [
-        (StartFailed(), None, 0, False),
-        (ProviderBlocked(), None, 0, True),
-        (CreateUnclear(), "erzeugung_ungeklaert", 550_000, False),
-        (RuntimeError("GEHEIM"), "erzeugung_ungeklaert", 550_000, False),
+        (StartFailed(), None, 0, False, StartFailed),
+        (ProviderBlocked(), None, 0, True, ProviderBlocked),
+        (CreateUnclear(), "erzeugung_ungeklaert", 550_000, False, CreateUnclear),
+        (RuntimeError("GEHEIM"), "erzeugung_ungeklaert", 550_000, False, CreateUnclear),
     ],
 )
-def test_create_error_paths(tmp_path, error, state, bound, blocked):
+def test_create_error_paths(tmp_path, error, state, bound, blocked, raised):
     async def run():
         journal, log, budget, starter, registry = make(tmp_path)
         await registry.recover()
         starter.create_error = error
-        with pytest.raises(StartFailed):
+        with pytest.raises(raised):  # Fehlerklasse bleibt bis zur App erhalten
             await registry.start("a", "SDP", None)
         assert list(registry.snapshot().values()) == ([state] if state else [])
         assert budget.status().bound_micro == bound
@@ -805,7 +808,7 @@ def test_network_timeouts_keep_uncertain_reservations(tmp_path, phase):
             starter.handles[0].close_confirmed = False
             await registry.end("a", result.session_ref, reason="nutzer")
         else:
-            with pytest.raises(StartFailed):
+            with pytest.raises(CreateUnclear if phase == "create" else StartFailed):
                 await registry.start("a", "SDP", None)
         if phase == "attach":
             assert_closed(journal, budget, registry, spent=550_000, reason="attach_fehler")

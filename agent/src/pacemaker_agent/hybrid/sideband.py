@@ -28,6 +28,9 @@ CLOSE_CONFIRM_S = 15.0
 OUTPUT_QUIET_S = 1.5
 FAREWELL_TIMEOUT_S = 20.0
 _ID = re.compile(r"[A-Za-z0-9_-]+")
+BLOCKING_CODES = frozenset(
+    {"credit_balance_exhausted", "insufficient_quota", "billing_hard_limit_reached"}
+)
 
 
 class _NoRedirectConnect(_ws_connect):
@@ -77,6 +80,9 @@ class HybridSideband:
         self._backend: dict[str, int] = {}
         self._backend_complete = True
         self._seen_usage: set[str] = set()
+        self._open_responses: set[str] = set()
+        self._closed_with_usage = False
+        self._blocked = False
         self._seen_calls: set[str] = set()
         self._pending: dict[str, tuple[bool, bool]] = {}  # delegation -> (hatte Aufrufe, auflegen)
         self._output_at = 0.0
@@ -135,12 +141,18 @@ class HybridSideband:
         return await asyncio.shield(self._done)
 
     def usage(self) -> UsageSummary:
+        # Endet die Sitzung ohne Usage im Abschlussereignis, ist der Endverbrauch unbekannt:
+        # kein Zwischenstand als final ausgeben, damit die Reserve greift.
+        unknown_final = self._server_closed and not self._closed_with_usage
         return UsageSummary(
-            live_seconds=self._live_seconds,
+            live_seconds=None if unknown_final else self._live_seconds,
             backend_tokens=dict(self._backend),
-            backend_complete=self._backend_complete,
+            backend_complete=self._backend_complete and not self._open_responses,
             final=self._server_closed,
         )
+
+    def provider_blocked(self) -> bool:
+        return self._blocked
 
     # --- intern ---------------------------------------------------------------------------------
 
@@ -239,12 +251,16 @@ class HybridSideband:
         elif isinstance(event, events.SessionUsageUpdatedEvent):
             self._update_live(event.usage)
         elif isinstance(event, events.SessionClosedEvent):
-            if event.usage:
+            if event.usage and event.usage.seconds is not None:
                 self._update_live(event.usage)
+                self._closed_with_usage = True
             self._server_closed = True
             self._terminal.set()
         elif isinstance(event, events.ResponseEventEnvelope):
             await self._response_event(event)
+        elif isinstance(event, events.ErrorEvent):
+            if (event.error.code or "") in BLOCKING_CODES:
+                self._blocked = True
 
     def _update_live(self, usage: events.Usage) -> None:
         if usage.seconds is not None and math.isfinite(usage.seconds) and usage.seconds >= 0:
@@ -270,6 +286,14 @@ class HybridSideband:
 
     async def _response_event(self, event: events.ResponseEventEnvelope) -> None:
         key = event.delegation_id or "unkorreliert"
+        response = event.event.get("response")
+        identity = response.get("id") if isinstance(response, dict) else None
+        if event.inner_type == "response.created" and isinstance(identity, str):
+            self._open_responses.add(identity)
+        if event.inner_type == "response.failed" and isinstance(response, dict):
+            error = response.get("error")
+            if isinstance(error, dict) and error.get("code") in BLOCKING_CODES:
+                self._blocked = True
         if event.inner_type == "response.output_item.done" and not self._closing:
             try:
                 item = events.ResponseOutputItem.model_validate(event.event.get("item") or {})
@@ -289,7 +313,9 @@ class HybridSideband:
                 )
             )
         elif event.inner_type in ("response.completed", "response.incomplete", "response.failed"):
-            self._backend_usage(event.event.get("response"))
+            self._backend_usage(response)
+            if isinstance(identity, str):
+                self._open_responses.discard(identity)
             had, hang = self._pending.pop(key, (False, False))
             if had and not self._closing:
                 await self._send(events.ResponseCreateEvent())

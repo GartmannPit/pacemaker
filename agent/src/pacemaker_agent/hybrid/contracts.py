@@ -100,6 +100,24 @@ class StartFailed(Exception):
     code = "start_fehlgeschlagen"
 
 
+class OfferRejected(StartFailed):
+    """Provider lehnt das SDP-Angebot des Browsers ab (Client-Eingabefehler)."""
+
+    code = "angebot_abgelehnt"
+
+
+class ProviderConfig(StartFailed):
+    """Authentisierung oder Konfiguration beim Provider fehlerhaft (unsere Seite)."""
+
+    code = "provider_konfiguration"
+
+
+class ProviderUnavailable(StartFailed):
+    """Provider vorübergehend nicht erreichbar oder 5xx."""
+
+    code = "provider_nicht_verfuegbar"
+
+
 class ProviderBlocked(Exception):
     """Provider meldet Guthaben-/Quota-Ende; sperrt neue Starts (Starter wirft, Registry sperrt)."""
 
@@ -121,6 +139,8 @@ class SidebandHandle(Protocol):
     async def wait_closed(self) -> tuple[CloseOutcome, UsageSummary]: ...
 
     def usage(self) -> UsageSummary: ...  # Zwischenstand
+
+    def provider_blocked(self) -> bool: ...  # Guthaben-/Quota-Fehler während der Sitzung
 
 
 class Starter(Protocol):

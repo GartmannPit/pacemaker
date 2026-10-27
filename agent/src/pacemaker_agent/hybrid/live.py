@@ -20,10 +20,12 @@ from .contracts import (
     VOICES,
     CloseOutcome,
     CreateUnclear,
+    OfferRejected,
     ProviderBlocked,
-    StartFailed,
+    ProviderConfig,
+    ProviderUnavailable,
 )
-from .sideband import HybridSideband, force_close
+from .sideband import BLOCKING_CODES, HybridSideband, force_close
 
 CREATE_TIMEOUT_S = 30.0
 # Serverereignisse, die der Browser für Anzeige und Lebenszyklus braucht (Plan A6).
@@ -32,9 +34,7 @@ BROWSER_SERVER_EVENTS = [
     "session.closed",
     "session.input_transcript.delta",
     "session.output_transcript.delta",
-    "error",
-]
-_BLOCKING_CODES = {"credit_balance_exhausted", "insufficient_quota", "billing_hard_limit_reached"}
+]  # bewusst ohne "error": Provider-Texte nicht ungefiltert an den Browser
 
 
 @dataclass(frozen=True)
@@ -124,7 +124,6 @@ class LiveStarter:
             "session": session_payload(self._s, voice),
             "transport": {"type": "webrtc", "sdp": sdp},
         }
-        sent = False
         try:
             async with asyncio.timeout(CREATE_TIMEOUT_S):
                 async with self._http.post(
@@ -133,18 +132,14 @@ class LiveStarter:
                     headers={"Authorization": f"Bearer {self._s.api_key}"},
                     allow_redirects=False,
                 ) as response:
-                    sent = True
                     raw = await response.read()
                     status = response.status
-        except (TimeoutError, aiohttp.ServerDisconnectedError, aiohttp.ClientPayloadError) as exc:
-            # Anfrage möglicherweise angekommen: nicht wiederholen (Plan §3, HTTP).
-            raise CreateUnclear() from exc
         except aiohttp.ClientConnectorError as exc:
-            raise StartFailed("verbindung") from exc
-        except aiohttp.ClientError as exc:
-            if sent:
-                raise CreateUnclear() from exc
-            raise StartFailed("verbindung") from exc
+            # Nur ein nachweislich gescheiterter Verbindungsaufbau ist eindeutig.
+            raise ProviderUnavailable("verbindung") from exc
+        except (TimeoutError, OSError, aiohttp.ClientError) as exc:
+            # Anfrage möglicherweise angekommen: nicht wiederholen, Reserve bleibt (Plan §3).
+            raise CreateUnclear() from exc
         if status in (200, 201):
             try:
                 created = json.loads(raw)
@@ -152,9 +147,14 @@ class LiveStarter:
             except (ValueError, KeyError, TypeError) as exc:
                 raise CreateUnclear() from exc
         code = _error_code(raw)
-        if code in _BLOCKING_CODES:
+        if code in BLOCKING_CODES:
             raise ProviderBlocked(code)
-        raise StartFailed(f"http_{status}:{code or '-'}")
+        if code == "invalid_offer":
+            raise OfferRejected(code)
+        if status >= 500 or status == 429:
+            raise ProviderUnavailable(f"http_{status}")
+        # Übrige 4xx (z. B. unknown_parameter, 401/403): unsere Konfiguration
+        raise ProviderConfig(f"http_{status}:{code or '-'}")
 
     async def attach(
         self, provider_id: str, *, deadline_s: float, idle_timeout_s: float

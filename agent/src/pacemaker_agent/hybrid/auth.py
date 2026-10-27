@@ -91,6 +91,7 @@ class User:
     name: str
     password_hash: str
     disabled: bool = False
+    login_version: int = 0  # erhöht bei Sperre und Passwortänderung → Logins ungültig
 
 
 class UserFile:
@@ -125,6 +126,7 @@ class UserFile:
                 name=normalize(str(row["name"])),
                 password_hash=str(row["password_hash"]),
                 disabled=bool(row.get("disabled", False)),
+                login_version=int(row.get("login_version", 0)),
             )
             if user.name in users:
                 raise ValueError("Nutzerdatei: doppelter Name")
@@ -133,7 +135,13 @@ class UserFile:
 
     def _write(self, users: dict[str, User]) -> None:
         rows = [
-            {"id": u.id, "name": u.name, "password_hash": u.password_hash, "disabled": u.disabled}
+            {
+                "id": u.id,
+                "name": u.name,
+                "password_hash": u.password_hash,
+                "disabled": u.disabled,
+                "login_version": u.login_version,
+            }
             for u in users.values()
         ]
         tmp = self.path.with_suffix(".tmp")
@@ -160,6 +168,7 @@ class UserFile:
                 name=key,
                 password_hash=hash_password(password),
                 disabled=False,
+                login_version=(old.login_version + 1) if old else 0,
             )
             self._write(users)
             return users[key]
@@ -171,7 +180,8 @@ class UserFile:
             if key not in users:
                 raise KeyError(name)
             old = users[key]
-            users[key] = User(old.id, old.name, old.password_hash, disabled)
+            version = old.login_version + (1 if disabled else 0)
+            users[key] = User(old.id, old.name, old.password_hash, disabled, version)
             self._write(users)
             return users[key]
 
@@ -211,7 +221,7 @@ class Login:
     user_id: str
     name: str
     expires: float
-    hash_tag: str  # Passwortänderung macht bestehende Logins ungültig
+    login_version: int  # Abgleich mit der Nutzerdatei (Sperre, Passwortänderung)
 
 
 class Auth:
@@ -261,8 +271,9 @@ class Auth:
             self._by_ip.add(ip)
             raise AuthError()
         login_id = secrets.token_urlsafe(32)
-        tag = hashlib.sha256(user.password_hash.encode()).hexdigest()[:16]
-        self._logins[login_id] = Login(user.id, user.name, self.clock() + LOGIN_TTL_S, tag)
+        self._logins[login_id] = Login(
+            user.id, user.name, self.clock() + LOGIN_TTL_S, user.login_version
+        )
         return login_id
 
     def resolve(self, login_id: str | None) -> Login | None:
@@ -272,8 +283,12 @@ class Auth:
         if login is None:
             return None
         user = self._current().get(login.name)
-        tag = hashlib.sha256(user.password_hash.encode()).hexdigest()[:16] if user else None
-        if self.clock() >= login.expires or user is None or user.disabled or tag != login.hash_tag:
+        if (
+            self.clock() >= login.expires
+            or user is None
+            or user.disabled
+            or user.login_version != login.login_version
+        ):
             # Ablauf, Sperre oder Passwortänderung (auch per CLI) widerrufen die Anmeldung.
             self._logins.pop(login_id, None)
             return None
