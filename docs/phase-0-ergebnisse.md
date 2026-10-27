@@ -1,11 +1,17 @@
 # Phase 0 — Ergebnisse
 
-**Stand:** 2026-10-14 · **Verfasser:** Claude · **Status:** ENTWURF — alle Messungen von Claude
-abgeschlossen; Gründer-Bewertungen sind mit **[offen]** markiert.
+**Stand:** 2026-10-27 · **Verfasser:** Claude · **Status:** ABGESCHLOSSEN durch
+Gründerentscheidung (§8). §1–§7 dokumentieren den Stand vom 2026-10-14 (Azure-Kaskade) und
+bleiben als Befund unverändert; was davon überholt ist, steht in §8.
 **Bezug:** [Phase-0-Plan](./phase-0-proof-of-concept.md) · [Bestandsaufnahme](./2026-10-08-bestandsaufnahme-muss-kriterien.md) ·
 [Testablauf](./phase-0-testablauf-gespraech.md) · Messprotokoll: [Summary §1–§27](../experiments/summaries/2026-10-03-llm-modellvergleich-deployment-typen.md)
 
 ## 1. Kurzfassung
+
+> **Entscheidung (§8):** Sprachpfad OpenAI GPT-Live (`gpt-live-1`) statt Azure-Kaskade
+> (2026-10-15); die gemessene GPT-Live-Latenz ist als angemessen beschlossen, das Ziel
+> p90 < 900 ms gilt nicht mehr als Muss (2026-10-27). Weiter mit Phase 1
+> ([Entwurf](./phase-1-mvp.md)).
 
 Phase 0 sollte beantworten, ob eine deutsche Sprach-Persona mit **< 900 ms p90** Antwortzeit,
 **akzeptabler Sprachqualität** und **EU-Datenresidenz** erreichbar ist.
@@ -115,6 +121,8 @@ DPA/AVV, Product Terms, Missbrauchsüberwachung (30 Tage), Smart Turn vs. Prosod
 
 ## 4. Stack-Empfehlung für Phase 1
 
+> **Überholt** durch die Gründerentscheidung für GPT-Live (§8). Die Kaskade bleibt Rückfall.
+
 **`azure-eu` mit `gpt-4.1-mini`** (Data Zone EU), Azure Speech S0 Germany West Central, Stimme
 **[offen: Blind-A/B]**, asynchroner Inhaltsfilter, Prompt-Durchgang 2. Begründung: einziger
 getesteter EU-Stack, der die Persona trägt (§20); `nano` ist ~150 ms schneller, legt aber fast
@@ -139,6 +147,8 @@ Sprache `de-DE` und Vorverbindung nach Unterbrechungen (Default, §26).
    ungültige Läufe durch Dienstfehler).
 
 ## 6. Go/No-Go-Einschätzung
+
+> **Entschieden** (§8): weder Option A mit Kaskade noch B/C, sondern Wechsel auf GPT-Live.
 
 **Entscheidungsgrundlage für das Gespräch Pit/Marvin (Plan, Woche 4, Schritt 24). Die
 Entscheidung treffen die Gründer.**
@@ -207,3 +217,50 @@ Landingpage-Aussage „ohne Verzögerung" angepasst werden, solange das Ziel nic
 | AVV Deepgram/Gladia prüfen, falls Flux als STT-Alternative in Frage kommt (§24) | Pit |
 | **Prio 0 für Phase 1 — Lasttest gleichzeitiger Gespräche:** Alle Phase-0-Messungen laufen mit genau einem Gespräch (Messhygiene, Summary §13.6). Ob das System mehrere Nutzer gleichzeitig trägt, ist ungeprüft; im Tarif F0 scheiterte bereits die zweite STT-Verbindung („Quota exceeded“, Testablauf Nachtrag 2). Vorgehen: tatsächliche Kontingente auslesen (Azure Speech S0: gleichzeitige STT-Verbindungen; Azure OpenAI: TPM/RPM des Deployments), dann 1 / 5 / 10 synthetische Anrufer gleichzeitig (`synthetic_caller` parallel), je Stufe E2E-p50/p90, Fehlerquote und CPU-Last des Agents (Silero VAD + Smart Turn je Sitzung). Kriterium: keine Dienstfehler und Latenz unter Last nicht spürbar schlechter als im Einzelgespräch (Grenze mit dem neuen Latenzziel aus §6 festlegen; 900 ms sind auch einzeln nicht erreichbar). Hinweis: Auch mit Speech S0 trat am 2026-10-12 einmal „Quota exceeded" auf (§23). Nur ohne andere laufende Messung. Ergebnis bestimmt Kontingent-Anhebung, Deployment-Typ (Standard vs. reservierte Kapazität) und Agent-Dimensionierung. | Phase 1, Claude — vor allem anderen |
 | **Kosten-ToDo STT-Streaming:** Die Pipeline streamt das Mikrofon das ganze Gespräch lang an Azure STT; abgerechnet wird gestreamtes Audio (~1,7 ct/Min., über die Hälfte der Speech-Kosten). Audio nur senden, wenn die lokale VAD Sprache erkennt (mit kurzem Vorlauf-Puffer, damit Wortanfänge nicht fehlen), könnte die Persona-Redezeit und Stille einsparen — grob bis zur Hälfte der STT-Kosten. Vorher prüfen: Abrechnungsbasis bei Azure bestätigen, Wiedereinstieg/Latenz des STT-Streams, Erkennungsgenauigkeit, Barge-in unverändert (läuft über die lokale VAD). | Phase 1, Claude |
+
+## 8. Gründerentscheidung und Abschluss (2026-10-27)
+
+### 8.1 Entscheidung
+
+- **Sprachpfad:** OpenAI GPT-Live (`gpt-live-1`, Hintergrundmodell `gpt-4.1-mini`), Pit und
+  Marvin am 2026-10-15 nach Browser-Schnelltest. Die Azure-Kaskade (`azure-eu`/`mini`) bleibt
+  als Rückfall im Code.
+- **Latenz:** Die gemessene GPT-Live-Latenz ist als angemessen beschlossen (Pit, 2026-10-27).
+  Gemessen (Summary §28, nicht präregistriert, Region `referenz`): Agent-Ausgabe p50/p90
+  1622/2452 ms mit synthetischen Clips, 2454/3324 ms mit Pits Aufnahmen; im Browser direkt per
+  WebRTC Median 1215 ms (9 Clips). Damit ist GPT-Live **langsamer** als die Kaskade
+  (p50 ~1,1 s, p90 ~1,34 s); ausschlaggebend waren Stimme, Gesprächsgefühl und Turn-Taking
+  (kaum Hineinsprechen, keine Unterbrechung durch Hörersignale, §28).
+  p90 < 900 ms gilt nicht mehr als Muss. Neue Zielwerte setzen die Gründer; bis dahin dürfen
+  Änderungen die Latenz nicht ungemessen verschlechtern.
+- **EU-Residenz:** EU-Projekt bei OpenAI beantragt, Freigabe ausstehend. Die Entwicklung wird
+  davon nicht abhängig gemacht (Pit, 2026-10-27): Entwicklung und Tests über `referenz` mit
+  synthetischen Daten und Pits eigener Stimme (Freigabe 2026-10-15). **Reale Nutzer (Pilot)
+  erst nach EU-Freigabe und geprüftem OpenAI-DPA.**
+
+### 8.2 Muss-Kriterien unter GPT-Live
+
+| # | Kriterium | Stand mit GPT-Live |
+|---|---|---|
+| 1 | Latenz | durch Gründerentscheidung ersetzt (8.1); Lasttest gleichzeitiger Gespräche [offen], [Plan](./phase-1-lasttest.md) |
+| 2 | Sprachqualität | Pit: alle 8 Stimmen im Browsertest „sehr gut“ (2026-10-27, informell, kein Blind-A/B); Marvin [offen] |
+| 3 | Barge-in | Turn-Erkennung serverseitig durch GPT-Live; im T1-Lauf kaum Hineinsprechen (§28). Barge-in live mit Headset [offen] |
+| 4 | Rollen-Konsistenz | T1 mit GPT-Live: Rolle durchgehend gehalten, Information übergangen 0/19 (Judge, §28) |
+| 5 | EU-Compliance | EU-Projekt beantragt; OpenAI-DPA [offen, Pit]; Faktenblatt um OpenAI ergänzen [offen] |
+| 6 | Transkript + Timing | erfüllt über den Pipecat-Pfad (Stack `live`) |
+| 7 | Kosten | `gpt-live-1` 0,05 $/Min. Sitzungsdauer, sekundengenau, plus Hintergrundmodell (Preisliste 2026-10-27); Kaskade ~0,03 $ |
+| 8 | Reproduzierbarkeit | [offen]; README beschreibt noch die Kaskade |
+
+### 8.3 Offene Punkte aus §7, neu eingeordnet
+
+| Punkt | Stand |
+|---|---|
+| Lasttest (Prio 0) | auf Stack `live` umgestellt: [phase-1-lasttest.md](./phase-1-lasttest.md), Umsetzung läuft |
+| Barge-in live mit Headset | bleibt, jetzt mit GPT-Live (Pit) |
+| Stimmbewertung | Pit erledigt (informell), Marvin offen |
+| README-Probelauf | bleibt; README vorher auf GPT-Live umstellen |
+| DPA/AVV | neu: OpenAI-DPA und EU-Freigabe (Voraussetzung Pilot); Hetzner-AVV bleibt |
+| Smart Turn vs. Prosodie-Verbot | betrifft nur noch den Kaskaden-Rückfall |
+| Aufnahmen der Robustheitsprobe löschen | laut Einwilligung nach Abschluss Phase 0 fällig; werden seit 2026-10-15 in automatischen Tests weiter genutzt. Pit entscheidet: löschen oder Einwilligung verlängern |
+| AVV Deepgram/Gladia, Kosten-ToDo STT-Streaming | entfallen mit GPT-Live (nur Kaskade) |
+| Landingpage-Aussage „ohne Verzögerung“ (§6.4) | in `index_1.html` am 2026-10-27 keine Latenzaussage gefunden; vor Veröffentlichung erneut prüfen |

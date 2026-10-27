@@ -4,8 +4,10 @@
 
 Deutschsprachiger KI-Sprachrollenspielpartner für B2B-SaaS-Vertriebstraining.
 SDRs üben Gespräche mit einer Echtzeit-KI-Persona; Transkript und Scoring sind das Produktziel.
-Aktuell: **Phase 0 — Technischer PoC**. Scoring wird in dieser Phase nicht implementiert.
-Strategie: `Pacemaker.md`. Phasenplan: `docs/phase-0-proof-of-concept.md`.
+Aktuell: **Übergang Phase 0 → Phase 1.** Phase 0 ist abgeschlossen (`docs/phase-0-ergebnisse.md` §8);
+der Phase-1-Plan `docs/phase-1-mvp.md` ist ein Entwurf. Bis zu seiner Freigabe gelten die
+Grenzen unter „Nicht in Phase 0“; Scoring wird noch nicht implementiert.
+Strategie: `Pacemaker.md`. Phasenpläne: `docs/phase-0-proof-of-concept.md`, `docs/phase-1-mvp.md`.
 
 ## Arbeitsweise
 
@@ -51,7 +53,11 @@ Strategie: `Pacemaker.md`. Phasenplan: `docs/phase-0-proof-of-concept.md`.
   aus Stimme, Prosodie oder Stimmlage; auch nicht zu Testzwecken. Späteres Scoring nur
   anhand von Gesprächsinhalt und -struktur. VAD und Turn-Erkennung dienen ausschließlich
   der Gesprächssteuerung, nicht der Bewertung einer Person.
-- **Latenz:** p90 < 900 ms, Ziel p50 < 700 ms; Messdefinition siehe unten.
+- **Latenz:** Gemessene GPT-Live-Latenz als angemessen beschlossen (Gründer, 2026-10-27);
+  p90 < 900 ms ist kein Muss mehr. Änderungen dürfen die Latenz nicht ungemessen verschlechtern;
+  neue Zielwerte setzen die Gründer. Messdefinition siehe unten.
+- **Reale Nutzer:** Pilot- oder Kundendaten erst nach EU-Freigabe des OpenAI-Projekts und
+  geprüftem DPA; bis dahin nur synthetische Daten und Pits eigene Stimme.
 - **KI-Transparenz:** Die KI-Natur des Gesprächspartners ist im Produkt jederzeit erkennbar.
 - **Web-only:** Browser und WebRTC; keine native App oder Client-Installation.
 - **Entwicklungswerkzeuge:** Keine realen Gesprächsdaten, Secrets oder vertraulichen
