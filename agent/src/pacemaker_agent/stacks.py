@@ -48,14 +48,16 @@ class StackServices:
     manifest_extra: dict | None = None
 
 
-def build_stack(name: str, *, system_prompt: str, tools: list[dict] | None = None) -> StackServices:
+def build_stack(
+    name: str, *, system_prompt: str, tools: list[dict] | None = None, run_id: str | None = None
+) -> StackServices:
     """Baut die Services eines Stacks.
 
     `system_prompt` braucht s2s; kaskadierte Stacks bekommen ihn ueber den LLMContext der
     Pipeline und nutzen ihn (mit `tools`, OpenAI-Format) nur zum Aufwaermen des Prompt-Caches.
     """
     if name == "live":
-        return _build_live(system_prompt)
+        return _build_live(system_prompt, run_id=run_id)
     if name == "azure-eu":
         return _build_azure_eu(system_prompt, tools)
     if name == "s2s":
@@ -213,7 +215,7 @@ def _build_azure_eu(system_prompt: str, tools: list[dict] | None) -> StackServic
     )
 
 
-def _build_live(system_prompt: str) -> StackServices:
+def _build_live(system_prompt: str, *, run_id: str | None = None) -> StackServices:
     """OpenAI GPT-Live (`gpt-live-1`): full-duplex Speech-to-Speech.
 
     Das Modell hoert und spricht gleichzeitig und entscheidet selbst ueber Antwortbeginn und
@@ -225,7 +227,8 @@ def _build_live(system_prompt: str) -> StackServices:
     from pipecat.services.openai.live.llm import OpenAILiveLLMService
     from pipecat.services.openai.responses.llm import OpenAIResponsesLLMService
 
-    from .metrics import live_diag
+    from .metrics import live_diag, live_events
+    from .metrics.run_manifest import new_run_id
 
     cfg = load_live_config()
     if cfg.region != "eu":
@@ -233,9 +236,10 @@ def _build_live(system_prompt: str) -> StackServices:
             "GPT-Live ueber api.openai.com (OPENAI_LIVE_REGION=referenz): Referenzlauf, keine "
             "EU-Residenz -- nur synthetische Clips ohne reale Personendaten verwenden."
         )
-    service_cls = (
-        live_diag.instrument(OpenAILiveLLMService) if live_diag.enabled() else OpenAILiveLLMService
-    )
+    run_id = run_id or new_run_id("live")
+    service_cls = live_events.instrument(OpenAILiveLLMService, run_id)
+    if live_diag.enabled():
+        service_cls = live_diag.instrument(service_cls, run_id)
     llm = service_cls(
         api_key=cfg.api_key,
         base_url=cfg.base_url,

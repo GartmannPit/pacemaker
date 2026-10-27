@@ -7,16 +7,16 @@ um Server-Zeit von Pipeline-Puffern zu trennen:
 - audio: jedes Audio-Delta mit Laenge (ms) und ob es Stille ist (Pipecats is_silence)
 - text:  jedes Transkript-Delta mit Rolle
 
-Ausgabe: <RUNS_DIR>/live_diag/<zeit>-<pid>.jsonl, eine Zeile je Ereignis.
+Ausgabe: <RUNS_DIR>/live_diag/<run_id>.jsonl, eine Zeile je Ereignis.
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
 import time
-from datetime import UTC, datetime
 
 from loguru import logger
 from pipecat.audio.utils import is_silence
@@ -28,10 +28,9 @@ def enabled() -> bool:
     return os.environ.get("PACEMAKER_LIVE_DIAG", "0") == "1"
 
 
-def instrument(base: type) -> type:
+def instrument(base: type, run_id: str) -> type:
     """Unterklasse eines Pipecat-OpenAILiveLLMService mit Zeitstempeln je Server-Ereignis."""
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    path = RUNS_DIR / "live_diag" / f"{stamp}-{os.getpid()}.jsonl"
+    path = RUNS_DIR / "live_diag" / f"{run_id}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     logger.info(f"Live-Diagnose aktiv -> {path}")
 
@@ -43,13 +42,14 @@ def instrument(base: type) -> type:
         async def _handle_evt_audio_delta(self, evt):
             try:
                 audio = base64.b64decode(evt.delta)
-                write(
+                await asyncio.to_thread(
+                    write,
                     {
                         "t": time.time(),
                         "art": "audio",
                         "ms": round(len(audio) / 2 / 24, 1),  # PCM16 mono 24 kHz
                         "still": bool(is_silence(audio)),
-                    }
+                    },
                 )
             except Exception as exc:  # noqa: BLE001 -- Diagnose darf nie stoeren
                 logger.warning(f"Live-Diagnose: Audio-Eintrag verworfen ({exc!r:.120})")
@@ -57,7 +57,9 @@ def instrument(base: type) -> type:
 
         async def _handle_evt_transcript_delta(self, evt):
             if evt.delta:
-                write({"t": time.time(), "art": "text", "rolle": evt.role, "text": evt.delta})
+                await asyncio.to_thread(
+                    write, {"t": time.time(), "art": "text", "rolle": evt.role, "text": evt.delta}
+                )
             return await super()._handle_evt_transcript_delta(evt)
 
     return DiagOpenAILiveLLMService

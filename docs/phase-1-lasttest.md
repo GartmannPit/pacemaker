@@ -1,6 +1,6 @@
 # Phase 1 — Lasttest gleichzeitiger Gespräche (Stack `live`)
 
-Stand: 2026-10-27 · Status: **Präregistrierung, noch nicht umgesetzt** · Prio 0 für Phase 1
+Stand: 2026-10-27 · Status: **Präregistrierung; Harness lokal umgesetzt, noch kein Messlauf** · Prio 0 für Phase 1
 
 Dieses Dokument ist Anleitung und Präregistrierung zugleich (CLAUDE.md, Messvertrag).
 Änderungen nach dem ersten Messlauf nur als gekennzeichneter Nachtrag am Ende.
@@ -14,7 +14,7 @@ die gemessene Einzellatenz (Summary §28) haben die Gründer am 2026-10-27 als a
 **Frage:** Trägt der Stack `live` mehrere gleichzeitige Gespräche, ohne dass Dienstfehler
 auftreten oder die Antwortzeit spürbar schlechter wird als im Einzelgespräch?
 
-**Hypothese H1:** Bei 5 und bei 10 gleichzeitigen synthetischen Anrufern treten keine
+**Hypothese H1:** Bei 5, 10 und 20 gleichzeitigen synthetischen Anrufern treten keine
 Dienstfehler auf, und das p90 der Antwortzeit liegt je Stufe höchstens 20 % über dem p90 der
 Einzelgespräche aus derselben Messreihe.
 
@@ -27,7 +27,7 @@ den laufenden Gesprächen?
 
 Eine Laststufe gilt als **bestanden**, wenn beide Bedingungen erfüllt sind:
 
-Gilt je Stufe für `L5` und `L10`.
+Gilt je Stufe für `L5`, `L10` und `L20`.
 
 1. **Keine Dienstfehler:** keine abgelehnte Sitzung, kein HTTP 429/5xx, kein unerwarteter
    Verbindungsabbruch, kein Turn mit Status `audiofehler` oder `keine_antwort`, der auf den
@@ -77,7 +77,8 @@ Vergleich der Server-Audio-Ankunft (`live_diag`), ob OpenAI langsamer wurde.
    sekundengenau, abgerechnet wird die **Sitzungsdauer**, nicht die Redezeit. Das
    Hintergrundmodell `gpt-4.1-mini` (0,40 $ / 1,60 $ je 1 Mio. Token Ein-/Ausgabe) wird nur
    für `auflegen` aufgerufen und ist vernachlässigbar. Eine Sitzung à 10 Clips dauert
-   ~2,5–3 Min. (Läufe vom 2026-10-15). Plan §5: 18 Sitzungen ≈ 55 Min. ≈ **2,70 $**.
+   ~2,5–3 Min. (Läufe vom 2026-10-15). Plan §5: 39 Sitzungen ≈ 2 Std. Sitzungszeit ≈ **5,85 $**
+   (Obergrenze bei Zeitlimit aller Anrufer ≈ 9,95 $).
    Funktionstest vorab (§5) ≈ 0,15 $.
 5. **Harness-Erweiterungen umsetzen und testen** (§6).
 
@@ -95,20 +96,23 @@ funktionieren. Bei Fehlern abbrechen, beheben, Funktionstest wiederholen.
 - `E` — Einzelgespräch: 1 Anrufer, 1 Sitzung à 10 Clips
 - `L5` — 5 Anrufer gleichzeitig, je 1 Sitzung à 10 Clips
 - `L10` — 10 Anrufer gleichzeitig, je 1 Sitzung à 10 Clips
+- `L20` — 20 Anrufer gleichzeitig, je 1 Sitzung à 10 Clips (erster Kunde mit 20 Nutzern, Pit 2026-10-27)
 
 Start mit zufälligem Versatz von 0–3 s je Anrufer.
 
-**Reihenfolge** (eine Runde, ~20 Min.): `E, L5, E, L10, E`
+**Reihenfolge** (eine Runde, ~30–40 Min.): `E, L5, E, L10, E, L20, E`
 
 Vor und nach jedem Block `infra/rtt-check.sh` (wie `infra/messreihe.sh`). Zwischen den Blöcken
 30 s Pause.
 
-**Umfang** (ohne Kaltstart-Turns): `E` 3 × 9 = 27 Turns; `L5` 5 × 9 = 45; `L10` 90. Das reicht für eine
+**Umfang** (ohne Kaltstart-Turns): `E` 4 × 9 = 36 Turns; `L5` 5 × 9 = 45; `L10` 90; `L20` 180.
+Legt die Persona vor dem letzten Clip auf, sind es entsprechend weniger. Das reicht für eine
 **orientierende** Aussage („trägt / trägt nicht“), nicht für ein belastbares p90 auf wenige
 Prozent. Liegt das Verhältnis knapp an 1,2 (zwischen 1,1 und 1,3), Ergebnis als „unklar“
 ausweisen; eine Wiederholung braucht eine neue Freigabe.
 
-**Abbruch:** Fallen in `L5` mehr als 2 Sitzungen mit Dienstfehlern aus, `L10` auslassen.
+**Abbruch:** Fallen in einer Laststufe mehr als 2 Sitzungen mit Dienstfehlern aus, alle höheren
+Laststufen auslassen. Die Einzelblöcke `E` laufen weiter.
 
 ## 6. Nötige Harness-Erweiterungen
 
@@ -166,4 +170,18 @@ Neue Abhängigkeiten sind dafür nicht nötig.
 
 ## Nachträge
 
-Keine.
+### Umsetzungsnotiz vor dem ersten Messlauf (2026-10-27)
+
+Harness §6 lokal umgesetzt. Die [Umsetzungsnotiz](phase-1-lasttest-umsetzung.md)
+dokumentiert die Prüfung von Summary §28, die lokal verifizierten Pipecat-Ereignisse,
+Ablage, Kostenschutz und offene Schritte. Kriterien und Umfang bleiben unverändert;
+Lasttest-Ergebnisse sind **[offen]**.
+
+### Nachtrag vor dem ersten Messlauf (2026-10-27, Claude)
+
+- Stufe `L20` ergänzt (Pit: erster Kunde mit 20 Nutzern). Reihe jetzt `E, L5, E, L10, E, L20, E`,
+  39 Sitzungen, ~5,85 $. Scheitert eine Laststufe an Dienstfehlern, entfallen alle höheren.
+- Auflegen der Persona vor dem letzten Clip gilt als reguläres Sitzungsende (`hung_up` im
+  Manifest, aus dem Transkript-Ereignis `auflegen`). Ohne das hätte die Reihe nach dem ersten
+  Block abgebrochen: In allen vollständigen GPT-Live-Sitzungen vom 2026-10-15 legte die
+  Persona vor dem letzten Clip auf.

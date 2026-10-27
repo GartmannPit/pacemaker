@@ -42,6 +42,7 @@ import asyncio
 import hashlib
 import json
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from loguru import logger
@@ -51,7 +52,7 @@ from pipecat.pipeline.runner import PipelineRunner
 from pipecat.processors.frame_processor import FrameDirection
 
 from ..metrics.collector import RUNS_DIR
-from ..metrics.run_manifest import new_run_id, update_manifest
+from ..metrics.run_manifest import load_config, load_manifest, new_run_id, update_manifest
 from ..metrics.turn_ledger import TurnLedger
 from ..pipeline import build_pipeline_task
 from ..stacks import STACKS
@@ -68,7 +69,7 @@ BOT_SETTLE_SECS = 1.0
 
 # Pause zwischen zwei Sitzungen. 1,1 s reichten nicht: Azure STT (Tarif F0, eine gleichzeitige
 # Verbindung) lehnte die neue Sitzung mit "Quota exceeded" (1007) ab, solange die vorige
-# Verbindung noch offen war (T1, 2026-10-08). Zugleich > 1 s, weil run_id Sekundenaufloesung hat.
+# Verbindung noch offen war (T1, 2026-10-08).
 SESSION_GAP_SECS = 5.0
 # Sitzungen mit Dienstfehler im Turn-Protokoll werden wiederholt (T1 2026-10-11: "Quota
 # exceeded" von Azure STT trotz 5 s Pause, Ursache nicht isoliert).
@@ -148,14 +149,30 @@ def _clips_sha(clips: list[Path]) -> str:
     return h.hexdigest()[:12]
 
 
+def persona_hung_up(run_id: str) -> bool:
+    """True, wenn die Persona per Werkzeug `auflegen` regulär beendet hat (Transkript-Ereignis)."""
+    path = RUNS_DIR / "transcripts" / f"{run_id}.jsonl"
+    if not path.exists():
+        return False
+    return any(
+        row.get("role") == "event" and row.get("text") == "auflegen"
+        for row in (json.loads(line) for line in path.read_text(encoding="utf-8").splitlines())
+    )
+
+
 async def _until(aw, run_task: asyncio.Task) -> bool:
     """Wartet auf `aw`; False, wenn die Pipeline vorher endet (z. B. Persona hat aufgelegt)."""
     waiter = asyncio.ensure_future(aw)
-    done, _ = await asyncio.wait({waiter, run_task}, return_when=asyncio.FIRST_COMPLETED)
-    if waiter in done:
-        return True
-    waiter.cancel()
-    return False
+    try:
+        done, _ = await asyncio.wait({waiter, run_task}, return_when=asyncio.FIRST_COMPLETED)
+        if waiter in done:
+            waiter.result()
+            return True
+        return False
+    finally:
+        if not waiter.done():
+            waiter.cancel()
+        await asyncio.gather(waiter, return_exceptions=True)
 
 
 async def _session(
@@ -185,7 +202,6 @@ async def _session(
 
     runner = PipelineRunner()
     run_task = asyncio.create_task(runner.run(task))
-    await transport.input().ready.wait()  # Pipeline muss erst starten, bevor wir Audio pushen
 
     clips_log: list[dict] = []
     ended_by_pipeline_after: int | None = None
@@ -229,16 +245,51 @@ async def _session(
                 while len(clips_log) < i:
                     await asyncio.sleep(0.01)
                 continue
-            await feed_one(i, clip, None)
+            if not await _until(feed_one(i, clip, None), run_task):
+                ended_by_pipeline_after = i
+                return
             await asyncio.sleep(0.3)  # kurze Luft, bis Turn-Detection reagiert
         if not await _until(bot_idle.wait_bot_settled(), run_task):  # letzte Antwort
             ended_by_pipeline_after = len(sequence)
             return
         await task.stop_when_done()
 
-    await asyncio.gather(feed(), run_task)
+    feed_task = None
+    failure = None
+    try:
+        # Auch ein Fehler vor Transport-Bereitschaft muss das Warten beenden.
+        if await _until(transport.input().ready.wait(), run_task):
+            feed_task = asyncio.create_task(feed())
+            await asyncio.gather(feed_task, run_task)
+        else:
+            await run_task
+            ended_by_pipeline_after = 0
+    except asyncio.CancelledError:
+        failure = "CancelledError"
+        raise
+    except Exception as exc:
+        failure = type(exc).__name__
+    finally:
+        if feed_task is not None and not feed_task.done():
+            feed_task.cancel()
+            await asyncio.gather(feed_task, return_exceptions=True)
+        if not run_task.done():
+            await task.cancel(reason="synthetic_caller_beendet")
+            await run_task
+        ledger_path, balance = ledger.write(run_id)
+        # Legt die Persona vor dem letzten Clip auf, ist das ein reguläres Gesprächsende
+        # (Läufe 2026-10-15: in allen vollständigen Sitzungen vor Clip 10).
+        hung_up = persona_hung_up(run_id)
+        update_manifest(
+            run_id,
+            finished=datetime.now(UTC).isoformat(),
+            harness_error=failure,
+            turns_requested=len(sequence),
+            result=balance,
+            hung_up=hung_up,
+            session_complete=failure is None and (balance["offered"] == len(sequence) or hung_up),
+        )
 
-    ledger_path, balance = ledger.write(run_id)
     events_dir = RUNS_DIR / "events"
     events_dir.mkdir(parents=True, exist_ok=True)
     (events_dir / f"{run_id}.json").write_text(
@@ -264,7 +315,7 @@ async def _session(
     if ended_by_pipeline_after is not None:
         logger.info(f"Sitzung von der Pipeline beendet nach Clip {ended_by_pipeline_after}")
     logger.info(f"Turn-Protokoll: {ledger_path}")
-    service_error = any(
+    service_error = bool((load_manifest(run_id) or {}).get("service_errors")) or any(
         json.loads(line).get("errors")
         for line in ledger_path.read_text(encoding="utf-8").splitlines()
         if line.strip()
@@ -285,7 +336,13 @@ async def _run(
     barge_in: float | None = None,
     repeat: int = 1,
     continue_after_hangup: bool = False,
+    service_retries: bool = True,
 ) -> list[str]:
+    load = load_config()
+    if load["load_concurrency"] is not None:
+        if fresh or repeat != 1 or continue_after_hangup:
+            raise ValueError("Lasttest erlaubt genau eine Sitzung je Anrufer")
+        service_retries = False
     clips = _select_clips(fixtures, ids)
     manifest_extra = {
         # ueberschreibt den Default-Fixture-Hash im Manifest: belegt, welche Clips liefen
@@ -305,7 +362,7 @@ async def _run(
                 result = await _session(stack, remaining, run_id, extra, barge_in)
                 run_ids.append(run_id)
                 await asyncio.sleep(SESSION_GAP_SECS)
-                if result["service_error"] and retries < MAX_SERVICE_RETRIES:
+                if service_retries and result["service_error"] and retries < MAX_SERVICE_RETRIES:
                     # Dienstfehler (z. B. Azure "Quota exceeded"): Sitzung ist ungueltig und
                     # wird mit neuer run_id wiederholt; die ungueltige bleibt im Protokoll.
                     retries += 1
@@ -371,6 +428,9 @@ def main() -> None:
         action="store_true",
         help="Legt die Persona auf, restliche Clips in neuer Sitzung (Wiederanruf) einspielen",
     )
+    parser.add_argument(
+        "--no-service-retries", action="store_true", help="Dienstfehler nicht wiederholen"
+    )
     args = parser.parse_args()
 
     ids = [c.strip() for c in args.clips.split(",")] if args.clips else None
@@ -384,6 +444,7 @@ def main() -> None:
             barge_in=args.barge_in,
             repeat=args.repeat,
             continue_after_hangup=args.continue_after_hangup,
+            service_retries=not args.no_service_retries,
         )
     )
     logger.info(f"Fertig. Lauf: {', '.join(run_ids)}")

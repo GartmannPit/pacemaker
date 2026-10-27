@@ -130,6 +130,8 @@ def summarize(u: UtteranceEvents) -> dict:
     return {
         "utterance_id": u.utterance_id,
         "clip": u.clip,
+        "window_start": u.window_start,
+        "speech_end_clip": u.speech_end_clip,
         "status": classify(u),
         "n_turn_ends": len(u.turn_ends),
         "errors": u.errors,

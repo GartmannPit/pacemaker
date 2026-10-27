@@ -3,28 +3,33 @@
 # Zweck: abschaetzen, wie viel eine Migration auf die EU-Mess-VM an E2E-Latenz einspart.
 # Gemessen wird der TCP-Handshake (~1 RTT) und der TLS-Handshake, ohne Authentifizierung.
 #
-# Aufruf (aus dem Repo-Root):  bash infra/rtt-check.sh [anzahl_samples]
+# Aufruf (aus dem Repo-Root):  bash infra/rtt-check.sh [anzahl_samples] [azure|live]
 # Ausgabe: eine JSON-Zeile pro Host mit Medianen in ms, z. B. umleiten nach
 #   experiments/runs/<datum>-rtt-<geraet>.jsonl
 set -euo pipefail
 
 SAMPLES="${1:-20}"
-ENV_FILE="$(dirname "$0")/../agent/.env"
-
-region="germanywestcentral"
-openai_host=""
-if [[ -f "$ENV_FILE" ]]; then
-  region="$(grep -E '^AZURE_SPEECH_REGION=' "$ENV_FILE" | cut -d= -f2- || true)"
-  region="${region:-germanywestcentral}"
-  openai_host="$(grep -E '^AZURE_OPENAI_ENDPOINT=' "$ENV_FILE" | cut -d= -f2- | sed -E 's#^https?://##; s#/.*$##' || true)"
-fi
-openai_host="${AZURE_OPENAI_HOST:-$openai_host}"
-
-hosts=("$region.stt.speech.microsoft.com" "$region.tts.speech.microsoft.com")
-if [[ -n "$openai_host" ]]; then
-  hosts+=("$openai_host")
+if [[ "${2:-azure}" == "live" ]]; then
+  # Lasttest: expliziter Referenz-Endpunkt, keine Konfiguration/Secrets einlesen.
+  hosts=("api.openai.com")
 else
-  echo "Hinweis: kein AZURE_OPENAI_ENDPOINT in agent/.env und kein AZURE_OPENAI_HOST gesetzt -- LLM-Endpoint wird uebersprungen." >&2
+  ENV_FILE="$(dirname "$0")/../agent/.env"
+
+  region="germanywestcentral"
+  openai_host=""
+  if [[ -f "$ENV_FILE" ]]; then
+    region="$(grep -E '^AZURE_SPEECH_REGION=' "$ENV_FILE" | cut -d= -f2- || true)"
+    region="${region:-germanywestcentral}"
+    openai_host="$(grep -E '^AZURE_OPENAI_ENDPOINT=' "$ENV_FILE" | cut -d= -f2- | sed -E 's#^https?://##; s#/.*$##' || true)"
+  fi
+  openai_host="${AZURE_OPENAI_HOST:-$openai_host}"
+
+  hosts=("$region.stt.speech.microsoft.com" "$region.tts.speech.microsoft.com")
+  if [[ -n "$openai_host" ]]; then
+    hosts+=("$openai_host")
+  else
+    echo "Hinweis: kein AZURE_OPENAI_ENDPOINT in agent/.env und kein AZURE_OPENAI_HOST gesetzt -- LLM-Endpoint wird uebersprungen." >&2
+  fi
 fi
 
 median() { sort -n | awk '{a[NR]=$1} END {if (NR%2) print a[(NR+1)/2]; else print (a[NR/2]+a[NR/2+1])/2}'; }

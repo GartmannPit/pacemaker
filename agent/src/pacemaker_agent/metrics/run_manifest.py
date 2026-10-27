@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import platform
 import socket
 import subprocess
@@ -21,7 +22,9 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
+from uuid import uuid4
 
 from ..config import TuningConfig
 from .collector import _REPO_ROOT, RUNS_DIR
@@ -31,7 +34,23 @@ _FIXTURES = _REPO_ROOT / "agent" / "fixtures" / "audio"
 
 
 def new_run_id(stack: str) -> str:
-    return f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{stack}"
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+    return f"{stamp}-{os.getpid()}-{uuid4().hex}-{stack}"
+
+
+def load_config() -> dict[str, int | None]:
+    """Last-Metadaten validieren; normale Einzelmessungen behalten leere Felder."""
+    names = ("PACEMAKER_LOAD_CONCURRENCY", "PACEMAKER_LOAD_CALLER")
+    values = [os.environ.get(name) for name in names]
+    if not any(values):
+        return {"load_concurrency": None, "load_caller": None}
+    try:
+        concurrency, caller = (int(value or "") for value in values)
+    except ValueError as exc:
+        raise ValueError("Beide PACEMAKER_LOAD_* muessen positive Ganzzahlen sein") from exc
+    if not 1 <= caller <= concurrency:
+        raise ValueError("Last-Anrufer muss zwischen 1 und load_concurrency liegen")
+    return {"load_concurrency": concurrency, "load_caller": caller}
 
 
 def manifest_path(run_id: str) -> Path:
@@ -40,6 +59,21 @@ def manifest_path(run_id: str) -> Path:
 
 def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()[:12]
+
+
+def _write_json(path: Path, value: dict) -> None:
+    """Ein hart beendeter Anrufer darf kein halb geschriebenes Manifest hinterlassen."""
+    temporary = None
+    try:
+        with NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, suffix=".tmp", delete=False
+        ) as stream:
+            temporary = Path(stream.name)
+            json.dump(value, stream, ensure_ascii=False, indent=2)
+        temporary.replace(path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _git_revision() -> dict[str, Any]:
@@ -98,6 +132,7 @@ def write_manifest(
         "prompt_sha": _sha(system_prompt.encode()),
         "fixtures_sha": _fixtures_hash(),
         **(extra or {}),
+        **load_config(),
     }
     manifest = {
         "run_id": run_id,
@@ -113,7 +148,7 @@ def write_manifest(
     }
     MANIFEST_DIR.mkdir(parents=True, exist_ok=True)
     path = manifest_path(run_id)
-    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_json(path, manifest)
     return path
 
 
@@ -122,7 +157,7 @@ def update_manifest(run_id: str, **sections: Any) -> None:
     path = manifest_path(run_id)
     manifest = json.loads(path.read_text(encoding="utf-8"))
     manifest.update(sections)
-    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_json(path, manifest)
 
 
 def load_manifest(run_id: str) -> dict[str, Any] | None:

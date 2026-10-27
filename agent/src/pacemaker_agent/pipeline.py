@@ -26,6 +26,7 @@ from pipecat.observers.base_observer import BaseObserver, FramePushed
 from pipecat.observers.user_bot_latency_observer import LatencyBreakdown, UserBotLatencyObserver
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.task import PipelineParams, PipelineTask
+from pipecat.pipeline.worker import ProcessorUnusablePolicy
 from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.aggregators.llm_response_universal import (
     AssistantTurnStoppedMessage,
@@ -239,7 +240,7 @@ def build_pipeline_task(
     use_tools = stack_name in _STACKS_WITH_TOOLS
     self_turning = stack_name in SELF_TURNING_STACKS
     openai_tools = [_openai_tool(HANGUP_TOOL)] if use_tools else None
-    services = build_stack(stack_name, system_prompt=prompt, tools=openai_tools)
+    services = build_stack(stack_name, system_prompt=prompt, tools=openai_tools, run_id=run_id)
 
     context = LLMContext(
         messages=[{"role": "system", "content": prompt}],
@@ -359,6 +360,9 @@ def build_pipeline_task(
             enable_usage_metrics=True,
         ),
         observers=observers,
+        processor_unusable_policy=(
+            ProcessorUnusablePolicy.CANCEL if self_turning else ProcessorUnusablePolicy.CONTINUE
+        ),
     )
     if hangup is not None:
         hangup.attach(task)
