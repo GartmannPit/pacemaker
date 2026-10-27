@@ -1,6 +1,6 @@
 # Phase 1, Schritt 1 — Hybrid-Server und Sitzungslebenszyklus (Plan)
 
-Stand: 2026-10-27 · Status: **Plan, von Codex zweimal geprüft, umsetzungsreif** · Bezug:
+Stand: 2026-10-27 · Status: **umgesetzt und gegenseitig geprüft (206 Tests grün); Live-Abnahme (§5.4) ausstehend** · Bezug:
 [Phase-1-Plan](./phase-1-mvp.md) §2 Schritt 1, §3, §6 · Prototyp: `agent/tools/gptlive_browser/`
 
 ## 1. Ziel
@@ -177,3 +177,18 @@ Deadline und Inaktivität genau einmal; Abbruch der HTTP-Anfrage bricht das Aufr
   eigene kleine Hetzner-VM (nicht die Mess-VM), Docker, TLS-Reverse-Proxy; Entscheidung und
   AVV vor Inbetriebnahme.
 - Self-Service-Login, Passwort zurücksetzen: Schritt 5. Transkript-Persistenz: Schritt 6.
+
+## Nachtrag: Umsetzung (2026-10-27)
+
+- Teil A (Codex) und Teil B (Claude) in `agent/src/pacemaker_agent/hybrid/`, zusammengeführt
+  in `gpt-live`. Prüfungen: 206 Tests, ruff check und format grün (Mocks, ohne Netz).
+- Abweichungen vom Plan: Cookie enthält eine zufällige Login-ID statt HMAC-Signatur
+  (serverseitige Liste, Widerruf über Anmeldeversion in der Nutzerdatei); Logins nur im
+  Speicher, ein Neustart meldet alle ab. Vertrag ergänzt: typisierte Startfehler
+  (`OfferRejected`, `ProviderConfig`, `ProviderUnavailable`), `SidebandHandle.provider_blocked()`,
+  `attach()` erhält verbleibende Sekunden.
+- Reviews: Claude prüfte Teil A (Deadline-Übergabe korrigiert), Codex prüfte Teil B und die
+  Integration (1 × P1, 8 × P2, alle behoben und bestätigt).
+- Offen: Live-Abnahme (Freigabe Pit, ≤ 0,50 $); Verhalten von OpenAI beim Anhängen an eine
+  bereits beendete Sitzung (404/410 als „beendet“ angenommen) – davon hängt ab, ob ein
+  Wiederanlauf den Server dauerhaft „nicht bereit“ lassen kann.

@@ -173,7 +173,8 @@ Ein Stack-Name ist kein Nachweis einer geprüften EU-Konfiguration.
 
 - agent/: Pipeline, Personas, Metriken und Test-Harness
 - web/: Verbinden, Sprechen, Hören, Transkript und Latenz-HUD (noch nicht angelegt)
-- agent/tools/gptlive_browser/: Hybrid-Prototyp (Server, Sideband, Seite, Auswertung)
+- agent/src/pacemaker_agent/hybrid/: Hybrid-Server (Phase 1, Schritt 1: Anmeldung, Sitzungen, Budget, Sideband)
+- agent/tools/gptlive_browser/: Hybrid-Prototyp aus dem Architekturversuch (nicht Produktpfad)
 - infra/: Docker Compose, LiveKit und EU-VM-Setup
 - docs/: Phasenpläne und Ergebnisse
 - experiments/runs/: Roh-Messdaten, gitignored
@@ -200,6 +201,8 @@ PACEMAKER_RUNS_DIR=<ordner> uv run python -m pacemaker_agent.tests.synthetic_cal
 uv run python -m pacemaker_agent.metrics.conversation <runs_dir>   # T1/T2: F1–F6, Export für den Judge
 uv run python -m pacemaker_agent.tests.judge <runs_dir>             # F4/F6, markierte Fälle von Hand prüfen
 uv run python -m pacemaker_agent.tests.role_test                    # T3 Rollentreue (Textmodus)
+uv run pacemaker-server nutzer-anlegen <name>                       # Hybrid-Server: Nutzer (Passwort verdeckt)
+uv run pacemaker-server serve                                       # Hybrid-Server (Konfiguration: .env.example)
 ```
 Der azure-eu-Lauf setzt eine geprüfte EU-Konfiguration und synthetische Fixtures voraus.
 Fixture-Erzeugung kann externe Dienste und Kosten auslösen; vorher Implementierung prüfen.
