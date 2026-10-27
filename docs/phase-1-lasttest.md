@@ -14,19 +14,20 @@ die gemessene Einzellatenz (Summary §28) haben die Gründer am 2026-10-27 als a
 **Frage:** Trägt der Stack `live` mehrere gleichzeitige Gespräche, ohne dass Dienstfehler
 auftreten oder die Antwortzeit spürbar schlechter wird als im Einzelgespräch?
 
-**Hypothese H1:** Bei 5 gleichzeitigen synthetischen Anrufern (aktuelles Limit des
-OpenAI-Projekts, §4) treten keine Dienstfehler auf, und das p90 der Antwortzeit liegt höchstens
-20 % über dem p90 der Einzelgespräche aus derselben Messreihe.
+**Hypothese H1:** Bei 5 und bei 10 gleichzeitigen synthetischen Anrufern treten keine
+Dienstfehler auf, und das p90 der Antwortzeit liegt je Stufe höchstens 20 % über dem p90 der
+Einzelgespräche aus derselben Messreihe.
 
-**Beobachtung B1 (kein Kriterium):** Bei 6 Anrufern, einem über dem Limit: Wird die
-überzählige Sitzung sauber abgelehnt (welcher Fehler, wann), und bleiben die übrigen 5
-unbeeinträchtigt?
+**Beobachtung B1 (kein Kriterium):** Wie viele Tokens pro Minute verbraucht ein Gespräch
+gegenüber dem Organisationslimit von 30.000 TPM (§4)? Daraus folgt, wie viele Gespräche
+gleichzeitig tragbar sind. Wird das Limit erreicht: welcher Fehler, wann, und was passiert mit
+den laufenden Gesprächen?
 
 ## 2. Erfolgskriterium (Gründerentscheidung Pit, 2026-10-27)
 
 Eine Laststufe gilt als **bestanden**, wenn beide Bedingungen erfüllt sind:
 
-Gilt für `L5`. `L6` wird nur beschrieben (B1).
+Gilt je Stufe für `L5` und `L10`.
 
 1. **Keine Dienstfehler:** keine abgelehnte Sitzung, kein HTTP 429/5xx, kein unerwarteter
    Verbindungsabbruch, kein Turn mit Status `audiofehler` oder `keine_antwort`, der auf den
@@ -66,14 +67,16 @@ Vergleich der Server-Audio-Ankunft (`live_diag`), ob OpenAI langsamer wurde.
    echte Git-Revision stehen, nicht `unbekannt`.
 2. **API-Key erneuern:** Der alte Key ist ungültig (401 am 2026-10-27). Pit trägt den neuen Key
    per SSH in `~/pacemaker/agent/.env` auf der VM ein, nicht über Git.
-3. **Limits:** laut Pit (2026-10-27) im aktuellen Usage-Tier **5 gleichzeitige Sitzungen**
-   `gpt-live-1`. Vor dem Lauf auf der OpenAI-Plattform bestätigen und Tier hier eintragen:
-   **[offen]**. Erwartung für `L6`: eine Sitzung wird abgelehnt.
+3. **Limits** (Stand 2026-10-27): Organisation im Tier **Build**. Modellseite `gpt-live-1`:
+   **50 gleichzeitige Sitzungen** (Launch 300, Grow 500). Die OpenAI-Konsole (Limits der
+   Organisation) zeigt für `gpt-live-1` zusätzlich **30.000 TPM**. Wie GPT-Live Tokens auf
+   dieses Limit anrechnet (nur Audio oder auch Prompt je Antwort), ist nicht dokumentiert;
+   je nach Zählweise reicht es grob für 3–30 gleichzeitige Gespräche. Das klärt B1.
 4. **Kosten** (Stand 2026-10-27, OpenAI-Preisliste): `gpt-live-1` **0,05 $ je Minute**,
    sekundengenau, abgerechnet wird die **Sitzungsdauer**, nicht die Redezeit. Das
    Hintergrundmodell `gpt-4.1-mini` (0,40 $ / 1,60 $ je 1 Mio. Token Ein-/Ausgabe) wird nur
    für `auflegen` aufgerufen und ist vernachlässigbar. Eine Sitzung à 10 Clips dauert
-   ~2,5–3 Min. (Läufe vom 2026-10-15). Plan §5: 14 Sitzungen ≈ 40 Min. ≈ **2 $**.
+   ~2,5–3 Min. (Läufe vom 2026-10-15). Plan §5: 18 Sitzungen ≈ 55 Min. ≈ **2,70 $**.
    Funktionstest vorab (§5) ≈ 0,15 $.
 5. **Harness-Erweiterungen umsetzen und testen** (§6).
 
@@ -90,21 +93,21 @@ funktionieren. Bei Fehlern abbrechen, beheben, Funktionstest wiederholen.
 
 - `E` — Einzelgespräch: 1 Anrufer, 1 Sitzung à 10 Clips
 - `L5` — 5 Anrufer gleichzeitig, je 1 Sitzung à 10 Clips
-- `L6` — 6 Anrufer gleichzeitig, je 1 Sitzung à 10 Clips (B1, über dem Limit)
+- `L10` — 10 Anrufer gleichzeitig, je 1 Sitzung à 10 Clips
 
 Start mit zufälligem Versatz von 0–3 s je Anrufer.
 
-**Reihenfolge** (eine Runde, ~20 Min.): `E, L5, E, L6, E`
+**Reihenfolge** (eine Runde, ~20 Min.): `E, L5, E, L10, E`
 
 Vor und nach jedem Block `infra/rtt-check.sh` (wie `infra/messreihe.sh`). Zwischen den Blöcken
 30 s Pause.
 
-**Umfang** (ohne Kaltstart-Turns): `E` 3 × 9 = 27 Turns; `L5` 5 × 9 = 45. Das reicht für eine
+**Umfang** (ohne Kaltstart-Turns): `E` 3 × 9 = 27 Turns; `L5` 5 × 9 = 45; `L10` 90. Das reicht für eine
 **orientierende** Aussage („trägt / trägt nicht“), nicht für ein belastbares p90 auf wenige
 Prozent. Liegt das Verhältnis knapp an 1,2 (zwischen 1,1 und 1,3), Ergebnis als „unklar“
 ausweisen; eine Wiederholung braucht eine neue Freigabe.
 
-**Abbruch:** Fallen in `L5` mehr als 2 Sitzungen mit Dienstfehlern aus, `L6` auslassen.
+**Abbruch:** Fallen in `L5` mehr als 2 Sitzungen mit Dienstfehlern aus, `L10` auslassen.
 
 ## 6. Nötige Harness-Erweiterungen
 
@@ -127,10 +130,16 @@ Der synthetische Anrufer ist für genau ein Gespräch gebaut. Fehlt:
    Sitzungen und die Kostenschätzung ausgeben.
 4. **Fehler sichtbar machen:** Sitzungsablehnungen, HTTP-Status und Verbindungsabbrüche des
    Stacks `live` als Turn-Status bzw. Manifest-Eintrag festhalten, nicht nur im Log.
-5. **Auswertung** `agent/src/pacemaker_agent/metrics/load_aggregate.py`: je Stufe n,
+5. **Token-Verbrauch erfassen (B1):** Nutzungs- und Rate-Limit-Ereignisse des Servers je
+   Sitzung mit Zeitstempel als JSONL festhalten, falls GPT-Live sie liefert (in Pipecat 1.12
+   und der Server-Ereignisliste prüfen; z. B. Usage je Antwort, Rate-Limit-Ereignisse).
+   Liefert der Server nichts, das dokumentieren und auf Funktionstest-Ende den Verbrauch in
+   der OpenAI-Konsole (Usage) ablesen lassen; keine Werte schätzen.
+6. **Auswertung** `agent/src/pacemaker_agent/metrics/load_aggregate.py`: je Stufe n,
    Ausschlüsse (Kaltstart, Status), Erfolgs-/Fehlerzahlen, p50/p90 Agent-Ausgabe, p50/p90
-   Server-Audio (`live_diag`), Verhältnis zu `E`, CPU Mittel/Maximum, Urteil nach §2.
-6. **Tests** (pytest, ohne externe Dienste): Eindeutigkeit der Run-ID bei parallelem Aufruf,
+   Server-Audio (`live_diag`), Verhältnis zu `E`, CPU Mittel/Maximum, Tokens je Gesprächsminute
+   und Spitzen-TPM je Stufe (falls erfasst), Urteil nach §2.
+7. **Tests** (pytest, ohne externe Dienste): Eindeutigkeit der Run-ID bei parallelem Aufruf,
    Auswertung mit künstlichen Turn-Protokollen (Kaltstart-Ausschluss, Verhältnis, Urteil,
    „VM-begrenzt“). `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`.
 
@@ -141,7 +150,7 @@ Neue Abhängigkeiten sind dafür nicht nötig.
 - Rohdaten: `experiments/runs/lasttest/<datum>/` auf der VM (gitignored)
 - Zusammenfassung: `experiments/summaries/<datum>-lasttest-live.md`. Dort festhalten: Stack,
   Modell, Region (`referenz`), Git-Revision, Pipecat-Version, `fixtures_sha`, VM-Typ, Limits
-  und Tier aus §4, Tabelle je Stufe nach §6.5, Urteil je Stufe, Abweichungen vom Plan
+  und Tier aus §4, Tabelle je Stufe nach §6.6, Urteil je Stufe, Abweichungen vom Plan
 - Ergebnis danach in `docs/phase-0-ergebnisse.md` §7 (Prio 0) verlinken
 
 ## 8. Hinweise für ausführende Coding-Assistenten (z. B. Codex)
