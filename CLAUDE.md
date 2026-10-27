@@ -25,6 +25,43 @@ Strategie: `Pacemaker.md`. Phasenpläne: `docs/phase-0-proof-of-concept.md`, `do
 - Am Ende nennen: Änderungen, ausgeführte Prüfungen und Ergebnis, offene Einschränkungen.
   Nicht ausgeführte Tests und nicht gemessene Latenz ausdrücklich kennzeichnen.
 
+## Zusammenarbeit Claude und Codex
+
+Gründervorgabe Pit, 2026-10-27. Gilt für beide Agenten ohne erneuten Hinweis; Claude
+organisiert die Schritte selbstständig. `AGENTS.md` ist ein versionierter, relativer Symlink
+auf diese Datei; Codex liest damit dieselben Regeln.
+
+- **Beide entwickeln.** Claude plant zusätzlich, koordiniert, verwaltet Worktrees und
+  schreibende Git-Operationen und spricht externe Dienste und die Mess-VM an. Codex arbeitet
+  in der Sandbox ohne Shell-Netz, ohne VM und ohne Keys.
+- **Pläne prüft Codex.** Jeder Plan von Claude (Phasenplan, Präregistrierung, Feature- oder
+  Architekturentwurf) geht vor der Umsetzung schreibgeschützt an Codex:
+  `codex exec -s read-only -C "<repo>" -o "<absoluter-berichtspfad>" - < "<auftrag>"`.
+  Claude arbeitet die Punkte ein oder begründet die Ablehnung; ungeklärte Widersprüche
+  entscheidet Pit. Ein Codex-Review ersetzt keine Gründerfreigabe.
+- **Code prüft der jeweils andere.** Claudes Code:
+  `codex exec -s read-only -C "<worktree>" review --uncommitted` bzw. `review --base "<branch>"`.
+  Codex' Code: Review durch Claude (Diff lesen, Fachwissen aus früheren Läufen gegenprüfen,
+  Tests selbst ausführen). Während eines Reviews bleibt der Stand eingefroren; relevante
+  Änderungen danach brauchen ein neues Review. Integriert wird erst nach Review und grünen
+  Tests; in der Sandbox nicht ausführbare Prüfungen holt Claude nach und dokumentiert sie.
+- **Ein Worktree je Aufgabe, genau ein schreibender Agent darin.**
+  `git worktree add "../pacemaker-worktrees/<branch>" -b "<branch>" "<basis-sha>"`; nicht
+  committete Dateien werden nicht übernommen. Vor Übergabe in `<worktree>/agent`
+  `uv sync --locked` (eigene `.venv` je Worktree). Übergabe an Codex:
+  `codex exec -s workspace-write -c sandbox_workspace_write.network_access=false
+  -C "<worktree>" -o "<absoluter-berichtspfad>" - < "<auftrag>"`. Codex prüft mit
+  `PYTHON_DOTENV_DISABLED=1 uv run --offline --no-sync …`.
+- **Jeder Auftrag** enthält Ziel, Umfang, Basisstand, betroffene Dateien, Prüfbefehle,
+  Abnahmekriterien und den Hinweis, nicht zu committen oder zu pushen.
+- **Merge, Push, VM, externe API-Läufe** (z. B. OpenAI, Azure): durch Claude. Messläufe auf
+  der VM strikt nacheinander. Kostenpflichtige API-Läufe nur mit Pits Freigabe und
+  Kostenschätzung vorab; die normale Nutzung von Claude und Codex ist davon nicht betroffen.
+- **Datenschutz gilt auch indirekt:** `.env`, Keys und `agent/fixtures/robust` weder lesen
+  noch über Tests, Skripte oder Unterprozesse zugänglich machen; nicht in Worktrees kopieren
+  oder verlinken. `.gitignore` ist keine Zugriffssperre. Alle übrigen Regeln dieser Datei
+  gelten für beide.
+
 ## Kommunikation
 
 - Antworten, Commit-Messages, Dokumentation und eigene Code-Kommentare auf Deutsch.
