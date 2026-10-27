@@ -224,7 +224,7 @@ Landingpage-Aussage „ohne Verzögerung" angepasst werden, solange das Ziel nic
 
 - **Sprachpfad:** OpenAI GPT-Live (`gpt-live-1`, Hintergrundmodell `gpt-4.1-mini`), Pit und
   Marvin am 2026-10-15 nach Browser-Schnelltest. Die Azure-Kaskade (`azure-eu`/`mini`) bleibt
-  als Rückfall im Code.
+  im Code, wird aber nicht als Rückfall gepflegt (Pit, 2026-10-27: qualitativ unterlegen).
 - **Latenz:** Die gemessene GPT-Live-Latenz ist als angemessen beschlossen (Pit, 2026-10-27).
   Gemessen (Summary §28, nicht präregistriert, Region `referenz`): Agent-Ausgabe p50/p90
   1622/2452 ms mit synthetischen Clips, 2454/3324 ms mit Pits Aufnahmen; im Browser direkt per

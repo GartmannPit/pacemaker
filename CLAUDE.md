@@ -67,7 +67,7 @@ Strategie: `Pacemaker.md`. Phasenpläne: `docs/phase-0-proof-of-concept.md`, `do
 
 | Bereich | Wahl |
 |---|---|
-| Voice-Agent | Python 3.12, Pipecat; Sprachpfad OpenAI GPT-Live (`gpt-live-1`, Gründerentscheidung 2026-10-15), Azure-Kaskade als Rückfall |
+| Voice-Agent | Python 3.12, Pipecat; Sprachpfad OpenAI GPT-Live (`gpt-live-1`, Gründerentscheidung 2026-10-15); Azure-Kaskade bleibt im Code, wird aber nicht als Rückfall gepflegt (2026-10-27) |
 | WebRTC | LiveKit, self-hosted über Docker auf EU-VM |
 | Frontend | Vite + TypeScript, LiveKit JS SDK; kein UI-Framework im PoC |
 | VAD / Turn-Taking | Kaskade: Silero VAD / Pipecat Smart Turn; `live`: serverseitig durch GPT-Live |

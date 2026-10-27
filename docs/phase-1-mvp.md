@@ -15,7 +15,7 @@ Ziel ist ein Stand, mit dem Pilotkunden selbstständig üben können.
 **Nicht in Phase 1** (Strategiepapier Phase 2/3): Manager-Dashboard, konfigurierbare Personas,
 Mandantentrennung über das Nötigste hinaus, CRM-/LMS-Anbindung, SLA.
 
-**Gesetzt aus Phase 0:** Sprachpfad GPT-Live (`gpt-live-1`), Kaskade als Rückfall; Latenz
+**Gesetzt aus Phase 0:** Sprachpfad GPT-Live (`gpt-live-1`), kein Kaskaden-Rückfall; Latenz
 akzeptiert; Web-only; keine Emotionserkennung, Scoring nur nach Inhalt und Struktur;
 KI-Natur jederzeit erkennbar.
 
@@ -26,7 +26,7 @@ KI-Natur jederzeit erkennbar.
 | EU-Freigabe des OpenAI-Projekts (`eu.api.openai.com`) | Pit / OpenAI | beantragt |
 | OpenAI-DPA geprüft und abgeschlossen | Pit | [offen] |
 | Hetzner-AVV (falls Architektur B oder Hybrid, §3) | Pit | [offen] |
-| Lasttest bestanden für **20 Nutzer** beim ersten Kunden (Pit, 2026-10-27) | Claude/Codex | läuft (bisher bis 10 geplant) |
+| Lasttest bestanden für **20 Nutzer** beim ersten Kunden (Pit, 2026-10-27) | Claude/Codex | läuft; Stufe `L20` wird nach Abschluss der Harness-Umsetzung ergänzt |
 
 Bis dahin: nur synthetische Daten und Pits eigene Stimme, Region `referenz` (CLAUDE.md).
 
@@ -68,9 +68,8 @@ serverseitige Zusatzverbindung anbietet, ist **[offen]**.
   Scoring-Grundlage entstehen serverseitig; der Browser liefert nur Audio.
 - Die Vorteile von B behalten (Persona-Logik und Zeitlimits serverseitig, Messkette),
   die Nachteile von A vermeiden.
-- Einschränkung: Ein Rückfall auf die Azure-Kaskade ist im Hybrid nur möglich, wenn der
-  B-Pfad (LiveKit + Pipecat) als zweiter Weg weiter gepflegt wird. Ob das nötig ist,
-  **[offen]**.
+- **Kein Kaskaden-Rückfall nötig** (Pit, 2026-10-27: qualitativ unterlegen). Der B-Pfad muss
+  deshalb nicht als zweiter Weg gepflegt werden.
 - Bietet `gpt-live-1` keine serverseitige Zusatzverbindung, ist B die Lösung, die diese
   Anforderungen erfüllt.
 
@@ -109,12 +108,12 @@ möglicher Ausgangspunkt. Voraussetzung: Das Transkript ist nicht vom Nutzer man
 
 ## 6. Offene Entscheidungen (Gründer)
 
-Entschieden (Pit, 2026-10-27): Richtung Hybrid (§3), erster Kunde mit 20 Nutzern (§1),
+Entschieden (Pit, 2026-10-27): Richtung Hybrid (§3), kein Kaskaden-Rückfall, erster Kunde mit 20 Nutzern (§1),
 kein Rohaudio, möglichst wenig speichern, Schlüsselmomente aus dem Transkript (§4, §5).
 
 Offen:
 
-1. Hybrid oder B, nach dem Versuch (§3); Kaskaden-Rückfall weiter pflegen?
+1. Hybrid oder B, nach dem Versuch (§3)
 2. Neue Latenz-Zielwerte für Phase 1, falls gewünscht
 3. Wie viele der 20 Nutzer gleichzeitig sprechen sollen (z. B. Teamtraining) → Laststufe
 4. Scoring-Kriterien je Szenario
