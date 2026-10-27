@@ -131,8 +131,8 @@ def create_app(
             response = _antwort(exc.code, exc.retry_after)
         except web.HTTPException as exc:
             response = _antwort("nicht_gefunden" if exc.status == 404 else "anfrage_ungueltig")
-        except Exception as exc:  # keine Ausnahmetexte nach außen oder ins Log
-            oplog.write("http_fehler", pfad=request.path, art=type(exc).__name__)
+        except Exception:  # keine Ausnahmetexte nach außen oder ins Log
+            oplog.write("http_request", method=request.method, status=500)
             response = _antwort("interner_fehler")
         headers = response.headers
         headers["Content-Security-Policy"] = csp
@@ -187,15 +187,15 @@ def create_app(
         try:
             login_id = await auth.login(name, password, request.remote or "-")
         except RateLimited as exc:
-            oplog.write("login_begrenzt")
+            oplog.write("anmeldung", status=429)
             raise Fehler("zu_viele_versuche", retry_after=exc.retry_after) from exc
         except Overloaded as exc:
             raise Fehler("ueberlastet") from exc
         except AuthError as exc:
-            oplog.write("login_fehlgeschlagen")
+            oplog.write("anmeldung", status=401)
             raise Fehler("anmeldung_fehlgeschlagen") from exc
         resolved = auth.resolve(login_id)
-        oplog.write("login", nutzer=resolved.user_id if resolved else None)
+        oplog.write("anmeldung", status=200)
         response = web.json_response({"name": resolved.name if resolved else None})
         response.set_cookie(
             config.cookie_name,
@@ -212,6 +212,7 @@ def create_app(
         if not origin_ok(request):
             raise Fehler("herkunft_ungueltig")
         auth.logout(request.cookies.get(config.cookie_name))
+        oplog.write("abmeldung")
         response = web.json_response({})
         response.del_cookie(config.cookie_name, path="/")
         return response

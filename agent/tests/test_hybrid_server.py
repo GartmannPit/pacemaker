@@ -481,3 +481,60 @@ def test_app_login_start_end_and_headers(tmp_path) -> None:
             await client.close()
 
     asyncio.run(run())
+
+
+def test_server_config_requires_explicit_safe_values(monkeypatch, tmp_path) -> None:
+    from pacemaker_agent.hybrid import server
+
+    monkeypatch.setattr(server, "load_dotenv", lambda *_a, **_k: None)
+    base = {
+        "OPENAI_LIVE_REGION": "referenz",
+        "OPENAI_API_KEY": "k",
+        "PACEMAKER_USERS_FILE": str(tmp_path / "u.json"),
+        "PACEMAKER_STATE_DIR": str(tmp_path / "state"),
+        "PACEMAKER_PUBLIC_ORIGIN": "http://localhost:8080",
+        "PACEMAKER_DEV_LOOPBACK": "1",
+    }
+    for key, value in base.items():
+        monkeypatch.setenv(key, value)
+    cfg = server.load_config()
+    assert cfg.app.dev_loopback and cfg.budget_micro == 25_000_000 and cfg.max_duration_s == 600
+    for key, value in [
+        ("PACEMAKER_DEV_LOOPBACK", "0"),  # http ohne Dev-Modus
+        ("PACEMAKER_MAX_DURATION_S", "900"),
+        ("OPENAI_LIVE_REGION", "us"),
+    ]:
+        monkeypatch.setenv(key, value)
+        with pytest.raises(SystemExit):
+            server.load_config()
+        monkeypatch.setenv(key, base.get(key, "600"))
+    monkeypatch.setenv("PACEMAKER_DEV_LOOPBACK", "1")
+    monkeypatch.setenv("PACEMAKER_PUBLIC_ORIGIN", "https://training.example.eu")
+    with pytest.raises(SystemExit):  # Dev-Modus nur für localhost
+        server.load_config()
+
+
+def test_server_build_recovers_and_serves_health(monkeypatch, tmp_path) -> None:
+    from pacemaker_agent.hybrid import server
+
+    async def run() -> None:
+        monkeypatch.setattr(server, "load_dotenv", lambda *_a, **_k: None)
+        # Globales Logging nicht umbiegen (eigene Tests in test_hybrid_register.py)
+        monkeypatch.setattr(server, "configure_logging", lambda *_a, **_k: None)
+        for key, value in {
+            "OPENAI_LIVE_REGION": "referenz",
+            "OPENAI_API_KEY": "k",
+            "PACEMAKER_USERS_FILE": str(tmp_path / "u.json"),
+            "PACEMAKER_STATE_DIR": str(tmp_path / "state"),
+            "PACEMAKER_PUBLIC_ORIGIN": "http://localhost:8080",
+            "PACEMAKER_DEV_LOOPBACK": "1",
+        }.items():
+            monkeypatch.setenv(key, value)
+        app = server.build(server.load_config())
+        async with TestClient(TestServer(app)) as client:
+            r = await client.get("/healthz")
+            assert r.status == 200 and (await r.json()) == {"bereit": True}
+            r = await client.get("/")
+            assert "KI-Trainingsfigur" in await r.text()
+
+    asyncio.run(run())

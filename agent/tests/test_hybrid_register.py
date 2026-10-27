@@ -6,7 +6,6 @@ import asyncio
 import json
 import logging
 import os
-import time
 from datetime import UTC, datetime
 
 import pytest
@@ -403,10 +402,9 @@ def test_deadline_forwarding_and_registry_fallback(tmp_path):
     async def run():
         journal, log, budget, starter, registry = make(tmp_path, max_duration_s=0.08)
         await registry.recover()
-        before = time.monotonic()
         await registry.start("a", "SDP", None)
         deadline, idle = starter.attach_parameters[0]
-        assert before < deadline <= time.monotonic() + 0.08
+        assert 0 < deadline <= 0.08  # verbleibende Sekunden (contracts.Starter.attach)
         assert idle == 120
         await until(lambda: not registry.snapshot())
         assert_closed(journal, budget, registry, reason="zeitlimit")
