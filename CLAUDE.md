@@ -106,15 +106,15 @@ auf diese Datei; Codex liest damit dieselben Regeln.
 | Bereich | Wahl |
 |---|---|
 | Voice-Agent | Python 3.12, Pipecat; Sprachpfad OpenAI GPT-Live (`gpt-live-1`, Gründerentscheidung 2026-10-15); Azure-Kaskade bleibt im Code, wird aber nicht als Rückfall gepflegt (2026-10-27) |
-| WebRTC | LiveKit, self-hosted über Docker auf EU-VM |
-| Frontend | Vite + TypeScript, LiveKit JS SDK; kein UI-Framework im PoC |
+| WebRTC | Produktpfad (Hybrid, Gründerentscheidung 2026-10-27): Browser ↔ OpenAI direkt per WebRTC, Steuerung über serverseitigen Sideband, Browser-Datenkanal gesperrt (`docs/phase-1-architekturversuch-hybrid.md`). LiveKit + Pipecat nur im bisherigen Mess- und Testpfad |
+| Frontend | Vite + TypeScript, WebRTC ohne LiveKit-SDK im Produktpfad; kein UI-Framework |
 | VAD / Turn-Taking | Kaskade: Silero VAD / Pipecat Smart Turn; `live`: serverseitig durch GPT-Live |
 | Paketverwaltung | Python: uv; JavaScript: pnpm; kein pip/poetry/npm für Projektpakete |
 | Container | Docker + docker compose |
 | Tests | pytest für den Agenten; keine Frontend-Testsuite in Phase 0 |
 | Python-Qualität | ruff check und ruff format |
 | TypeScript-Qualität | strict: true, eslint, prettier |
-| Metriken | Pipecat-Metrik-Frames → JSONL → pandas-Aggregation |
+| Metriken | Messpfad: Pipecat-Metrik-Frames → JSONL → pandas-Aggregation; Hybrid: Sideband-JSONL (`auswertung.py`), Browser-Messung neu zu instrumentieren |
 
 Provider-Matrix: Phasenplan §1.3. Stack-Auswahl:
 `--stack live | azure-eu | baseline | sovereign | s2s`. `live` verlangt
@@ -123,8 +123,10 @@ Ein Stack-Name ist kein Nachweis einer geprüften EU-Konfiguration.
 
 ## Architektur und Konventionen
 
-- Provider-spezifische SDK-Aufrufe hinter schmalen Adaptern in
+- Messpfad (Pipecat): Provider-spezifische SDK-Aufrufe hinter schmalen Adaptern in
   `agent/src/pacemaker_agent/stacks.py` kapseln, nicht in der Pipeline verteilen.
+  Hybrid-Produktpfad: Provider-Protokoll (Sitzungserzeugung, Sideband) ebenso in einem
+  schmalen Modul kapseln, nicht über Server und Frontend verteilen.
 - Pipeline, Metrik-Schema und Test-Harness möglichst unabhängig vom Provider halten.
 - Python: Type-Hints für alle öffentlichen Funktionen. In asynchronen Audio-Pfaden
   keine blockierenden Netzwerk-, Datei- oder CPU-Aufgaben ausführen.
@@ -171,6 +173,7 @@ Ein Stack-Name ist kein Nachweis einer geprüften EU-Konfiguration.
 
 - agent/: Pipeline, Personas, Metriken und Test-Harness
 - web/: Verbinden, Sprechen, Hören, Transkript und Latenz-HUD (noch nicht angelegt)
+- agent/tools/gptlive_browser/: Hybrid-Prototyp (Server, Sideband, Seite, Auswertung)
 - infra/: Docker Compose, LiveKit und EU-VM-Setup
 - docs/: Phasenpläne und Ergebnisse
 - experiments/runs/: Roh-Messdaten, gitignored
