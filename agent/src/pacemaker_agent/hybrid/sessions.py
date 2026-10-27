@@ -319,7 +319,6 @@ class SessionRegistry:
                 closure, usage = await session.handle.wait_closed()
         except TimeoutError:
             await self._request_close(session, "zeitlimit")
-            self._sync_provider_block()
             return
         except Exception as error:
             if isinstance(error, ProviderBlocked):
@@ -371,6 +370,13 @@ class SessionRegistry:
             await self._finish(session, closure, usage or self._usage(session))
 
     async def _finish(self, session: _Session, closure: CloseOutcome, usage: UsageSummary) -> None:
+        # Jeder Abschluss läuft hier durch: Guthabenfehler dieser Sitzung vor dem Entfernen
+        # übernehmen (auch im Zeitlimit-Pfad; Codex-Nachprüfung).
+        try:
+            if session.handle is not None and session.handle.provider_blocked():
+                self.budget.set_provider_blocked()
+        except Exception:
+            pass
         async with session.finish_lock:
             if session.state == "beendet":
                 return

@@ -863,3 +863,21 @@ def test_provider_block_of_running_session_blocks_new_starts(tmp_path):
         log.close()
 
     asyncio.run(run())
+
+
+def test_provider_block_survives_deadline_close(tmp_path):
+    # Codex-Nachprüfung: Zeitlimit-Pfad entfernt die Sitzung erst nach Übernahme der Sperre.
+    async def run():
+        journal, log, budget, starter, registry = make(tmp_path, max_duration_s=0.08)
+        await registry.recover()
+        await registry.start("a", "SDP", None)
+        next(iter(registry._sessions.values())).handle.blocked = True
+        await until(lambda: not registry.snapshot())
+        assert budget.status().blocked
+        with pytest.raises(StartsBlocked):
+            await registry.start("b", "SDP", None)
+        await registry.shutdown()
+        journal.close()
+        log.close()
+
+    asyncio.run(run())
