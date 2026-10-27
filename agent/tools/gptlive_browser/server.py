@@ -117,7 +117,6 @@ def session_payload(
                 "model": backend_model,
                 "tools": [responses_tool(HANGUP_TOOL)],
                 "max_output_tokens": 300,
-                "store": False,
             },
         },
         "client": {

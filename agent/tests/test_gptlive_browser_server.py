@@ -58,7 +58,7 @@ def test_payload_locks_data_channel_and_registers_hangup(server) -> None:
     assert channel["allowed_client_events"] == []
     assert channel["allowed_server_events"] == server.BROWSER_SERVER_EVENTS
     responses = payload["delegation"]["responses"]
-    assert responses["store"] is False
+    assert "store" not in responses  # von der Live-API abgelehnt (unknown_parameter)
     tool = responses["tools"][0]
     assert tool["type"] == "function" and tool["name"] == server.HANGUP_TOOL_NAME
     assert "function" not in tool  # Responses-Format ist flach
