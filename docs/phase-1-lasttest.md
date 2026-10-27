@@ -69,7 +69,8 @@ Vergleich der Server-Audio-Ankunft (`live_diag`), ob OpenAI langsamer wurde.
    per SSH in `~/pacemaker/agent/.env` auf der VM ein, nicht über Git.
 3. **Limits** (Stand 2026-10-27): Organisation im Tier **Build**. Modellseite `gpt-live-1`:
    **50 gleichzeitige Sitzungen** (Launch 300, Grow 500). Die OpenAI-Konsole (Limits der
-   Organisation) zeigt für `gpt-live-1` zusätzlich **30.000 TPM**. Wie GPT-Live Tokens auf
+   Organisation) zeigt für `gpt-live-1` zusätzlich **30.000 TPM**; die Spalte für Request-
+   und sonstige Limits ist dort leer (Pit, 2026-10-27). Wie GPT-Live Tokens auf
    dieses Limit anrechnet (nur Audio oder auch Prompt je Antwort), ist nicht dokumentiert;
    je nach Zählweise reicht es grob für 3–30 gleichzeitige Gespräche. Das klärt B1.
 4. **Kosten** (Stand 2026-10-27, OpenAI-Preisliste): `gpt-live-1` **0,05 $ je Minute**,
