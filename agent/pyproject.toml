@@ -9,10 +9,13 @@ dependencies = [
     "python-dotenv>=1.0",
     "loguru>=0.7",
     "pandas>=2.2",
+    # Hybrid-Server (Phase 1, Schritt 1); bereits als Pipecat-Abhängigkeit im Lockfile
+    "aiohttp>=3.14",
 ]
 
 [project.scripts]
 pacemaker-agent = "pacemaker_agent.main:main"
+pacemaker-server = "pacemaker_agent.hybrid.cli:main"
 
 [dependency-groups]
 dev = [

@@ -132,7 +132,9 @@ class Starter(Protocol):
 
     async def attach(
         self, provider_id: str, *, deadline_s: float, idle_timeout_s: float
-    ) -> SidebandHandle: ...
+    ) -> SidebandHandle:
+        """deadline_s und idle_timeout_s sind verbleibende Sekunden ab jetzt."""
+        ...
 
     async def force_close(self, provider_id: str) -> CloseOutcome: ...
 

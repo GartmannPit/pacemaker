@@ -1109,6 +1109,7 @@ name = "pacemaker-agent"
 version = "0.0.0"
 source = { editable = "." }
 dependencies = [
+    { name = "aiohttp" },
     { name = "loguru" },
     { name = "pandas" },
     { name = "pipecat-ai", extra = ["azure", "deepgram"] },
@@ -1124,6 +1125,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", specifier = ">=3.14" },
     { name = "loguru", specifier = ">=0.7" },
     { name = "pandas", specifier = ">=2.2" },
     { name = "pipecat-ai", extras = ["azure", "silero", "deepgram", "elevenlabs", "openai"], specifier = ">=1.12.0" },
