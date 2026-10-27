@@ -261,6 +261,6 @@ Landingpage-Aussage „ohne Verzögerung" angepasst werden, solange das Ziel nic
 | README-Probelauf | bleibt; README vorher auf GPT-Live umstellen |
 | DPA/AVV | neu: OpenAI-DPA und EU-Freigabe (Voraussetzung Pilot); Hetzner-AVV bleibt |
 | Smart Turn vs. Prosodie-Verbot | betrifft nur noch den Kaskaden-Rückfall |
-| Aufnahmen der Robustheitsprobe löschen | laut Einwilligung nach Abschluss Phase 0 fällig; werden seit 2026-10-15 in automatischen Tests weiter genutzt. Pit entscheidet: löschen oder Einwilligung verlängern |
+| Aufnahmen der Robustheitsprobe löschen | von Pit zurückgestellt (2026-10-27); werden in automatischen Tests weiter genutzt |
 | AVV Deepgram/Gladia, Kosten-ToDo STT-Streaming | entfallen mit GPT-Live (nur Kaskade) |
 | Landingpage-Aussage „ohne Verzögerung“ (§6.4) | in `index_1.html` am 2026-10-27 keine Latenzaussage gefunden; vor Veröffentlichung erneut prüfen |

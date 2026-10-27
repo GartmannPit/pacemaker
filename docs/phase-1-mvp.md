@@ -26,7 +26,7 @@ KI-Natur jederzeit erkennbar.
 | EU-Freigabe des OpenAI-Projekts (`eu.api.openai.com`) | Pit / OpenAI | beantragt |
 | OpenAI-DPA geprüft und abgeschlossen | Pit | [offen] |
 | Hetzner-AVV (falls Architektur B oder Hybrid, §3) | Pit | [offen] |
-| Lasttest bestanden (Stufe passend zur Pilotgröße) | Claude/Codex | läuft |
+| Lasttest bestanden für **20 Nutzer** beim ersten Kunden (Pit, 2026-10-27) | Claude/Codex | läuft (bisher bis 10 geplant) |
 
 Bis dahin: nur synthetische Daten und Pits eigene Stimme, Region `referenz` (CLAUDE.md).
 
@@ -62,6 +62,18 @@ Schritt 1 entscheidet über Aufbau von 2–5 und kommt deshalb vor jedem Fronten
 und erhält Transkript und Werkzeugaufrufe serverseitig. Ob `gpt-live-1` eine solche
 serverseitige Zusatzverbindung anbietet, ist **[offen]**.
 
+**Richtung (Pit, 2026-10-27): Hybrid.** Anforderungen:
+
+- Keine Manipulation durch den Nutzer: Transkript, Werkzeugaufrufe, Gesprächsende und
+  Scoring-Grundlage entstehen serverseitig; der Browser liefert nur Audio.
+- Die Vorteile von B behalten (Persona-Logik und Zeitlimits serverseitig, Messkette),
+  die Nachteile von A vermeiden.
+- Einschränkung: Ein Rückfall auf die Azure-Kaskade ist im Hybrid nur möglich, wenn der
+  B-Pfad (LiveKit + Pipecat) als zweiter Weg weiter gepflegt wird. Ob das nötig ist,
+  **[offen]**.
+- Bietet `gpt-live-1` keine serverseitige Zusatzverbindung, ist B die Lösung, die diese
+  Anforderungen erfüllt.
+
 **Versuch (Schritt 1), zeitlich begrenzt:**
 
 1. Offizielle Doku `gpt-live-1` prüfen: serverseitige Verbindung zu einer WebRTC-Sitzung,
@@ -71,27 +83,40 @@ serverseitige Zusatzverbindung anbietet, ist **[offen]**.
 3. Latenz A vs. B auf gleicher Basis messen (präregistriert, abwechselnd A/B, Browser-Messpunkt).
 4. Entscheidung durch die Gründer; Ergebnis hier eintragen.
 
-## 4. Scoring (einfach)
+## 4. Scoring (einfach) und Schlüsselmomente
 
 Nur Gesprächsinhalt und -struktur aus dem Transkript, keine Auswertung von Stimme oder
-Prosodie (CLAUDE.md). Kriterien je Szenario aus dem Strategiepapier ableiten **[offen]**.
+Prosodie (CLAUDE.md).
+
+**Schlüsselmomente (Idee Pit, 2026-10-27):** Nach dem Gespräch zieht ein eigenes Modell
+(„Sub-Agent“) aus dem **Transkript** die Stellen heraus, an denen sich das Gespräch
+entschieden hat (z. B. der Satz, der den Pitch getragen oder gekippt hat), mit kurzer
+Begründung. Grundlage ist ausschließlich Text, kein Audio. Gespeichert werden nur diese
+Ausschnitte und die Auswertung, nicht das Gesprächsaudio (§5). Ziel: später Muster über
+viele Gespräche erkennen. Modell, Anbieter und EU-Verarbeitung **[offen]**. Kriterien je Szenario aus dem Strategiepapier ableiten **[offen]**.
 Die Judge-Werkzeuge aus Phase 0 (`tests/judge.py`, `metrics/conversation.py`) sind ein
 möglicher Ausgangspunkt. Voraussetzung: Das Transkript ist nicht vom Nutzer manipulierbar (§3).
 
 ## 5. Login und Löschkonzept
 
 - Self-Service-Login für Pilotkunden; Anbieter und Datenhaltung in der EU **[offen]**.
-- Löschkonzept technisch: automatische Aufbewahrungsfristen für Transkripte und Auswertungen
-  (Strategiepapier: Rohaudio nach X Tagen, Transkript nach Y Monaten). Ob überhaupt Rohaudio
-  gespeichert wird, ist **[offen]**; ohne Speicherung entfällt die Frist.
+- **Datensparsamkeit (Pit, 2026-10-27): so wenig wie möglich speichern.**
+  - **Kein Rohaudio.** Weder Nutzer- noch Persona-Audio wird gespeichert.
+  - Vollständiges Transkript nur so lange wie für Anzeige und Auswertung nötig; Frist **[offen]**.
+  - Länger aufbewahrt: Schlüsselmomente (§4) und Scoring-Ergebnis; Frist **[offen]**.
+  - Löschung automatisch (Aufbewahrungsfristen), nicht manuell.
 - Persistenz über Flatfiles hinaus wird damit nötig; Auswahl **[offen]**.
 
 ## 6. Offene Entscheidungen (Gründer)
 
-1. Architektur A / B / Hybrid (nach Versuch, §3)
+Entschieden (Pit, 2026-10-27): Richtung Hybrid (§3), erster Kunde mit 20 Nutzern (§1),
+kein Rohaudio, möglichst wenig speichern, Schlüsselmomente aus dem Transkript (§4, §5).
+
+Offen:
+
+1. Hybrid oder B, nach dem Versuch (§3); Kaskaden-Rückfall weiter pflegen?
 2. Neue Latenz-Zielwerte für Phase 1, falls gewünscht
-3. Pilotgröße (Anzahl gleichzeitiger Nutzer) als Maßstab für den Lasttest
+3. Wie viele der 20 Nutzer gleichzeitig sprechen sollen (z. B. Teamtraining) → Laststufe
 4. Scoring-Kriterien je Szenario
 5. Login-Anbieter und Datenhaltung
-6. Rohaudio speichern ja/nein, Aufbewahrungsfristen
-7. Umgang mit den Aufnahmen der Robustheitsprobe (löschen oder Einwilligung verlängern)
+6. Aufbewahrungsfristen für Transkript, Schlüsselmomente, Scoring
