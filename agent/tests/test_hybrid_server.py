@@ -577,6 +577,31 @@ def test_app_serves_web_dist_with_strict_csp_and_cache(tmp_path) -> None:
     asyncio.run(run())
 
 
+def test_app_briefing_is_public_only(tmp_path) -> None:
+    async def run() -> None:
+        client = await client_for(tmp_path, FakeRegistry(), FakeOpLog())
+        h = {"Origin": ORIGIN}
+        try:
+            r = await client.get("/api/briefing")
+            assert r.status == 401
+            await client.post(
+                "/api/login", json={"name": "pit", "passwort": "ein-langes-passwort"}, headers=h
+            )
+            r = await client.get("/api/briefing")
+            body = await r.json()
+            assert r.status == 200 and body["framework"]["name"] == "BANT"
+            assert [k["key"] for k in body["framework"]["kriterien"]] == ["B", "A", "N", "T"]
+            assert body["max_dauer_s"] == 600 and r.headers["Cache-Control"] == "no-store"
+            # Werte der Charakterkarte erreichen den Browser nicht vorab (§10)
+            text = json.dumps(body, ensure_ascii=False)
+            for verdeckt in ("15.000", "Geschäftsführer", "neun Monate", "WhatsApp", "Excel"):
+                assert verdeckt not in text
+        finally:
+            await client.close()
+
+    asyncio.run(run())
+
+
 def test_web_dist_check_rejects_missing_index_and_symlinks(tmp_path) -> None:
     from pacemaker_agent.hybrid.app import check_web_dist
 

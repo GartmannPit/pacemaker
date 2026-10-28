@@ -37,7 +37,7 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 html { background: var(--bg); color: var(--ink); }
-body { margin: 0; font: 430 16px/1.5 "Bricolage", system-ui, sans-serif; font-optical-sizing: auto; font-variant-numeric: tabular-nums; display: grid; grid-template-rows: 56px auto 1fr 92px; overflow: hidden; transition: background-color .3s var(--ease-out); }
+body { margin: 0; font: 430 16px/1.5 "Bricolage", system-ui, sans-serif; font-optical-sizing: auto; font-variant-numeric: tabular-nums; display: grid; grid-template-rows: 56px 1fr; overflow: hidden; transition: background-color .3s var(--ease-out); }
 ::selection { background: var(--persona); color: var(--btn-ink); }
 :focus-visible { outline: 3px solid var(--persona); outline-offset: 3px; border-radius: 6px; }
 button { font: inherit; color: inherit; cursor: pointer; }
@@ -141,8 +141,74 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .end { background: var(--btn); color: var(--btn-ink); border: 0; border-radius: 12px; padding: 13px 22px; font-weight: 680; font-size: 16px; transition: transform .16s var(--ease-out), opacity .16s; }
 .end:hover { opacity: .9; } .end:active { transform: scale(.97); }
 
+
+/* Ansichten */
+.call { display: grid; grid-template-rows: auto 1fr 92px; min-height: 0; }
+.page { overflow: auto; min-height: 0; }
+.page-in { max-width: 1080px; margin: 0 auto; padding: 40px 32px 72px; }
+.eyebrow-free { font-size: 14px; color: var(--ink-3); margin: 0 0 6px; }
+.page h1 { font-size: 40px; line-height: 1.08; letter-spacing: -.03em; margin: 0 0 10px; font-weight: 740; }
+.page .lead { font-size: 18px; color: var(--ink-2); margin: 0 0 32px; max-width: 62ch; }
+.cols { display: grid; grid-template-columns: 1fr 1.25fr; gap: 28px; align-items: start; }
+.panel { background: var(--bg-2); border: 1px solid var(--line); border-radius: 18px; padding: 22px 24px; }
+.panel h2 { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; font-weight: 650; }
+.facts { display: grid; grid-template-columns: 130px 1fr; gap: 10px 16px; margin: 0; font-size: 15.5px; }
+.facts dt { color: var(--ink-3); } .facts dd { margin: 0; font-weight: 560; }
+.goal { display: flex; gap: 12px; align-items: center; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 15px; color: var(--ink-2); }
+.goal b { color: var(--ink); }
+.fw-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+.fw-name { font-size: 26px; font-weight: 760; letter-spacing: .06em; color: var(--persona); }
+.fw-src { font-size: 13px; color: var(--ink-3); }
+.slots { display: grid; gap: 10px; }
+.slot { display: grid; grid-template-columns: 52px 1fr auto; gap: 14px; align-items: center; border: 1.5px dashed color-mix(in srgb, var(--persona) 35%, var(--line)); border-radius: 14px; padding: 12px 14px; }
+.slot .L { width: 52px; height: 52px; border-radius: 12px; display: grid; place-items: center; font-size: 26px; font-weight: 780; color: var(--persona); background: color-mix(in srgb, var(--persona) 9%, transparent); }
+.slot .lab { font-weight: 650; font-size: 16px; }
+.slot .q { font-size: 14px; color: var(--ink-3); }
+.slot .st { font-size: 13px; color: var(--ink-3); white-space: nowrap; }
+.slot.got { border-style: solid; border-color: var(--persona); }
+.slot.got .L { background: var(--persona); color: var(--btn-ink); }
+.slot.got .st { color: var(--persona); font-weight: 650; }
+.points-plan { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; font-size: 13.5px; color: var(--ink-2); }
+.points-plan span { background: var(--bg-3); border-radius: 999px; padding: 4px 11px; }
+.points-plan b { color: var(--ink); }
+.go { background: var(--persona); color: #fff; border: 0; border-radius: 14px; padding: 16px 30px; font-size: 18px; font-weight: 700; margin-top: 28px; transition: transform .16s var(--ease-out), filter .16s; }
+.go:hover { filter: brightness(1.08); } .go:active { transform: scale(.97); }
+.hint { font-size: 14px; color: var(--ink-3); margin-left: 16px; }
+/* Gesprächs-Leiste links: kompakte Slots */
+.mini { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.mini .s { border: 1.5px dashed color-mix(in srgb, var(--persona) 35%, var(--line)); border-radius: 12px; padding: 8px 0 6px; text-align: center; }
+.mini .s b { display: block; font-size: 20px; font-weight: 780; color: var(--persona); line-height: 1.1; }
+.mini .s span { font-size: 10.5px; color: var(--ink-3); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; }
+.mini .s.got { background: var(--persona); border-style: solid; border-color: var(--persona); }
+.mini .s.got b, .mini .s.got span { color: var(--btn-ink); }
+.mini .s.pop { animation: pop .6s var(--ease-spring); }
+/* Auswertung */
+.score { display: grid; grid-template-columns: auto 1fr; gap: 28px; align-items: center; margin-bottom: 28px; }
+.ring { width: 132px; height: 132px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--persona) calc(var(--p) * 1%), var(--bg-3) 0); }
+.ring div { width: 104px; height: 104px; border-radius: 50%; background: var(--bg); display: grid; place-items: center; text-align: center; }
+.ring b { font-size: 32px; font-weight: 760; line-height: 1; letter-spacing: -.02em; }
+.ring span { font-size: 12px; color: var(--ink-3); }
+.breakdown { display: grid; gap: 8px; font-size: 15px; }
+.breakdown div { display: flex; justify-content: space-between; gap: 18px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.breakdown .miss { color: var(--ink-3); }
+.res { display: grid; gap: 12px; }
+.res .item { display: grid; grid-template-columns: 52px 1fr; gap: 14px; border: 1px solid var(--line); border-radius: 14px; padding: 14px; background: var(--bg-2); }
+.res .item .L { width: 52px; height: 52px; border-radius: 12px; display: grid; place-items: center; font-size: 26px; font-weight: 780; }
+.res .ok .L { background: var(--persona); color: var(--btn-ink); }
+.res .part .L { background: color-mix(in srgb, var(--gold) 20%, transparent); color: var(--gold); }
+.res .no .L { background: var(--bg-3); color: var(--ink-3); }
+.res label { font-size: 13px; color: var(--ink-3); display: block; margin-bottom: 4px; }
+.res textarea { width: 100%; font: inherit; font-size: 15px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; resize: vertical; min-height: 42px; }
+.verdict { margin-top: 8px; font-size: 14.5px; }
+.verdict b { font-weight: 680; }
+.ok .verdict b { color: var(--persona); } .part .verdict b { color: var(--gold); } .no .verdict b { color: var(--ink-3); }
+.quote { margin-top: 6px; font-size: 14px; color: var(--ink-2); border-left: 2px solid var(--line); padding-left: 10px; }
+.quote time { color: var(--ink-3); font-size: 12.5px; margin-left: 6px; }
+@media (max-width: 900px) { .cols, .score { grid-template-columns: 1fr; } }
+
+[hidden] { display: none !important; }
 /* Entwurfssteuerung */
-.proto { position: fixed; left: 296px; bottom: 104px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px; padding: 6px; display: flex; gap: 4px; box-shadow: 0 10px 30px rgba(0,0,0,.3); font: 500 13px system-ui; z-index: 9; }
+.proto { position: fixed; left: 50%; transform: translateX(-50%); top: 64px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px; padding: 6px; display: flex; gap: 4px; box-shadow: 0 10px 30px rgba(0,0,0,.3); font: 500 13px system-ui; z-index: 9; }
 .proto button { border: 0; background: none; padding: 7px 10px; border-radius: 8px; color: var(--ink-2); }
 .proto button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
 .proto span { padding: 7px 6px 7px 8px; color: var(--ink-3); }
@@ -159,6 +225,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   <button class="ghost">Abmelden</button>
 </header>
 
+<div class="call" data-z="gespraech">
 <section class="miles" aria-label="Meilensteine">
   <div class="track" id="track">
     <div class="ms next" data-id="M1"><span class="node"></span>Gesprächserlaubnis</div>
@@ -178,6 +245,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
       <div class="n">Markus Brandt</div>
       <div class="d">Head of Operations, Logistikdienstleister mit rund 180 Mitarbeitenden in Duisburg und Hamm.</div>
       <span class="badge">KI-Trainingsfigur</span>
+    </div>
+    <div>
+      <h2 style="margin-bottom:10px">Qualifizierung · BANT</h2>
+      <div class="mini" id="mini">
+        <div class="s" data-k="B"><b>B</b><span>Budget</span></div>
+        <div class="s" data-k="A"><b>A</b><span>Entscheider</span></div>
+        <div class="s" data-k="N"><b>N</b><span>Bedarf</span></div>
+        <div class="s" data-k="T"><b>T</b><span>Zeitpunkt</span></div>
+      </div>
     </div>
     <div class="meter"><div class="row"><span>Geduld</span><b id="gv">hoch</b></div><div class="bar2" id="gb"><i style="width:82%"></i></div></div>
     <div class="meter"><div class="row"><span>Offenheit</span><b id="ov">verschlossen</b></div><div class="bar2" id="ob"><i style="width:18%"></i></div></div>
@@ -216,9 +292,78 @@ button { font: inherit; color: inherit; cursor: pointer; }
     <button class="end">Beenden</button>
   </div>
 </footer>
+</div>
+
+
+<section class="page" data-z="briefing" hidden>
+  <div class="page-in">
+    <p class="eyebrow-free">Briefing · Kaltakquise</p>
+    <h1>Rufen Sie Markus Brandt an.</h1>
+    <p class="lead">Ihr Ziel: die vier BANT-Felder klären und einen Termin vereinbaren. Brandt kennt die Antworten – er gibt sie nur heraus, wenn Sie gut fragen. Ihr Gegenüber ist eine KI-Trainingsfigur.</p>
+    <div class="cols">
+      <div class="panel">
+        <h2>Was Sie wissen</h2>
+        <dl class="facts">
+          <dt>Gesprächspartner</dt><dd>Markus Brandt, Head of Operations</dd>
+          <dt>Unternehmen</dt><dd>Logistikdienstleister, rund 180 Mitarbeitende</dd>
+          <dt>Standorte</dt><dd>Duisburg und Hamm, Schichtbetrieb</dd>
+          <dt>Ihr Produkt</dt><dd>PlanWerk – Schicht- und Einsatzplanung</dd>
+          <dt>Preis</dt><dd>9.000–14.000 € pro Jahr</dd>
+        </dl>
+        <div class="goal">Zeit: <b>höchstens 10 Minuten</b> · Brandt ist beschäftigt.</div>
+      </div>
+      <div class="panel">
+        <div class="fw-head"><span class="fw-name">BANT</span><span class="fw-src">vom Team vorgegeben</span></div>
+        <div class="slots">
+          <div class="slot"><span class="L">B</span><div><div class="lab">Budget</div><div class="q">Gibt es Mittel, und bis zu welcher Höhe?</div></div><span class="st">offen</span></div>
+          <div class="slot"><span class="L">A</span><div><div class="lab">Entscheider</div><div class="q">Wer entscheidet, wer muss mit ins Boot?</div></div><span class="st">offen</span></div>
+          <div class="slot"><span class="L">N</span><div><div class="lab">Bedarf</div><div class="q">Welches Problem ist wirklich drängend?</div></div><span class="st">offen</span></div>
+          <div class="slot"><span class="L">T</span><div><div class="lab">Zeitpunkt</div><div class="q">Bis wann muss sich etwas ändern?</div></div><span class="st">offen</span></div>
+        </div>
+        <div class="points-plan"><span>Gute Fragen, Einwände: <b>kleine Punkte</b></span><span>Jedes BANT-Feld: <b>viele Punkte</b></span><span>Termin: <b>volle Punktzahl</b></span></div>
+      </div>
+    </div>
+    <button class="go" data-zeige="gespraech">Gespräch starten</button><span class="hint">Mikrofon wird angefragt. Mit Headset klingt es besser.</span>
+  </div>
+</section>
+
+<section class="page" data-z="auswertung" hidden>
+  <div class="page-in">
+    <p class="eyebrow-free">Auswertung · Brandt hat aufgelegt nach 06:18</p>
+    <h1>3 von 4 Feldern geklärt – der Termin fehlt noch.</h1>
+    <p class="lead">Tragen Sie ein, was Sie erfahren haben. OneTry gleicht es mit Brandts Charakterkarte ab und zeigt die Stelle im Gespräch.</p>
+    <div class="score">
+      <div class="ring" style="--p:62"><div><b>620</b><span>von 1.000</span></div></div>
+      <div class="breakdown">
+        <div><span>Gesprächsführung (Fragen, Bezug, Einwände)</span><b>+120</b></div>
+        <div><span>BANT: 3 von 4 Feldern</span><b>+450</b></div>
+        <div><span>Meilensteine</span><b>+90</b></div>
+        <div><span>Hilfen genutzt (Transkript geöffnet)</span><b>−40</b></div>
+        <div class="miss"><span>Termin vereinbart</span><b>0 von 300</b></div>
+      </div>
+    </div>
+    <div class="res">
+      <div class="item ok"><span class="L">B</span><div><label for="fb">Budget – Ihre Notiz</label><textarea id="fb">bis ca. 15k entscheidet er allein</textarea>
+        <div class="verdict"><b>Geklärt.</b> Bis etwa 15.000 € im Jahr entscheidet Brandt allein.</div>
+        <div class="quote">„Bis fünfzehntausend im Jahr mach ich das selbst, darüber der Chef.“<time>04:52</time></div></div></div>
+      <div class="item ok"><span class="L">A</span><div><label for="fa">Entscheider – Ihre Notiz</label><textarea id="fa">Brandt selbst, darüber GF</textarea>
+        <div class="verdict"><b>Geklärt.</b> Brandt bis 15.000 €, darüber der Geschäftsführer.</div>
+        <div class="quote">„… darüber der Chef.“<time>04:52</time></div></div></div>
+      <div class="item ok"><span class="L">N</span><div><label for="fn">Bedarf – Ihre Notiz</label><textarea id="fn">Wochenend-Ausfälle, WhatsApp-Gruppe</textarea>
+        <div class="verdict"><b>Geklärt.</b> Kurzfristige Ausfälle am Wochenende werden per WhatsApp nachbesetzt.</div>
+        <div class="quote">„Dann geht’s über die WhatsApp-Gruppe. Und meistens telefoniere ich selbst hinterher.“<time>01:58</time></div></div></div>
+      <div class="item no"><span class="L">T</span><div><label for="ft">Zeitpunkt – Ihre Notiz</label><textarea id="ft"></textarea>
+        <div class="verdict"><b>Offen.</b> Nicht angesprochen. Tipp für den nächsten Versuch: nach der Vertragslaufzeit des bisherigen Tools fragen.</div></div></div>
+    </div>
+    <button class="go" data-zeige="briefing">Neuer Versuch</button><span class="hint">Beispielauswertung – Werte simuliert.</span>
+  </div>
+</section>
 
 <nav class="proto" aria-label="Entwurfssteuerung">
-  <span>Farben</span>
+  <button data-zeige="briefing">Briefing</button>
+  <button data-zeige="gespraech" aria-pressed="true">Gespräch</button>
+  <button data-zeige="auswertung">Auswertung</button>
+  <span>·</span>
   <button data-pal="samt">Samt</button>
   <button data-pal="marke">Marke</button>
   <button data-pal="ultramarin" aria-pressed="true">Ultramarin</button>
@@ -235,6 +380,12 @@ for (const b of document.querySelectorAll("[data-pal]")) b.onclick = () => {
   for (const x of document.querySelectorAll("[data-pal]")) x.setAttribute("aria-pressed", x === b);
   readColors();
 };
+for (const b of document.querySelectorAll("[data-zeige]")) b.addEventListener("click", () => {
+  for (const s of document.querySelectorAll("[data-z]")) s.hidden = s.dataset.z !== b.dataset.zeige;
+  for (const x of document.querySelectorAll(".proto [data-zeige]")) x.setAttribute("aria-pressed", x.dataset.zeige === b.dataset.zeige);
+  if (b.dataset.zeige === "gespraech") resetScene();
+});
+function slot(k) { const el = document.querySelector(`#mini [data-k="${k}"]`); el.classList.add("got", "pop"); }
 $("tr").onclick = () => {
   const open = $("main").classList.toggle("open");
   $("tr").setAttribute("aria-expanded", open);
@@ -257,7 +408,7 @@ const script = [
   { t: 9.4, who: "y" }, { t: 12.4, ev: ["neg", "–", "Behauptung statt Frage", "„die beste am Markt“", -5], pat: 58 },
   { t: 12.8, who: "p" }, { t: 15.6, who: "y" },
   { t: 18.6, ev: ["pos", "?", "Gute offene Frage", "Nach dem Samstagmorgen gefragt", 15] },
-  { t: 19, who: "p" }, { t: 23.5, ms: "M2", ev: ["mst", "★", "Schmerz aufgedeckt", "Wochenend-Ausfälle", 40], open: 46 },
+  { t: 19, who: "p" }, { t: 23.6, slot: "N" }, { t: 23.5, ms: "M2", ev: ["mst", "★", "Schmerz aufgedeckt", "Wochenend-Ausfälle", 40], open: 46 },
   { t: 24, who: "y" }, { t: 28, ev: ["pos", "↗", "Konkreter Bezug", "WhatsApp-Gruppe aufgegriffen", 10], open: 58 },
   { t: 28.4, who: "p" }, { t: 33, who: "end" },
 ];
@@ -307,6 +458,7 @@ function setSpeaker(w) {
 function resetScene() {
   idx = 0; t0 = performance.now(); points = 0; $("pts").textContent = "0"; $("ptsd").textContent = "";
   document.querySelectorAll(".ms").forEach((m, j) => { m.classList.remove("done", "pop"); m.classList.toggle("next", j === 0); });
+  document.querySelectorAll("#mini .s").forEach((m) => m.classList.remove("got", "pop"));
   meter($("gb"), $("gv"), 82, [[70, "hoch"], [40, "sinkt"], [0, "am Ende"]]);
   meter($("ob"), $("ov"), 18, [[60, "aufgeschlossen"], [35, "hört zu"], [0, "verschlossen"]]);
 }
@@ -323,6 +475,7 @@ function frame(now) {
     const s = script[idx++];
     if (s.who) setSpeaker(s.who);
     if (s.ms) milestone(s.ms);
+    if (s.slot) slot(s.slot);
     if (s.ev) toast(s.ev);
     if (s.pat) meter($("gb"), $("gv"), s.pat, [[70, "hoch"], [40, "sinkt"], [0, "am Ende"]]);
     if (s.open) meter($("ob"), $("ov"), s.open, [[60, "aufgeschlossen"], [35, "hört zu"], [0, "verschlossen"]]);
@@ -374,6 +527,7 @@ function frame(now) {
 const h = new URLSearchParams(location.hash.slice(1));
 if (h.get("p")) document.querySelector(`[data-pal="${h.get("p")}"]`)?.click();
 if (h.get("t") === "1") $("tr").click();
+if (h.get("v")) document.querySelector(`.proto [data-zeige="${h.get("v")}"]`)?.click();
 requestAnimationFrame(frame);
 setSpeaker("p");
 </script>
