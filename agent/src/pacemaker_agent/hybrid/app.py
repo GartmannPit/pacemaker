@@ -128,6 +128,7 @@ def create_app(
 
     @web.middleware
     async def schutz(request: web.Request, handler):
+        intern = False
         try:
             response = await handler(request)
         except Fehler as exc:
@@ -136,7 +137,11 @@ def create_app(
             response = _antwort("nicht_gefunden" if exc.status == 404 else "anfrage_ungueltig")
         except Exception:  # keine Ausnahmetexte nach außen oder ins Log
             oplog.write("http_request", method=request.method, status=500)
+            intern = True
             response = _antwort("interner_fehler")
+        if request.path == "/api/end" and not intern:
+            # Jede Ende-Anfrage (auch Beacon) mit Status; ohne Pfad, Body oder Header
+            oplog.write("http_request", method=request.method, status=response.status)
         headers = response.headers
         headers["Content-Security-Policy"] = csp
         headers["X-Content-Type-Options"] = "nosniff"

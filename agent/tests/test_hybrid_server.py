@@ -500,6 +500,9 @@ def test_app_login_start_end_and_headers(tmp_path) -> None:
             assert r.status == 403 and len(registry.ended) == ended
             r = await client.get("/api/me")
             assert r.status == 200  # Beacon meldet nicht ab
+            # Jede Ende-Anfrage landet mit Status im Betriebslog (Beacon-Diagnose)
+            ends = [f["status"] for e, f in oplog.rows if e == "http_request"]
+            assert ends == [200] * 4 + [400] * 4 + [403]
             r = await client.post("/api/end", json={"session_ref": "F" * 32}, headers=h)
             assert r.status == 404  # fremde Referenz
             r = await client.post(
