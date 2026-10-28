@@ -71,6 +71,8 @@ class Registry(Protocol):
 
     async def end(self, user_id: str, session_ref: str, *, reason: Any) -> bool: ...
 
+    async def heartbeat(self, user_id: str, session_ref: str) -> bool: ...
+
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -281,6 +283,20 @@ def create_app(
             raise Fehler("nicht_gefunden")
         return web.json_response({})
 
+    async def heartbeat(request: web.Request) -> web.Response:
+        # Lebenszeichen der Gesprächsseite; bleibt es aus, beendet das Register die Sitzung.
+        # Kein Beacon-Pfad: exakter Origin Pflicht. Nicht ins Betriebslog (alle 5 s je Nutzer).
+        if not origin_ok(request):
+            raise Fehler("herkunft_ungueltig")
+        user = current(request)
+        body = await read_json(request, LIMIT_SMALL)
+        ref = body.get("session_ref")
+        if set(body) != {"session_ref"} or not isinstance(ref, str) or not _REF.fullmatch(ref):
+            raise Fehler("anfrage_ungueltig")
+        if not await registry.heartbeat(user.user_id, ref):
+            raise Fehler("nicht_gefunden")
+        return web.json_response({})
+
     app = web.Application(middlewares=[schutz], client_max_size=LIMIT_START)
     app.router.add_get("/", index)
     app.router.add_get("/healthz", healthz)
@@ -290,4 +306,5 @@ def create_app(
     app.router.add_get("/api/status", status)
     app.router.add_post("/api/session", start)
     app.router.add_post("/api/end", end)
+    app.router.add_post("/api/herzschlag", heartbeat)
     return app

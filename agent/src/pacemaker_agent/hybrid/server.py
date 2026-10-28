@@ -107,6 +107,9 @@ def build(cfg: ServerConfig) -> web.Application:
         async def end(self, user_id, session_ref, *, reason):
             return await registry().end(user_id, session_ref, reason=reason)
 
+        async def heartbeat(self, user_id, session_ref):
+            return await registry().heartbeat(user_id, session_ref)
+
     app = create_app(
         auth=auth,
         registry=_Proxy(),
