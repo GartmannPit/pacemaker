@@ -381,6 +381,7 @@ class FakeRegistry:
     def __init__(self) -> None:
         self.started: list[tuple] = []
         self.ended: list[tuple] = []
+        self.beats: list[tuple] = []
         self.refuse: Exception | None = None
 
     async def start(self, user_id, sdp, voice):
@@ -391,6 +392,10 @@ class FakeRegistry:
 
     async def end(self, user_id, session_ref, *, reason):
         self.ended.append((user_id, session_ref, reason))
+        return session_ref == "R" * 32
+
+    async def heartbeat(self, user_id, session_ref):
+        self.beats.append((user_id, session_ref))
         return session_ref == "R" * 32
 
 
@@ -518,6 +523,53 @@ def test_app_login_start_end_and_headers(tmp_path) -> None:
             assert r.status == 401  # Widerruf nach Logout
             logged = json.dumps(oplog.rows)
             assert "ein-langes-passwort" not in logged and "OFFER" not in logged
+        finally:
+            await client.close()
+
+    asyncio.run(run())
+
+
+def test_app_heartbeat_route(tmp_path) -> None:
+    async def run() -> None:
+        registry, oplog = FakeRegistry(), FakeOpLog()
+        client = await client_for(tmp_path, registry, oplog)
+        h = {"Origin": ORIGIN}
+        ok = {"session_ref": "R" * 32}
+        try:
+            r = await client.post("/api/herzschlag", json=ok, headers=h)
+            assert r.status == 401  # ohne Anmeldung
+            r = await client.post(
+                "/api/login", json={"name": "pit", "passwort": "ein-langes-passwort"}, headers=h
+            )
+            assert r.status == 200
+            rows = len(oplog.rows)
+            r = await client.post("/api/herzschlag", json=ok, headers=h)
+            assert r.status == 200 and registry.beats[-1][1] == "R" * 32
+            r = await client.post("/api/herzschlag", json={"session_ref": "F" * 32}, headers=h)
+            assert r.status == 404  # unbekannt/fremd: Seite beendet lokal
+            assert len(oplog.rows) == rows  # kein Betriebslog je Herzschlag
+            beats = len(registry.beats)
+            r = await client.post("/api/herzschlag", json=ok)
+            assert r.status == 403  # kein Beacon-Pfad ohne Origin
+            r = await client.post(
+                "/api/herzschlag", json=ok, headers={"Origin": "https://boese.example"}
+            )
+            assert r.status == 403
+            for falsch in (
+                {},
+                {"session_ref": 1},
+                {"session_ref": "kurz"},
+                {"session_ref": "R" * 32, "grund": "tab"},
+            ):
+                r = await client.post("/api/herzschlag", json=falsch, headers=h)
+                assert r.status == 400
+            r = await client.post(
+                "/api/herzschlag",
+                data="x" * (5 * 1024),
+                headers={**h, "Content-Type": "application/json"},
+            )
+            assert r.status == 413
+            assert len(registry.beats) == beats  # abgewiesene Anfragen erreichen das Register nicht
         finally:
             await client.close()
 
