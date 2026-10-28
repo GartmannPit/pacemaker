@@ -18,10 +18,10 @@ from aiohttp import web
 from dotenv import load_dotenv
 
 from ..personas.kaltakquise_head_of_ops import HANGUP_TOOL, system_prompt
-from .app import AppConfig, create_app
+from .app import AppConfig, check_web_dist, create_app
 from .auth import Auth, UserFile
 from .budget import Budget
-from .contracts import MICRO_USD
+from .contracts import MICRO_USD, VOICES
 from .journal import Journal
 from .live import LiveSettings, LiveStarter
 from .oplog import OpLog, configure_logging
@@ -76,11 +76,25 @@ def load_config() -> ServerConfig:
         )
     except ValueError as exc:
         raise SystemExit(f"{exc} (erlaubt: eu, referenz).") from exc
+    web_dist = Path(_require("PACEMAKER_WEB_DIST")).expanduser()
+    try:
+        check_web_dist(web_dist)
+    except ValueError as exc:
+        raise SystemExit(f"PACEMAKER_WEB_DIST: {exc}") from exc
+    voice = os.environ.get("PACEMAKER_VOICE") or None
+    if voice is not None and voice not in VOICES:
+        raise SystemExit(f"PACEMAKER_VOICE unzulässig (erlaubt: {', '.join(VOICES)}).")
     return ServerConfig(
         live=live,
         users_file=Path(_require("PACEMAKER_USERS_FILE")).expanduser(),
         state_dir=Path(_require("PACEMAKER_STATE_DIR")).expanduser(),
-        app=AppConfig(public_origin=origin, dev_loopback=dev),
+        app=AppConfig(
+            public_origin=origin,
+            web_dist=web_dist,
+            dev_loopback=dev,
+            max_duration_s=max_duration,
+            voice=voice,
+        ),
         host=os.environ.get("PACEMAKER_HOST", "127.0.0.1"),
         port=int(os.environ.get("PACEMAKER_PORT", "8080")),
         max_parallel=int(os.environ.get("PACEMAKER_MAX_PARALLEL", "20")),

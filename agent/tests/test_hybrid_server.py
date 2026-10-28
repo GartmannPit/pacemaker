@@ -18,6 +18,7 @@ from pacemaker_agent.hybrid.app import AppConfig, create_app
 from pacemaker_agent.hybrid.contracts import (
     BudgetStatus,
     CreateUnclear,
+    HeartbeatStatus,
     ProviderBlocked,
     ProviderConfig,
     StartFailed,
@@ -377,11 +378,22 @@ def test_sideband_unconfirmed_close_and_drop(monkeypatch) -> None:
 ORIGIN = "http://localhost:8080"
 
 
+def web_dist(tmp_path: Path) -> Path:
+    """Synthetischer Build von web/ (Plan Schritt 2 §3.2)."""
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True, exist_ok=True)
+    (dist / "index.html").write_text('<!doctype html><script type="module" src="/assets/a-1.js">')
+    (dist / "assets" / "a-1.js").write_text("export {};")
+    (dist / "favicon.svg").write_text("<svg/>")
+    return dist
+
+
 class FakeRegistry:
     def __init__(self) -> None:
         self.started: list[tuple] = []
         self.ended: list[tuple] = []
         self.beats: list[tuple] = []
+        self.beat_state, self.beat_reason = "laufend", None
         self.refuse: Exception | None = None
 
     async def start(self, user_id, sdp, voice):
@@ -396,7 +408,9 @@ class FakeRegistry:
 
     async def heartbeat(self, user_id, session_ref):
         self.beats.append((user_id, session_ref))
-        return session_ref == "R" * 32
+        if session_ref != "R" * 32:
+            return None
+        return HeartbeatStatus(state=self.beat_state, reason=self.beat_reason)
 
 
 class FakeOpLog:
@@ -415,7 +429,7 @@ async def client_for(tmp_path: Path, registry: FakeRegistry, oplog: FakeOpLog) -
         registry=registry,
         budget_status=lambda: BudgetStatus(25_000_000, 0, 0, True, False),
         ready=lambda: True,
-        config=AppConfig(public_origin=ORIGIN, dev_loopback=True),
+        config=AppConfig(public_origin=ORIGIN, web_dist=web_dist(tmp_path), dev_loopback=True),
         oplog=oplog,
     )
     client = TestClient(TestServer(app))
@@ -450,18 +464,21 @@ def test_app_login_start_end_and_headers(tmp_path) -> None:
             assert r.headers["Cache-Control"] == "no-store"
             r = await client.post("/api/session", json={"sdp": "x", "debug": True}, headers=h)
             assert r.status == 400  # A6: unbekannte Felder abgewiesen
-            r = await client.post("/api/session", json={"sdp": "x", "stimme": "falsch"}, headers=h)
-            assert r.status == 400
+            r = await client.post("/api/session", json={"sdp": "x", "stimme": "vesper"}, headers=h)
+            assert r.status == 400  # Stimme legt der Server fest (Schritt 2 §4.5)
             r = await client.post(
                 "/api/session",
                 data="x" * (90 * 1024),
                 headers={**h, "Content-Type": "application/json"},
             )
             assert r.status == 413
-            r = await client.post(
-                "/api/session", json={"sdp": "OFFER", "stimme": "vesper"}, headers=h
-            )
-            assert r.status == 200 and await r.json() == {"session_ref": "R" * 32, "sdp": "ANTWORT"}
+            r = await client.post("/api/session", json={"sdp": "OFFER"}, headers=h)
+            assert r.status == 200 and await r.json() == {
+                "session_ref": "R" * 32,
+                "sdp": "ANTWORT",
+                "max_dauer_s": 600,
+            }
+            assert registry.started[-1] == (registry.started[-1][0], "OFFER", None)
             registry.refuse = UserHasSession()
             r = await client.post("/api/session", json={"sdp": "OFFER"}, headers=h)
             assert r.status == 409 and (await r.json())["fehler"] == "nutzer_hat_gespraech"
@@ -529,6 +546,49 @@ def test_app_login_start_end_and_headers(tmp_path) -> None:
     asyncio.run(run())
 
 
+def test_app_serves_web_dist_with_strict_csp_and_cache(tmp_path) -> None:
+    async def run() -> None:
+        client = await client_for(tmp_path, FakeRegistry(), FakeOpLog())
+        try:
+            r = await client.get("/")
+            assert r.status == 200 and "a-1.js" in await r.text()
+            csp = r.headers["Content-Security-Policy"]
+            assert "script-src 'self'" in csp and "style-src 'self'" in csp
+            assert "font-src 'self'" in csp and "unsafe" not in csp and "sha256" not in csp
+            assert r.headers["Cache-Control"] == "no-store"
+            r = await client.get("/assets/a-1.js")
+            assert r.status == 200 and r.headers["Content-Type"].startswith("text/javascript")
+            assert "immutable" in r.headers["Cache-Control"]
+            r = await client.get("/favicon.svg")
+            assert r.status == 200 and r.headers["Content-Type"].startswith("image/svg+xml")
+            for bad in (
+                "/assets/fehlt.js",
+                "/assets/..%2Findex.html",
+                "/assets/a-1.txt",
+                "/index.html.svg",
+                "/assets/sub/a.js",
+            ):
+                r = await client.get(bad)
+                assert r.status == 404, bad
+                assert r.headers["Cache-Control"] == "no-store"
+        finally:
+            await client.close()
+
+    asyncio.run(run())
+
+
+def test_web_dist_check_rejects_missing_index_and_symlinks(tmp_path) -> None:
+    from pacemaker_agent.hybrid.app import check_web_dist
+
+    with pytest.raises(ValueError):
+        check_web_dist(tmp_path / "leer")
+    dist = web_dist(tmp_path)
+    check_web_dist(dist)
+    (dist / "assets" / "link.js").symlink_to(dist / "assets" / "a-1.js")
+    with pytest.raises(ValueError):
+        check_web_dist(dist)
+
+
 def test_app_heartbeat_route(tmp_path) -> None:
     async def run() -> None:
         registry, oplog = FakeRegistry(), FakeOpLog()
@@ -545,6 +605,10 @@ def test_app_heartbeat_route(tmp_path) -> None:
             rows = len(oplog.rows)
             r = await client.post("/api/herzschlag", json=ok, headers=h)
             assert r.status == 200 and registry.beats[-1][1] == "R" * 32
+            assert await r.json() == {"zustand": "laufend", "grund": None}
+            registry.beat_state, registry.beat_reason = "beendet", "auflegen"
+            r = await client.post("/api/herzschlag", json=ok, headers=h)
+            assert await r.json() == {"zustand": "beendet", "grund": "auflegen"}
             r = await client.post("/api/herzschlag", json={"session_ref": "F" * 32}, headers=h)
             assert r.status == 404  # unbekannt/fremd: Seite beendet lokal
             assert len(oplog.rows) == rows  # kein Betriebslog je Herzschlag
@@ -587,6 +651,7 @@ def test_server_config_requires_explicit_safe_values(monkeypatch, tmp_path) -> N
         "PACEMAKER_STATE_DIR": str(tmp_path / "state"),
         "PACEMAKER_PUBLIC_ORIGIN": "http://localhost:8080",
         "PACEMAKER_DEV_LOOPBACK": "1",
+        "PACEMAKER_WEB_DIST": str(web_dist(tmp_path)),
     }
     for key, value in base.items():
         monkeypatch.setenv(key, value)
@@ -601,6 +666,16 @@ def test_server_config_requires_explicit_safe_values(monkeypatch, tmp_path) -> N
         with pytest.raises(SystemExit):
             server.load_config()
         monkeypatch.setenv(key, base.get(key, "600"))
+    monkeypatch.setenv("PACEMAKER_VOICE", "unbekannt")
+    with pytest.raises(SystemExit):  # Stimme nur aus der Allowlist (Schritt 2 §4.5)
+        server.load_config()
+    monkeypatch.setenv("PACEMAKER_VOICE", "vesper")
+    assert server.load_config().app.voice == "vesper"
+    monkeypatch.delenv("PACEMAKER_VOICE")
+    monkeypatch.setenv("PACEMAKER_WEB_DIST", str(tmp_path / "fehlt"))
+    with pytest.raises(SystemExit):  # kein stiller Rückfall ohne gebautes Frontend
+        server.load_config()
+    monkeypatch.setenv("PACEMAKER_WEB_DIST", base["PACEMAKER_WEB_DIST"])
     monkeypatch.setenv("PACEMAKER_DEV_LOOPBACK", "1")
     monkeypatch.setenv("PACEMAKER_PUBLIC_ORIGIN", "https://training.example.eu")
     with pytest.raises(SystemExit):  # Dev-Modus nur für localhost
@@ -621,6 +696,7 @@ def test_server_build_recovers_and_serves_health(monkeypatch, tmp_path) -> None:
             "PACEMAKER_STATE_DIR": str(tmp_path / "state"),
             "PACEMAKER_PUBLIC_ORIGIN": "http://localhost:8080",
             "PACEMAKER_DEV_LOOPBACK": "1",
+            "PACEMAKER_WEB_DIST": str(web_dist(tmp_path)),
         }.items():
             monkeypatch.setenv(key, value)
         app = server.build(server.load_config())
@@ -628,7 +704,7 @@ def test_server_build_recovers_and_serves_health(monkeypatch, tmp_path) -> None:
             r = await client.get("/healthz")
             assert r.status == 200 and (await r.json()) == {"bereit": True}
             r = await client.get("/")
-            assert "KI-Trainingsfigur" in await r.text()
+            assert "/assets/a-1.js" in await r.text()  # gebautes web/dist
 
     asyncio.run(run())
 
@@ -699,14 +775,14 @@ def test_review_fragmented_body_is_read_completely(tmp_path) -> None:
             )
 
             async def chunks():
-                for part in (b'{"sdp": "OF', b'FER", "stim', b'me": "vesper"}'):
+                for part in (b'{"sd', b'p": "OF', b'FER"}'):
                     yield part
                     await asyncio.sleep(0.01)
 
             r = await client.post(
                 "/api/session", data=chunks(), headers={**h, "Content-Type": "application/json"}
             )
-            assert r.status == 200 and registry.started[-1][1:] == ("OFFER", "vesper")
+            assert r.status == 200 and registry.started[-1][1:] == ("OFFER", None)
         finally:
             await client.close()
 
@@ -723,7 +799,7 @@ def recovery_server_config(tmp_path):
         live=settings(),
         users_file=tmp_path / "users.json",
         state_dir=tmp_path / "state",
-        app=AppConfig(public_origin=ORIGIN, dev_loopback=True),
+        app=AppConfig(public_origin=ORIGIN, web_dist=web_dist(tmp_path), dev_loopback=True),
         host="127.0.0.1",
         port=0,
         max_parallel=2,

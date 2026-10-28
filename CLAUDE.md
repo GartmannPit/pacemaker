@@ -184,7 +184,7 @@ Ein Stack-Name ist kein Nachweis einer geprüften EU-Konfiguration.
 ## Repo-Orientierung
 
 - agent/: Pipeline, Personas, Metriken und Test-Harness
-- web/: Verbinden, Sprechen, Hören, Transkript und Latenz-HUD (noch nicht angelegt)
+- web/: Gesprächsseite (Vite + TypeScript, ohne UI-Framework; Schritt 2), Build über den Hybrid-Server ausgeliefert
 - agent/src/pacemaker_agent/hybrid/: Hybrid-Server (Phase 1, Schritt 1: Anmeldung, Sitzungen, Budget, Sideband)
 - agent/tools/gptlive_browser/: Hybrid-Prototyp aus dem Architekturversuch (nicht Produktpfad)
 - infra/: Docker Compose, LiveKit und EU-VM-Setup
@@ -220,7 +220,9 @@ Der azure-eu-Lauf setzt eine geprüfte EU-Konfiguration und synthetische Fixture
 Fixture-Erzeugung kann externe Dienste und Kosten auslösen; vorher Implementierung prüfen.
 Baseline nur bei ausdrücklichem Messauftrag: `uv run pacemaker-agent --stack baseline`.
 
-Frontend, aus web/: `pnpm install`, `pnpm dev`.
+Frontend, aus web/ (Node ≥ 22.18, pnpm): `pnpm install`, `pnpm build` (bzw. `pnpm build:watch`),
+`pnpm typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm test` (Node-Test-Runner). Der Hybrid-Server
+liefert `web/dist` aus (`PACEMAKER_WEB_DIST`); `pnpm dev` nur mit `PACEMAKER_PUBLIC_ORIGIN=http://localhost:5173`.
 Bei TS-Änderungen vorhandene Typecheck-, Lint-, Format- und Build-Befehle aus package.json
 verwenden. Fehlen diese, die Lücke benennen. Keine erfolgreichen Prüfungen behaupten.
 Manuell prüfen: Mikrofonfreigabe, Verbindungsaufbau, Audiowiedergabe, Disconnect und HUD.

@@ -8,20 +8,18 @@ gehen über das OpLog mit Feld-Allowlist.
 from __future__ import annotations
 
 import asyncio
-import base64
-import hashlib
 import json
+import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from importlib.resources import files
+from pathlib import Path
 from typing import Any, Protocol
 
 from aiohttp import web
 
 from .auth import Auth, AuthError, Overloaded, RateLimited
 from .contracts import (
-    VOICES,
     BudgetStatus,
     CreateUnclear,
     OpLog,
@@ -71,13 +69,16 @@ class Registry(Protocol):
 
     async def end(self, user_id: str, session_ref: str, *, reason: Any) -> bool: ...
 
-    async def heartbeat(self, user_id: str, session_ref: str) -> bool: ...
+    async def heartbeat(self, user_id: str, session_ref: str) -> Any: ...  # HeartbeatStatus | None
 
 
 @dataclass(frozen=True)
 class AppConfig:
     public_origin: str  # exakt, z. B. https://training.example.eu
+    web_dist: Path  # gebautes web/dist (Plan Schritt 2 §3.2); Prüfung in check_web_dist()
     dev_loopback: bool = False  # unsicheres Cookie nur für http://localhost
+    max_duration_s: float = 600  # nur Anzeige im Browser; durchgesetzt im Register
+    voice: str | None = None  # Stimme der Persona, serverseitig fest (§4.5); None = API-Vorgabe
 
     @property
     def cookie_name(self) -> str:
@@ -99,15 +100,39 @@ def _antwort(code: str, retry_after: int | None = None) -> web.Response:
     return response
 
 
-def _page() -> tuple[bytes, str, str]:
-    html = files("pacemaker_agent.hybrid").joinpath("static/index.html").read_text("utf-8")
+_ASSET = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+_TYPES = {
+    ".js": "text/javascript",
+    ".css": "text/css",
+    ".woff2": "font/woff2",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".ico": "image/x-icon",
+    ".webmanifest": "application/manifest+json",
+}
 
-    def digest(tag: str) -> str:
-        block = re.search(rf"<{tag}>(.*?)</{tag}>", html, re.S)
-        raw = hashlib.sha256((block.group(1) if block else "").encode()).digest()
-        return "'sha256-" + base64.b64encode(raw).decode() + "'"
 
-    return html.encode(), digest("script"), digest("style")
+def check_web_dist(dist: Path) -> None:
+    """Startprüfung: index.html vorhanden, keine Symlinks im Build (kein stiller Rückfall)."""
+    if not (dist / "index.html").is_file():
+        raise ValueError(f"{dist}: index.html fehlt (pnpm build in web/ ausführen)")
+    for root, dirs, names in os.walk(dist):
+        for name in dirs + names:
+            if os.path.islink(os.path.join(root, name)):
+                raise ValueError(f"{dist}: Symlink im Build nicht erlaubt ({name})")
+
+
+def _web_file(dist: Path, parts: list[str]) -> Path | None:
+    """Datei aus dist/ oder dist/assets/ – nur flache, geprüfte Namen, keine Symlinks."""
+    if not 1 <= len(parts) <= 2 or not all(_ASSET.fullmatch(p) for p in parts):
+        return None
+    if len(parts) == 2 and parts[0] != "assets":
+        return None
+    path = dist.joinpath(*parts)
+    if path.suffix not in _TYPES or path.is_symlink() or not path.is_file():
+        return None
+    real = os.path.realpath(path)
+    return path if real.startswith(os.path.realpath(dist) + os.sep) else None
 
 
 def create_app(
@@ -119,11 +144,10 @@ def create_app(
     config: AppConfig,
     oplog: OpLog,
 ) -> web.Application:
-    page, script_hash, style_hash = _page()
+    check_web_dist(config.web_dist)
     csp = (
-        "default-src 'none'; "
-        f"script-src {script_hash}; style-src {style_hash}; "
-        "connect-src 'self'; media-src 'self' blob:; img-src 'self'; "
+        "default-src 'none'; script-src 'self'; style-src 'self'; "
+        "connect-src 'self'; media-src 'self' blob:; img-src 'self'; font-src 'self'; "
         "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     )
     secure = not config.dev_loopback
@@ -149,7 +173,11 @@ def create_app(
         headers["X-Content-Type-Options"] = "nosniff"
         headers["Referrer-Policy"] = "no-referrer"
         headers["X-Frame-Options"] = "DENY"
-        headers["Cache-Control"] = "no-store"
+        # Gehashte Build-Dateien dürfen lange gecacht werden; alles andere nie (§3.2).
+        immutable = request.path.startswith("/assets/") and response.status == 200
+        headers["Cache-Control"] = (
+            "public, max-age=31536000, immutable" if immutable else "no-store"
+        )
         if secure:
             headers["Strict-Transport-Security"] = "max-age=31536000"
         return response
@@ -184,7 +212,15 @@ def create_app(
         return login
 
     async def index(_request: web.Request) -> web.Response:
+        page = await asyncio.to_thread((config.web_dist / "index.html").read_bytes)
         return web.Response(body=page, content_type="text/html", charset="utf-8")
+
+    async def asset(request: web.Request) -> web.Response:
+        path = _web_file(config.web_dist, request.path.strip("/").split("/"))
+        if path is None:
+            raise Fehler("nicht_gefunden")
+        body = await asyncio.to_thread(path.read_bytes)
+        return web.Response(body=body, content_type=_TYPES[path.suffix])
 
     async def healthz(_request: web.Request) -> web.Response:
         return web.json_response({"bereit": ready()}, status=200 if ready() else 503)
@@ -242,15 +278,14 @@ def create_app(
             raise Fehler("herkunft_ungueltig")
         user = current(request)
         body = await read_json(request, LIMIT_START)
-        if set(body) - {"sdp", "stimme"}:
-            raise Fehler("anfrage_ungueltig")  # u. a. keine debug-/unlock-Felder (A6)
-        sdp, voice = body.get("sdp"), body.get("stimme")
+        if set(body) != {"sdp"}:
+            # u. a. keine debug-/unlock-Felder (A6); Stimme legt der Server fest (§4.5)
+            raise Fehler("anfrage_ungueltig")
+        sdp = body["sdp"]
         if not isinstance(sdp, str) or not sdp or len(sdp) > LIMIT_SDP:
             raise Fehler("anfrage_ungueltig")
-        if voice is not None and voice not in VOICES:
-            raise Fehler("anfrage_ungueltig")
         try:
-            result = await registry.start(user.user_id, sdp, voice)
+            result = await registry.start(user.user_id, sdp, config.voice)
         except StartRefused as exc:
             oplog.write("start_abgewiesen", code=exc.code)
             raise Fehler(exc.code) from exc
@@ -262,7 +297,13 @@ def create_app(
                 provider_code=getattr(exc, "provider_code", None),
             )
             raise Fehler(exc.code) from exc
-        return web.json_response({"session_ref": result.session_ref, "sdp": result.answer_sdp})
+        return web.json_response(
+            {
+                "session_ref": result.session_ref,
+                "sdp": result.answer_sdp,
+                "max_dauer_s": int(config.max_duration_s),
+            }
+        )
 
     async def end(request: web.Request) -> web.Response:
         user = current(request)
@@ -293,12 +334,16 @@ def create_app(
         ref = body.get("session_ref")
         if set(body) != {"session_ref"} or not isinstance(ref, str) or not _REF.fullmatch(ref):
             raise Fehler("anfrage_ungueltig")
-        if not await registry.heartbeat(user.user_id, ref):
-            raise Fehler("nicht_gefunden")
-        return web.json_response({})
+        status = await registry.heartbeat(user.user_id, ref)
+        if status is None:
+            raise Fehler("nicht_gefunden")  # unbekannt, fremd oder abgelaufen: gleich behandelt
+        # Ende und Grund erfährt die Seite nur hier, nicht aus dem Datenkanal (§4.1, §4.2)
+        return web.json_response({"zustand": status.state, "grund": status.reason})
 
     app = web.Application(middlewares=[schutz], client_max_size=LIMIT_START)
     app.router.add_get("/", index)
+    app.router.add_get("/assets/{name}", asset)
+    app.router.add_get(r"/{name:[A-Za-z0-9][A-Za-z0-9._-]*\.(?:svg|png|ico|webmanifest)}", asset)
     app.router.add_get("/healthz", healthz)
     app.router.add_post("/api/login", login)
     app.router.add_post("/api/logout", logout)

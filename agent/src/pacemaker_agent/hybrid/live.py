@@ -32,9 +32,10 @@ CREATE_TIMEOUT_S = 30.0
 # Serverereignisse, die der Browser für Anzeige und Lebenszyklus braucht (Plan A6).
 # ServerEventSelector-Objekte (API-Format seit spätestens 2026-10-28; Strings: 400 invalid_type).
 # Bewusst ohne "error": Provider-Texte nicht ungefiltert an den Browser.
+# Ohne session.started/session.closed: Diese tragen die Sitzungsressource (instructions mit
+# verdeckten Persona-Details, delegation, Provider-ID; SDK SessionResource). Ende und Grund
+# erfährt die Seite über den Herzschlag (Plan Schritt 2 §4.1).
 BROWSER_SERVER_EVENTS = [
-    {"type": "session.started"},
-    {"type": "session.closed"},
     {"type": "session.input_transcript.delta"},
     {"type": "session.output_transcript.delta"},
 ]
