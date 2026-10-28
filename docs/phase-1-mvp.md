@@ -36,6 +36,27 @@ dauerhaft gespeichert; zulässig sind nur notwendige flüchtige Verarbeitungspuf
 | OpenAI-DPA, inkl. Aufbewahrung delegierter Responses (`store` in der Delegation nicht setzbar; Speicherung damit ungeklärt, nicht widerlegt) | Pit | [offen] — **Pilotblocker** |
 | AVV Hosting (Hetzner) und weitere Dienste aus §2 | Pit | [offen] |
 | Abnahme nach §7 bestanden | Claude / Codex | [offen] |
+| Täglicher API-Wächter eingerichtet (siehe unten) | Claude | [offen] — Gründervorgabe Pit, 2026-10-28 |
+
+**API-Wächter (Pre-Go-Live-Todo).** Anlass: Am 2026-10-28 lehnte die Live-API
+`allowed_server_events` als Stringliste plötzlich mit `400 invalid_type` ab; Gespräche waren
+unmöglich, bis der Code angepasst war (`15e687a`). Das darf im Live-Betrieb nicht passieren.
+Ein täglich laufender Agent:
+
+1. **Recherchiert** Änderungen und angekündigte Änderungen der genutzten Schnittstellen
+   (GPT-Live, Sideband, delegierte Responses, später weitere Dienste aus §2): API-Referenz,
+   Changelog, Deprecations, Modell- und Preisseiten.
+2. **Prüft aktiv**, weil Änderungen auch unangekündigt kommen: täglicher synthetischer Start mit
+   unserem echten Sitzungs-Payload und synthetischem SDP, sofort geschlossen (≈ 1 Cent je Lauf,
+   ≈ 0,30 $/Monat; ohne Personenbezug, ohne Audio).
+3. **Ändert den Code automatisch**, wenn eine Anpassung nötig ist: eigener Branch, Tests,
+   Cross-Review nach CLAUDE.md; Ergebnis und Befund gehen an Pit.
+4. Meldet Fehlschläge sofort, bevor Nutzer sie bemerken.
+
+Offen vor Umsetzung: ob ein geprüfter Fix ohne Pits Einzelfreigabe in den Live-Betrieb gehen
+darf (Empfehlung Claude: nein, Live-Deployment nur nach Review und grünen Tests mit Pits
+Freigabe, bis ein Bereitschaftsprozess steht); Ausführungsort (VM oder Cloud-Routine) und
+Zugriff auf den Key nur für den synthetischen Startcheck.
 
 Bis dahin entwickeln wir mit Region `referenz`, aber nur in ausdrücklich beauftragten und
 gekennzeichneten Läufen mit synthetischen Daten oder Pits freigegebener Stimme; keine
