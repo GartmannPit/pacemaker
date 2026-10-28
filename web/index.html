@@ -3,11 +3,187 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>OneTry</title>
+    <meta name="theme-color" content="#ECEEF5" />
+    <title>OneTry · Gesprächstraining</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   </head>
   <body>
-    <div id="app"></div>
+    <a class="skip" href="#inhalt">Zum Inhalt</a>
+    <header class="kopf">
+      <a class="logo" href="/" aria-label="OneTry – Startseite" translate="no">
+        <svg viewBox="18 26 68 54" width="34" height="27" aria-hidden="true">
+          <path
+            fill="currentColor"
+            d="M44.8 28H58.4L72.6 38H44.8A14.7 14.7 0 1 0 53 65.6L43.7 77.4A24.7 24.7 0 1 1 44.8 28Z"
+          />
+          <path
+            fill="#FD5803"
+            d="M58.9 42.65H74.8Q75.6 42.65 76 43.3L83.6 53.1Q84.1 53.8 83.6 54.5L63.4 75.9Q61.9 77.4 59.8 77.4H48L67.7 53.8Z"
+          />
+        </svg>
+        <span>OneTry</span>
+      </a>
+      <span class="szene"><b>Probe</b> · Kaltakquise mit Markus Brandt</span>
+      <div class="kopf-aktionen">
+        <button
+          class="sekundaer"
+          id="transkript-knopf"
+          aria-expanded="false"
+          aria-controls="transkript"
+          hidden
+        >
+          Transkript einblenden
+        </button>
+        <span id="nutzer" class="nutzer"></span>
+        <button class="sekundaer" id="abmelden" hidden>Abmelden</button>
+      </div>
+    </header>
+    <p id="status" class="status" role="status">Anmeldung wird geprüft …</p>
+    <main id="inhalt" tabindex="-1">
+      <section id="anmeldung" class="einstieg" aria-labelledby="anmeldung-titel" hidden>
+        <div class="einstieg-inhalt">
+          <h1 id="anmeldung-titel" tabindex="-1">Bei OneTry anmelden</h1>
+          <p>Üben Sie Ihr nächstes Vertriebsgespräch mit einer KI-Trainingsfigur.</p>
+          <form id="anmeldeformular">
+            <label for="name">Name</label>
+            <input id="name" name="name" autocomplete="username" spellcheck="false" required />
+            <label for="passwort">Passwort</label>
+            <input
+              id="passwort"
+              name="passwort"
+              type="password"
+              autocomplete="current-password"
+              required
+            />
+            <p id="anmeldefehler" class="fehler" role="alert" hidden></p>
+            <button class="primaer" id="anmelden" type="submit">Anmelden</button>
+          </form>
+          <p class="klein">Sie sprechen mit einer KI-Trainingsfigur.</p>
+        </div>
+        <div class="einstieg-zeichen" aria-hidden="true"><span>MB</span></div>
+      </section>
+      <section id="bereit" class="einstieg" aria-labelledby="bereit-titel" hidden>
+        <div class="einstieg-inhalt">
+          <h1 id="bereit-titel" tabindex="-1">Ihr Gegenüber: Markus Brandt</h1>
+          <p>Head of Operations bei einem Logistikdienstleister mit rund 180 Mitarbeitenden.</p>
+          <p>
+            Sie verkaufen PlanWerk, eine Software für Schicht- und Einsatzplanung. Üben Sie ein
+            erstes Gespräch am Telefon.
+          </p>
+          <p class="ki-hinweis">Sie sprechen mit einer <strong>KI-Trainingsfigur</strong>.</p>
+          <p class="klein">
+            Verwenden Sie möglichst ein Headset. So vermeiden Sie Echo und können sich auf das
+            Gespräch konzentrieren.
+          </p>
+          <p id="kontingent" class="warnung" hidden></p>
+          <button class="primaer" id="start" disabled>Gespräch starten</button>
+          <button class="sekundaer" id="status-neu" hidden>Status erneut prüfen</button>
+          <p class="klein">
+            Das Transkript bleibt nur in diesem Browserfenster und wird von OneTry nicht
+            gespeichert.
+          </p>
+        </div>
+        <div class="einstieg-zeichen" aria-hidden="true"><span>MB</span></div>
+      </section>
+      <section id="sitzung" aria-label="Gespräch mit Markus Brandt" hidden>
+        <section class="meilensteine" aria-label="Auswertung folgt">
+          <ol class="strecke" aria-label="Geplante Meilensteine; Auswertung folgt">
+            <li><span class="knoten" aria-hidden="true"></span>Gesprächserlaubnis</li>
+            <li><span class="knoten" aria-hidden="true"></span>Schmerz aufgedeckt</li>
+            <li><span class="knoten" aria-hidden="true"></span>Schmerz bestätigt</li>
+            <li><span class="knoten" aria-hidden="true"></span>Einwand behandelt</li>
+            <li><span class="knoten" aria-hidden="true"></span>Infomail</li>
+            <li><span class="knoten" aria-hidden="true"></span>Termin</li>
+          </ol>
+          <p class="auswertung">Auswertung folgt</p>
+        </section>
+        <div class="gespraech-layout" id="gespraech-layout">
+          <aside class="gegenueber" aria-labelledby="gegenueber-titel">
+            <h2 id="gegenueber-titel">Ihr Gegenüber</h2>
+            <div>
+              <p class="persona-name">Markus Brandt</p>
+              <p class="beschreibung">
+                Head of Operations, Logistikdienstleister mit rund 180 Mitarbeitenden in Duisburg
+                und Hamm.
+              </p>
+              <span class="abzeichen">KI-Trainingsfigur</span>
+            </div>
+            <dl class="persona-zustand">
+              <div>
+                <dt>Geduld</dt>
+                <dd>folgt</dd>
+              </div>
+              <div>
+                <dt>Offenheit</dt>
+                <dd>folgt</dd>
+              </div>
+            </dl>
+            <p class="gegenueber-fuss">
+              Sie verkaufen PlanWerk, eine Software für Schicht- und Einsatzplanung.
+            </p>
+          </aside>
+          <div class="buehne">
+            <canvas id="ringe" aria-hidden="true"></canvas>
+            <div id="sprechend" class="sprechend">
+              <h1 id="gespraech-titel" tabindex="-1">Gespräch wird aufgebaut …</h1>
+              <p id="sprecher" aria-live="polite">Bitte warten Sie.</p>
+            </div>
+            <div id="abschluss" class="abschluss" hidden>
+              <h1 id="abschluss-titel" tabindex="-1">Gespräch beendet</h1>
+              <p id="abschluss-text"></p>
+              <p id="dauer" class="klein"></p>
+              <button class="primaer" id="neustart">Neues Gespräch</button>
+              <p class="klein">
+                Ihr Transkript bleibt bis zum nächsten Gespräch oder bis zum Abmelden sichtbar.
+              </p>
+            </div>
+            <div class="audio-hilfe">
+              <button class="sekundaer" id="ton" hidden>Ton aktivieren</button
+              ><button class="bewegung" id="pegel-schalter" aria-pressed="true">
+                Pegelanzeige ausschalten
+              </button>
+            </div>
+          </div>
+          <aside id="transkript" class="transkript" aria-labelledby="transkript-titel" hidden inert>
+            <div class="transkript-kopf">
+              <h2 id="transkript-titel" tabindex="-1">Live-Transkript</h2>
+              <button class="sekundaer" id="transkript-zu">Schließen</button>
+            </div>
+            <p class="klein">Nur in diesem Browserfenster, von OneTry nicht gespeichert.</p>
+            <div
+              id="transkript-inhalt"
+              class="transkript-inhalt"
+              tabindex="0"
+              role="region"
+              aria-label="Gesprächsverlauf"
+            >
+              <p id="transkript-leer" class="klein">
+                Sobald Sie oder Brandt sprechen, erscheint hier das Transkript.
+              </p>
+            </div>
+          </aside>
+        </div>
+        <footer class="cue-leiste">
+          <div class="cue">
+            <span id="cue-licht" class="cue-licht" aria-hidden="true"></span>
+            <div>
+              <span class="klein">Gespräch</span>
+              <p id="cue-text">Verbindungsaufbau</p>
+            </div>
+            <div id="mikrofonpegel" class="mikrofonpegel" aria-hidden="true">
+              <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+            <span class="sr" id="pegel-status">Eigener Mikrofonpegel</span>
+          </div>
+          <div class="uhr"><span id="restzeit">–:–</span><span class="klein">Restzeit</span></div>
+          <div class="cue-aktionen">
+            <p class="ki-text">Sie sprechen mit einer<br /><strong>KI-Trainingsfigur</strong></p>
+            <button class="primaer" id="beenden">Abbrechen</button>
+          </div>
+        </footer>
+      </section>
+    </main>
+    <audio id="audio" autoplay></audio>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
