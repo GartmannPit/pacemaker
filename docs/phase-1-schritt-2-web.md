@@ -1,6 +1,6 @@
 # Phase 1, Schritt 2 — Web-Frontend `web/` (Plan)
 
-Stand: 2026-10-28 · Status: **Entwurf, von Codex geprüft und eingearbeitet; Entscheidungen §5 offen** · Bezug:
+Stand: 2026-10-28 · Status: **umgesetzt und gegenseitig geprüft; Browser-Abnahme (W8) ausstehend** · Bezug:
 [Phase-1-Plan](./phase-1-mvp.md) §2 Schritt 2, §3 · Server:
 [Schritt 1](./phase-1-schritt-1-server.md) inkl. Nachträge (Herzschlag, Beacon, Wiederanlauf)
 
@@ -289,3 +289,18 @@ Gesprächs: **Framework füllen + Termin legen.**
   `{kriterien: [{key, status, wert, zitat: {text, zeit}, tipp}], punkte: {posten, gesamt,
   max}}`; Werte der Charakterkarte erst hier offengelegt.
 - Datensparsamkeit: Notizen und Zitate bis Schritt 6 nur flüchtig (Anzeige), nicht gespeichert.
+
+## Nachtrag: Umsetzung (2026-10-28)
+
+- Server (Claude): `web/dist`-Auslieferung, CSP `'self'`, Datenkanal ohne Sitzungsressource,
+  Herzschlag-Status (Register: Codex), Stimme serverseitig, `max_dauer_s`, `GET /api/briefing`
+  (nur öffentliche Angaben); Testseite entfernt. 276 Agent-Tests, ruff grün.
+- Seite (Codex): Entwurf C in Ultramarin – Anmeldung, Briefing mit BANT-Feldern, Gespräch mit
+  Sprach-Animation, Kriterienleiste („folgt“), Transkript-Schublade, Cue-Leiste; Auswertung mit
+  Notizfeldern (nur lokal). 32 Logiktests, Typecheck, ESLint, Prettier, Build ohne
+  Inline-Anteile grün.
+- Reviews: Codex prüfte Server, Briefing und Gesamtstand (1 × P2: Startzeitlimit 25 s →
+  50 s, behoben); Claude prüfte Register und Seite.
+- Sichtprüfung (Claude, Testserver ohne OpenAI-Aufruf): Anmeldung und Briefing bei 1440 px und
+  820 px. **Nicht geprüft:** Gesprächsansicht live, Mikrofon, Autoplay, WebRTC, Firefox,
+  Hintergrund-Tab, Tastatur/Screenreader → W8 mit Pit.
