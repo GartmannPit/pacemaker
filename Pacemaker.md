@@ -1,4 +1,4 @@
-# Pacemaker — Technische Ausarbeitungsstrategie
+# OneTry (vormals Pacemaker) — Technische Ausarbeitungsstrategie
 
 *Basierend auf dem Website-Entwurf (index_1.html), Stand 20.08.2026*
 

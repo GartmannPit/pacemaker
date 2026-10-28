@@ -1,7 +1,7 @@
 [project]
 name = "pacemaker-agent"
 version = "0.0.0"
-description = "Pacemaker Phase-0 Voice-Agent (Proof of Concept)"
+description = "OneTry (vormals Pacemaker): Voice-Agent und Hybrid-Server"
 requires-python = ">=3.12"
 dependencies = [
     "pipecat-ai[azure,silero,deepgram,elevenlabs,openai]>=1.12.0",

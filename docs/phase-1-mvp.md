@@ -1,4 +1,4 @@
-# Phase 1 — MVP für Pilotkunden
+# Phase 1 — MVP für Pilotkunden (OneTry, vormals Pacemaker)
 
 **Stand:** 2026-10-27 · **Verfasser:** Claude, geprüft von Codex · **Status:** **FREIGEGEBEN**
 (Pit, 2026-10-27) mit den Entscheidungen in §6; Umsetzung beginnt mit Schritt 1. Offene Punkte
@@ -119,6 +119,9 @@ die Auswertung. Ziel: später Muster über viele Gespräche erkennen.
 - Grundprinzipien des Scorings (entschieden, §6); Kriterien je Szenario **[offen]** bis Schritt 6.
 - Modell und Anbieter **[offen]**; Modellanbindung erst nach Datenflussprüfung (§1).
 - Ausgangspunkt: Judge-Werkzeuge aus Phase 0 (`tests/judge.py`, `metrics/conversation.py`).
+- **Gamification (Pit, 2026-10-28):** Meilensteine, Live-Ereignisse und Punkte im Gespräch;
+  Hilfen (Tipps, Transkript) gegen Punktabzug – Skizze und offene Punkte in
+  [Schritt 2 §9](./phase-1-schritt-2-web.md).
 
 ## 4a. Persona-Logik: Branch `persona-extension`
 

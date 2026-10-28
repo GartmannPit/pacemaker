@@ -1,4 +1,6 @@
-# Pacemaker
+# OneTry
+
+(vormals Pacemaker; technische Bezeichner im Code tragen noch den alten Namen)
 
 Deutschsprachiger KI-Sprachrollenspielpartner für B2B-SaaS-Vertriebstraining: SDRs üben ein
 Kaltakquise-Gespräch gegen eine Echtzeit-KI-Persona.

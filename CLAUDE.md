@@ -1,6 +1,12 @@
-# Pacemaker
+# OneTry
 
 ## Projekt und Phase
+
+**Produktname: OneTry** (bis 2026-10-28 „Pacemaker“; Gründerentscheidung Pit). Technische
+Bezeichner bleiben bis zu einem eigenen, geplanten Umbau: Paket `pacemaker_agent`, Befehl
+`pacemaker-server`, Variablen `PACEMAKER_*`, Pfade `~/.pacemaker`, Repo-Ordner, VM-Pfade,
+Dateiname `Pacemaker.md`. Historische Dokumente, Messberichte und Fixtures (Aufnahmen sagen
+„Pacemaker GmbH“) nicht umschreiben.
 
 Deutschsprachiger KI-Sprachrollenspielpartner für B2B-SaaS-Vertriebstraining.
 SDRs üben Gespräche mit einer Echtzeit-KI-Persona; Transkript und Scoring sind das Produktziel.

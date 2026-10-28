@@ -163,7 +163,7 @@ def build(cfg: ServerConfig) -> web.Application:
 
 def serve() -> None:
     cfg = load_config()
-    print(f"Pacemaker-Server: {cfg.app.public_origin} (Region {cfg.live.region})")
+    print(f"OneTry-Server: {cfg.app.public_origin} (Region {cfg.live.region})")
     # handler_cancellation: Bricht der Browser den Start ab, greift das geschützte Aufräumen
     # im Register (abgebrochene Startanfrage beendet eine erzeugte Sitzung wieder).
     web.run_app(

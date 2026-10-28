@@ -187,3 +187,39 @@ Folgen für den Plan: Selbstgehostete Schrift (OFL) braucht `font-src 'self'` in
 (§3.2). Skills werden als geprüfte Kopie mit festem Stand versioniert
 (`.claude/skills/`, `.agents/skills/`), nicht per Installer mit Telemetrie; Inhalt vor Aufnahme
 gelesen (Skills sind Anweisungen an die Agenten).
+
+## 9. Gestaltung: Entscheidung (Pit, 2026-10-28)
+
+Vorgehen nach Impeccable (ohne Engine): `PRODUCT.md` angelegt, drei Entwürfe als klickbare
+Seiten. Gewählt: **Entwurf C „Bühne“** in der Farbwelt **Ultramarin**, **ohne UI-Framework**
+(Pit: „wenn wir die Ergebnisse auch so hinbekommen“). Entwurf: `docs/design/entwurf-c/index.html`
+(Abläufe simuliert). Name **OneTry** mit Logo oben links (Nachbau `docs/design/onetry-mark.svg`
+aus Pits Bild, Farben vermessen; Original-SVG von Pit steht aus).
+
+Aufbau: Kopf mit Logo, Szene, Transkript-Knopf · **Meilenstein-Leiste** mit Punkten · links
+Gegenüber (Brandt, KI-Hinweis, Geduld/Offenheit) · Mitte **Sprach-Animation** (Ringe aus Brandts
+Pegel, Sprecheranzeige, Ereignis-Hinweise) · rechts **Transkript-Schublade, standardmäßig zu**
+(wie im echten Telefonat) · unten Cue-Leiste (Cue-Licht, eigener Pegel, Restzeit, KI-Hinweis,
+Beenden). Schrift Bricolage Grotesque (OFL, selbst gehostet).
+
+Änderungen gegenüber §3–§4:
+- **Pegelanzeige zurück** (§3.4 strich sie): `AnalyserNode` parallel an Wiedergabe-Stream und
+  Mikrofon, nur Anzeige, keine Speicherung oder Bewertung; Audioweg und Latenz unverändert,
+  da nicht in den Signalweg geschaltet. AudioContext sauber schließen (W3).
+- **Transkript standardmäßig ausgeblendet**; Öffnen per Knopf.
+- **Meilensteine, Ereignisse, Geduld/Offenheit, Punkte:** Daten liefert der Protokollant aus
+  Branch `persona-extension` (Meilensteine M1–M6, `EventKind`, Stimmungsparameter) – erst in
+  **Schritt 3**. Schritt 2 baut Leiste, Hinweise und Anzeige gegen eine Server-Schnittstelle
+  (Ereignisse über die Herzschlag-Antwort oder einen eigenen Endpunkt, Entscheidung im
+  Review); ohne Daten bleibt die Leiste leer und ehrlich („noch keine Auswertung“). Punktwerte
+  sind Platzhalter, Regeln offen. „Guter/schlechter Einstieg“ fehlt bislang als `EventKind`.
+
+**Idee Pit (2026-10-28): Hilfen gegen Punktabzug** – für Schritt 3 ff., noch nicht beauftragt:
+- Tipps im Gespräch abrufbar, gestaffelt mit Punktabzug, z. B. Tipp 1 (−15): leichter Hinweis,
+  der zum Schmerzpunkt führt; Tipp 2 (−30): welches Argument Brandt überzeugt.
+- **Transkript öffnen kostet Punkte** (z. B. −10).
+- Datenbasis vorhanden: `PainPoint.hint`, `trigger`, `example_questions` und Einwände je
+  Persona (`persona-extension`). Tipps serverseitig ausliefern (nicht vorab im Bundle, sonst
+  im Browser auslesbar) und als Ereignis protokollieren; Abzüge zählen zum Ergebnis.
+- Offen: Punkteregeln insgesamt, Einfluss auf das spätere Scoring (Prinzip: nur Inhalt und
+  Struktur), ein „Ernstfall-Modus“ ohne Hilfen und Einblendungen.
