@@ -141,13 +141,14 @@ Nicht in Schritt 2: Personas-Auswahl, Scoring/Ergebnisse, Verlauf, Self-Service-
 7. Hinweis für später: `SessionResource.expires_at` könnte das Restrisiko „Sitzung läuft ohne
    unsere Frist weiter“ (Schritt-1-Nachtrag) begrenzen; im Sideband auswerten und prüfen.
 
-## 5. Entscheidungen für Pit
+## 5. Entscheidungen (Pit, 2026-10-28)
 
-1. **Stimme von Brandt** fest auf dem Server statt Auswahl in der Oberfläche. Empfehlung: fest;
-   welche der 8 Stimmen, entscheidet Pit (bisher API-Vorgabe).
-2. **Node 22 und pnpm per Homebrew installieren** (lokal, kostenlos). Empfehlung: ja.
+1. **Stimme von Brandt** fest auf dem Server, keine Auswahl in der Oberfläche; vorerst die
+   API-Vorgabe (keine Stimme gesetzt), konkrete Stimme später.
+2. **Node und pnpm per Homebrew:** installiert (Node 22.23.4, pnpm 12.16.1).
 3. **Browser-Umfang für den Pilot:** Chrome/Edge und Firefox verbindlich, Safari nach Aufwand.
-   Empfehlung: so.
+4. **Design-Werkzeuge** nach §8 übernommen (geprüfte Kopien, Impeccable ohne Engine); vor dem
+   Bau 2–3 visuelle Richtungen zur Auswahl durch Pit.
 
 ## 6. Review Codex (2026-10-28), eingearbeitet
 

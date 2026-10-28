@@ -61,6 +61,9 @@ auf diese Datei; Codex liest damit dieselben Regeln.
   Ausnahme (Pit, 2026-10-28): Kleinläufe unter 1 $ je Lauf ohne Einzelfreigabe; Schätzung
   vorher und Ist-Kosten danach trotzdem nennen. Ab der Größenordnung der Lasttests
   (mehrere Dollar) wieder vorab fragen.
+- **Design-Skills** (Frontend, ab Schritt 2): geprüfte Kopien in `.claude/skills/` und
+  `.agents/skills/` (Impeccable ohne Engine, Emil Kowalski, Vercel Web Interface Guidelines).
+  Regeln und Herkunft in `.claude/skills/HERKUNFT.md`; `npx impeccable` nicht ausführen.
 - **Datenschutz gilt auch indirekt:** `.env`, Keys und `agent/fixtures/robust` weder lesen
   noch über Tests, Skripte oder Unterprozesse zugänglich machen; nicht in Worktrees kopieren
   oder verlinken. `.gitignore` ist keine Zugriffssperre. Alle übrigen Regeln dieser Datei
