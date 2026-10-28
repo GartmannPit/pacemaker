@@ -24,7 +24,7 @@ Nicht in Schritt 2: Personas-Auswahl, Scoring/Ergebnisse, Verlauf, Self-Service-
 | W3 | Fehlerpfade mit deutscher Meldung und sauberem Aufräumen (Mikrofon aus, Peer zu, Herzschlag gestoppt): Mikrofon verweigert/fehlt, Start abgewiesen (alle `fehler`-Codes des Servers), WebRTC-Aufbau scheitert, Verbindung bricht ab (ICE `failed`/`disconnected` > Frist), Server antwortet 401/404/5xx, Netzverlust. **Beenden und Abmelden stoppen Mikrofon-Tracks, Wiedergabe und Peer sofort lokal**, unabhängig von der HTTP-Antwort; ein verspätet zurückkehrendes `getUserMedia` oder ein abgebrochener Start hinterlässt kein offenes Mikrofon. Bei 401 oder Nutzerwechsel wird das Transkript aus DOM und Speicher gelöscht. |
 | W4 | Lebenszyklus gegenüber Schritt 1 unverändert: Herzschlag (5 s / lokale Frist 15 s, höchstens eine offene Anfrage, Zeitlimit je Anfrage, Kontext je Gespräch), Beacon mit `grund: "tab"`, Abbruch bei 401/404. Verspätete Antworten eines alten Gesprächs wirken nie auf ein neues. |
 | W5 | Sicherheit: keine Secrets, Provider-Keys, Provider-IDs **oder Persona-Instruktionen** im Bundle oder im Browser – auch nicht in Datenkanal-Ereignissen (§4.1); nur Same-Origin-Aufrufe; keine Drittanbieter-Ressourcen (Schriften, CDNs, Analytics); CSP ohne `unsafe-inline`/`unsafe-eval`; kein Speichern von Transkripten in `localStorage`, `sessionStorage`, IndexedDB oder Cookies. |
-| W6 | Datensparsamkeit: Transkript nur im Speicher der Seite, verworfen bei neuem Start, Abmelden oder Neuladen. Kein Audio-Mitschnitt, keine Audioanalyse. |
+| W6 | Datensparsamkeit: Transkript nur im Speicher der Seite, verworfen bei neuem Start, Abmelden oder Neuladen. Kein Audio-Mitschnitt; einzige Audioberechnung ist die lokale Pegelanzeige nach §9 (nicht gespeichert, nicht übertragen, keine Bewertung). |
 | W7 | Prüfungen grün (aus `web/`): Typecheck (`strict: true`), eslint, prettier `--check`, `pnpm build`; Logiktests (§3.6); Agent-Tests und ruff wie in Schritt 1. |
 | W8 | Manuelle Prüfung nach CLAUDE.md (Mikrofonfreigabe, Verbindungsaufbau, Audiowiedergabe, Disconnect; HUD entfällt, §4.4) in den verbindlichen Browsern aus §5.3 (je Browser Grundgespräch und Fehlerpfade), einmal Gespräch > 5 min im Hintergrund-Tab in Chrome (Timerdrosselung, offen aus Schritt 1); Prüfung, dass der Browser keine `session.*`-Ereignisse mehr erhält. Region `referenz`, Pits Stimme, als Referenzlauf gekennzeichnet; Schätzung ≈ 0,80 $, Ist-Kosten dokumentiert. |
 
@@ -88,7 +88,7 @@ Nicht in Schritt 2: Personas-Auswahl, Scoring/Ergebnisse, Verlauf, Self-Service-
 
 ### 3.4 Audio
 
-- Audiopfad **unverändert gegenüber Prototyp und Testseite**: `getUserMedia({ audio: true })`,
+- *Ergänzt durch §9 (Pegelanzeige).* Audiopfad **unverändert gegenüber Prototyp und Testseite**: `getUserMedia({ audio: true })`,
   ein Audio-Track, Datenkanal `oai-events`, Angebot nach ICE-Sammlung (höchstens 5 s), Ausgabe
   über `<audio autoplay>` nach Nutzergeste. Keine Pegelanzeige, kein AudioContext, keine eigene
   Verarbeitung. Damit ändert Schritt 2 den Audiopfad nicht, und es ist kein Latenz-
@@ -124,7 +124,7 @@ Nicht in Schritt 2: Personas-Auswahl, Scoring/Ergebnisse, Verlauf, Self-Service-
    (`pipecat/services/openai/live/events.py`, `SessionResource`). Der Browser erhält sie heute.
    Allowlist auf `session.input_transcript.delta` und `session.output_transcript.delta`
    reduzieren; Ende erfährt die Seite über den Herzschlag. Synthetisch prüfen, dass im Browser
-   kein `session.*`-Ereignis mehr ankommt (W8). (Claude, `live.py`)
+   kein `session.started`/`session.closed` (Sitzungsressource) mehr ankommt, nur die beiden Transkript-Ereignisse (W8). (Claude, `live.py`)
 2. **Herzschlag liefert Status (Codex, `sessions.py`; Claude, `app.py`).** Antwort 200
    `{"zustand": "laufend"|"endend"|"beendet", "grund": <EndReason|null>}` für die eigene
    `session_ref`; abgeschlossene Sitzungen bleiben dafür begrenzt im Speicher (z. B. 10 min,
@@ -136,7 +136,7 @@ Nicht in Schritt 2: Personas-Auswahl, Scoring/Ergebnisse, Verlauf, Self-Service-
 4. **Startantwort** um `max_dauer_s`. (Claude)
 5. **Feste Stimme** je Persona nach Pits Entscheidung (§5.1): Serverkonstante bzw.
    `PACEMAKER_VOICE` aus der Allowlist, Client-Feld `stimme` → 400. (Claude)
-6. Latenz: kein HUD in Schritt 2; Audiopfad unverändert (§3.4). Browser-E2E-Messung mit eigener
+6. Latenz: kein HUD in Schritt 2; Wiedergabepfad unverändert (§3.4, Pegelanzeige nach §9 parallel). Browser-E2E-Messung mit eigener
    Instrumentierung gehört zur Präregistrierung in Schritt 7.
 7. Hinweis für später: `SessionResource.expires_at` könnte das Restrisiko „Sitzung läuft ohne
    unsere Frist weiter“ (Schritt-1-Nachtrag) begrenzen; im Sideband auswerten und prüfen.
@@ -202,17 +202,36 @@ Pegel, Sprecheranzeige, Ereignis-Hinweise) · rechts **Transkript-Schublade, sta
 (wie im echten Telefonat) · unten Cue-Leiste (Cue-Licht, eigener Pegel, Restzeit, KI-Hinweis,
 Beenden). Schrift Bricolage Grotesque (OFL, selbst gehostet).
 
-Änderungen gegenüber §3–§4:
-- **Pegelanzeige zurück** (§3.4 strich sie): `AnalyserNode` parallel an Wiedergabe-Stream und
-  Mikrofon, nur Anzeige, keine Speicherung oder Bewertung; Audioweg und Latenz unverändert,
-  da nicht in den Signalweg geschaltet. AudioContext sauber schließen (W3).
-- **Transkript standardmäßig ausgeblendet**; Öffnen per Knopf.
-- **Meilensteine, Ereignisse, Geduld/Offenheit, Punkte:** Daten liefert der Protokollant aus
-  Branch `persona-extension` (Meilensteine M1–M6, `EventKind`, Stimmungsparameter) – erst in
-  **Schritt 3**. Schritt 2 baut Leiste, Hinweise und Anzeige gegen eine Server-Schnittstelle
-  (Ereignisse über die Herzschlag-Antwort oder einen eigenen Endpunkt, Entscheidung im
-  Review); ohne Daten bleibt die Leiste leer und ehrlich („noch keine Auswertung“). Punktwerte
-  sind Platzhalter, Regeln offen. „Guter/schlechter Einstieg“ fehlt bislang als `EventKind`.
+Änderungen gegenüber §3–§4 (nach Codex-Review 2026-10-28):
+- **Pegelanzeige** (hebt die Streichung in §3.4 auf): Remote-Stream bleibt direkt am
+  `<audio>`-Element; parallel `MediaStreamAudioSourceNode → AnalyserNode` ohne Verbindung zur
+  Ausgabe (nie `createMediaElementSource`), Mikrofon ebenso. Kein zusätzlicher Schritt im
+  Wiedergabepfad; ein Latenzeinfluss ist damit **nicht gemessen**: Anzeige per Schalter
+  abschaltbar, Vergleich mit/ohne in der Präregistrierung von Schritt 7. AudioContext im
+  Start-Klick erzeugen/`resume()`, Zustand beobachten; Ausfall der Analyse blockiert das
+  Gespräch nie; blockierte Wiedergabe (`audio.play()` abgelehnt, Autoplay, Firefox) mit
+  bedienbarem Wiederholungsknopf. Ende: Frames abbrechen, Nodes trennen, Referenzen lösen,
+  Context schließen – Mikrofon, Wiedergabe und Peer stoppen unabhängig davon sofort (W3);
+  verspätete Promises an den Gesprächskontext gebunden.
+- **Transkript-Schublade, standardmäßig zu:** geschlossen wirklich verborgen (`hidden`/`inert`,
+  nicht nur Breite 0), geöffnet per Tastatur scrollbar. Text „nur in diesem Browserfenster,
+  von OneTry nicht gespeichert“ statt pauschal „wird nicht gespeichert“.
+- **Auswertung (Meilensteine, Ereignisse, Geduld/Offenheit, Punkte) erst Schritt 3:** In
+  Schritt 2 sichtbar als Bereich „Auswertung folgt“ ohne erfundene Nullwerte; **keine
+  Ereignis-API in Schritt 2**. Schritt 3: begrenzter Snapshot in der Herzschlag-Antwort
+  (Revision, erreichte Meilensteine, begrenzte Ereignisse mit IDs/Turn-Zuordnung; ≤ 5 s
+  Verzögerung akzeptiert); Herzschlag wartet nie auf den Protokollanten. Eigener Endpunkt erst
+  bei begründetem Bedarf.
+- **Öffentliche Datenprojektion (gilt ab Schritt 3):** Nur freigegebene Anzeigeinformationen
+  an den Browser; verdeckte Schmerzpunkte, Trigger, Tipps, Regie und Persona-Objekte bleiben
+  serverseitig, auch nicht versteckt im DOM. Eigene Sitzung authentisiert, fremd/unbekannt
+  gleich behandelt, nicht gecacht, nicht protokolliert. Ereignisse und Punkte bestimmt der
+  Server; Browser-Rückmeldungen erzeugen keine Leistungen. Geduld/Offenheit sind **fiktiver
+  Persona-Zustand aus Text-Ereignissen**, nie aus Pegeln oder Stimme.
+- **Gestaltung beim Bau korrigieren:** `prefers-reduced-motion` reduziert nur Bewegung (Uhr,
+  Sprecherwechsel, Ereignisse laufen weiter; Zahlen ohne Hochzählen); Kontraste ≥ 4,5:1 (im
+  Entwurf zu schwach: Nutzerfarbe `#0E8F7E` 4,0:1, Gold 4,29:1); Breakpoints für Tablet und
+  Zoom; Punkte nicht laufend per `aria-live` ansagen, Meilensteinstatus als Text zugänglich.
 
 **Idee Pit (2026-10-28): Hilfen gegen Punktabzug** – für Schritt 3 ff., noch nicht beauftragt:
 - Tipps im Gespräch abrufbar, gestaffelt mit Punktabzug, z. B. Tipp 1 (−15): leichter Hinweis,
@@ -221,5 +240,9 @@ Beenden). Schrift Bricolage Grotesque (OFL, selbst gehostet).
 - Datenbasis vorhanden: `PainPoint.hint`, `trigger`, `example_questions` und Einwände je
   Persona (`persona-extension`). Tipps serverseitig ausliefern (nicht vorab im Bundle, sonst
   im Browser auslesbar) und als Ereignis protokollieren; Abzüge zählen zum Ergebnis.
+- **Transkript gegen Punktabzug** ist nur manipulationsfest, wenn der Server die Auslieferung
+  des Transkripts erst nach dem Kauf freischaltet (heute kommt es per Datenkanal ohnehin in den
+  Browser und wäre ohne Öffnen der Schublade lesbar). Das ändert W1 und die Zustellung –
+  eigener Auftrag, zusammen mit dem Scoring (Hauptplan Schritt 6).
 - Offen: Punkteregeln insgesamt, Einfluss auf das spätere Scoring (Prinzip: nur Inhalt und
   Struktur), ein „Ernstfall-Modus“ ohne Hilfen und Einblendungen.
