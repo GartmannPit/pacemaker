@@ -1,4 +1,4 @@
-"""Monatsbudget in Mikro-Dollar; ungeklärte Kosten bleiben gebunden."""
+"""Monatsbudget in Mikro-Dollar; Ersatzabschlüsse werden ausdrücklich markiert."""
 
 from __future__ import annotations
 
@@ -105,6 +105,7 @@ class Budget:
                         type(amount) is not int
                         or amount < 0
                         or type(record["estimated"]) is not bool
+                        or type(record.get("unconfirmed", False)) is not bool
                     ):
                         raise ValueError
                     self._settled[local_id] = amount
@@ -187,12 +188,23 @@ class Budget:
     async def settle(self, local_id: str, *, usage: UsageSummary, closure: CloseOutcome) -> int:
         return await durable(self._settle(local_id, usage=usage, closure=closure))
 
-    async def _settle(self, local_id: str, *, usage: UsageSummary, closure: CloseOutcome) -> int:
+    async def settle_unconfirmed(self, local_id: str, *, usage: UsageSummary) -> int:
+        """Ersatzabschluss: mindestens volle Reserve, ohne Provider-Bestätigung vorzutäuschen."""
+        return await durable(self._settle(local_id, usage=usage, unconfirmed=True))
+
+    async def _settle(
+        self,
+        local_id: str,
+        *,
+        usage: UsageSummary,
+        closure: CloseOutcome | None = None,
+        unconfirmed: bool = False,
+    ) -> int:
         async with self._lock:
             if local_id in self._settled:
                 return self._settled[local_id]
             reservation = self._open[local_id]
-            if not closure.confirmed:
+            if not unconfirmed and (closure is None or not closure.confirmed):
                 return 0  # Keine Buchung; die volle Reservierung bleibt offen.
             live_missing = usage.live_seconds is None or not usage.final
             if usage.live_seconds is not None and (
@@ -200,10 +212,10 @@ class Budget:
             ):
                 raise ValueError("Ungültige Live-Usage")
             seconds = usage.live_seconds or 0
-            if closure.reason == "attach_fehler":
+            if closure is not None and closure.reason == "attach_fehler":
                 seconds = max(15, seconds)
             live = (seconds * reservation.live_per_minute_micro + 59) // 60
-            if live_missing:
+            if live_missing and not unconfirmed:
                 live = max(live, reservation.live_micro)
             tokens = usage.backend_tokens
             if any(type(v) is not int or v < 0 for v in tokens.values()):
@@ -217,14 +229,17 @@ class Budget:
             # Ein leeres vollständiges Aggregat bedeutet: kein Backend-Aufruf gesehen.
             if tokens and not {"input_tokens", "output_tokens"} <= tokens.keys():
                 backend_missing = True
-            if backend_missing:
+            if backend_missing and not unconfirmed:
                 backend = max(backend, reservation.backend_micro)
             amount = live + backend
+            if unconfirmed:
+                amount = max(amount, reservation.total)
             await self.journal.append(
                 "budget_settle",
                 local_id=local_id,
                 amount_micro=amount,
-                estimated=live_missing or backend_missing,
+                estimated=unconfirmed or live_missing or backend_missing,
+                **({"unconfirmed": True} if unconfirmed else {}),
             )
             self._settled[local_id] = amount
             self._spent[reservation.month] = self._spent.get(reservation.month, 0) + amount

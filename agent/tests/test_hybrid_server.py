@@ -656,3 +656,161 @@ def test_review_fragmented_body_is_read_completely(tmp_path) -> None:
             await client.close()
 
     asyncio.run(run())
+
+
+# --- HTTP während überwachter Hintergrund-Recovery -------------------------------------------
+
+
+def recovery_server_config(tmp_path):
+    from pacemaker_agent.hybrid.server import ServerConfig
+
+    return ServerConfig(
+        live=settings(),
+        users_file=tmp_path / "users.json",
+        state_dir=tmp_path / "state",
+        app=AppConfig(public_origin=ORIGIN, dev_loopback=True),
+        host="127.0.0.1",
+        port=0,
+        max_parallel=2,
+        max_duration_s=600,
+        budget_micro=25_000_000,
+    )
+
+
+@pytest.mark.parametrize("finish_recovery", [True, False])
+@pytest.mark.parametrize("transport", ["http", "in_process"])
+def test_server_serves_unready_health_and_cancels_recovery_before_resources_close(
+    tmp_path, monkeypatch, finish_recovery, transport
+):
+    from aiohttp.test_utils import make_mocked_request
+
+    from pacemaker_agent.hybrid import server
+    from pacemaker_agent.hybrid.budget import Budget
+    from pacemaker_agent.hybrid.contracts import CloseOutcome, StartsBlocked
+    from pacemaker_agent.hybrid.journal import Journal
+    from pacemaker_agent.hybrid.sessions import SessionRegistry
+
+    async def run():
+        cfg = recovery_server_config(tmp_path)
+        with Journal(cfg.state_dir) as journal:
+            budget = Budget(journal)
+            await budget.reserve("local")
+            await journal.append(
+                "session",
+                local_id="local",
+                user_id="user",
+                provider_id="provider_synthetic",
+                state="abschluss_ungeklaert",
+                reason="nutzer",
+            )
+        calls, resources = [], {}
+        entered, gate = asyncio.Event(), asyncio.Event()
+
+        class Starter:
+            def __init__(self, _cfg, http):
+                resources["http"] = http
+
+            async def force_close(self, provider_id):
+                calls.append(provider_id)
+                entered.set()
+                try:
+                    await gate.wait()
+                except asyncio.CancelledError:
+                    assert not resources["http"].closed
+                    assert not resources["journal"]._closed
+                    resources["cancelled"] = True
+                    raise
+                return CloseOutcome(True, "wiederanlauf")
+
+        def registry(*args, **kwargs):
+            resources["journal"] = args[2]
+            # Shutdown darf den synthetisch hängenden Provider nur kurz abwarten.
+            result = SessionRegistry(*args, close_timeout_s=0.2, **kwargs)
+            resources["registry"] = result
+            return result
+
+        monkeypatch.setattr(server, "configure_logging", lambda *_a, **_k: None)
+        monkeypatch.setattr(server, "LiveStarter", Starter)
+        monkeypatch.setattr(server, "SessionRegistry", registry)
+        app = server.build(cfg)
+        client = TestClient(TestServer(app)) if transport == "http" else None
+        runner = web.AppRunner(app, access_log=None)
+
+        async def health():
+            if client is not None:
+                response = await client.get("/healthz")
+                return response.status, await response.json()
+            request = make_mocked_request("GET", "/healthz", app=app)
+            route = await app.router.resolve(request)
+            response = await route.handler(request)
+            return response.status, json.loads(response.body)
+
+        try:
+            # Listener muss auch bei hängender Recovery starten können.
+            await asyncio.wait_for(client.start_server() if client else runner.setup(), 1)
+            await asyncio.wait_for(entered.wait(), 1)
+            assert await health() == (503, {"bereit": False})
+            assert not resources["registry"].ready
+            with pytest.raises(StartsBlocked):
+                await resources["registry"].start("user", "SDP", None)
+            if finish_recovery:
+                gate.set()
+                async with asyncio.timeout(1):
+                    while not resources["registry"].ready:
+                        await asyncio.sleep(0.001)
+                assert await health() == (200, {"bereit": True})
+        finally:
+            await asyncio.wait_for(client.close() if client else runner.cleanup(), 1)
+        assert resources["http"].closed and resources["journal"]._closed
+        assert resources.get("cancelled", False) == (not finish_recovery)
+        assert all(t.done() for t in resources["registry"]._tasks)
+        rows = [
+            json.loads(line) for line in (cfg.state_dir / "journal.jsonl").read_text().splitlines()
+        ]
+        bookings = [r for r in rows if r["event"] == "budget_settle"]
+        assert len(bookings) == (1 if finish_recovery else 0)
+
+    asyncio.run(run())
+
+
+def test_server_reports_background_recovery_failure_without_exception_text(tmp_path, monkeypatch):
+    from aiohttp.test_utils import make_mocked_request
+
+    from pacemaker_agent.hybrid import server
+
+    async def run():
+        failed = asyncio.Event()
+
+        class BrokenRegistry:
+            ready = False
+
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            async def recover(self):
+                failed.set()
+                raise RuntimeError("GEHEIMER_PROVIDER_FEHLER")
+
+            async def shutdown(self):
+                pass
+
+        monkeypatch.setattr(server, "configure_logging", lambda *_a, **_k: None)
+        monkeypatch.setattr(server, "SessionRegistry", BrokenRegistry)
+        cfg = recovery_server_config(tmp_path)
+        app = server.build(cfg)
+        runner = web.AppRunner(app, access_log=None)
+        try:
+            await runner.setup()
+            await asyncio.wait_for(failed.wait(), 1)
+            request = make_mocked_request("GET", "/healthz", app=app)
+            route = await app.router.resolve(request)
+            response = await route.handler(request)
+            assert response.status == 503 and json.loads(response.body) == {"bereit": False}
+        finally:
+            await runner.cleanup()
+        text = (cfg.state_dir / "betrieb.jsonl").read_text()
+        rows = [json.loads(line) for line in text.splitlines()]
+        assert sum(r["event"] == "wiederanlauf_fehlgeschlagen" for r in rows) == 1
+        assert "GEHEIMER" not in text and "RuntimeError" not in text
+
+    asyncio.run(run())

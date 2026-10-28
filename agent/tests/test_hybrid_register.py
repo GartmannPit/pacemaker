@@ -530,7 +530,9 @@ def test_recover_open_provider_id_before_readiness(tmp_path, state, confirmed):
                 state=state,
                 reason=None,
             )
-        journal, log, budget, starter, registry = make(tmp_path)
+        journal, log, budget, starter, registry = make(
+            tmp_path, unclear_retry_offsets_s=(0, 0.01), unclear_deadline_s=0.04
+        )
         starter.force_confirmed = confirmed
         starter.force_gate.clear()
         with pytest.raises(StartsBlocked):
@@ -541,14 +543,6 @@ def test_recover_open_provider_id_before_readiness(tmp_path, state, confirmed):
         assert budget.status().bound_micro == 550_000
         starter.force_gate.set()
         await recovery
-        assert registry.ready == confirmed
-        if not confirmed:
-            assert registry.snapshot() == {"local": "abschluss_ungeklaert"}
-            with pytest.raises(StartsBlocked):
-                await registry.start("b", "SDP", None)
-            assert budget.status().spent_micro == 0
-            starter.force_confirmed = True
-            await registry.recover()
         assert registry.ready
         assert_closed(journal, budget, registry, spent=550_000, reason="wiederanlauf")
         assert all(c[0] == "force" for c in starter.calls)
@@ -888,5 +882,390 @@ def test_provider_block_survives_deadline_close(tmp_path):
         await registry.shutdown()
         journal.close()
         log.close()
+
+    asyncio.run(run())
+
+
+# --- Begrenzte Nachbehandlung ungeklärter Abschlüsse ------------------------------------------
+
+
+async def seed_open_sessions(tmp_path, count=1, *, reason=None):
+    with Journal(tmp_path / "state") as journal:
+        budget = Budget(journal)
+        for i in range(count):
+            local_id = f"local_{i}"
+            await budget.reserve(local_id)
+            await journal.append(
+                "session",
+                local_id=local_id,
+                user_id=f"user_{i}",
+                provider_id=f"provider_{i}",
+                state="abschluss_ungeklaert",
+                reason=reason,
+            )
+
+
+def test_recovery_retries_until_confirmed_and_preserves_reason(tmp_path, monkeypatch):
+    async def run():
+        await seed_open_sessions(tmp_path, reason="zeitlimit")
+        journal, log, budget, starter, registry = make(
+            tmp_path, unclear_retry_offsets_s=(0, 0.015, 0.04), unclear_deadline_s=0.08
+        )
+        calls = []
+        started = asyncio.get_running_loop().time()
+
+        async def force(provider_id):
+            calls.append(asyncio.get_running_loop().time() - started)
+            return CloseOutcome(len(calls) >= 3, "wiederanlauf")
+
+        monkeypatch.setattr(starter, "force_close", force)
+        try:
+            await registry.recover()
+            assert registry.ready
+            assert len(calls) == 3
+            assert calls[1] >= 0.015 and calls[2] >= 0.04
+            assert_closed(journal, budget, registry, spent=550_000, reason="zeitlimit")
+            booking = next(r for r in journal.records if r["event"] == "budget_settle")
+            assert not booking.get("unconfirmed", False)
+            assert not any(r["event"] == "abschluss_unbestaetigt" for r in read_rows(log.path))
+        finally:
+            await registry.shutdown()
+            journal.close()
+            log.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("count", [1, 8])
+def test_recovery_unconfirmed_shares_deadline_and_frees_places(tmp_path, monkeypatch, count):
+    async def run():
+        await seed_open_sessions(tmp_path, count)
+        journal, log, budget, starter, registry = make(
+            tmp_path,
+            max_parallel=2,
+            unclear_retry_offsets_s=(0, 0.02, 0.04),
+            unclear_deadline_s=0.08,
+        )
+        active, peak = 0, 0
+
+        async def force(provider_id):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            try:
+                await asyncio.sleep(0.003)
+                return CloseOutcome(False, "wiederanlauf")  # etwa anhaltender HTTP 503
+            finally:
+                active -= 1
+
+        monkeypatch.setattr(starter, "force_close", force)
+        try:
+            started = asyncio.get_running_loop().time()
+            await registry.recover()
+            elapsed = asyncio.get_running_loop().time() - started
+            assert 0.075 <= elapsed < 0.3  # Acht Sitzungen brauchen keine acht Fristen.
+            assert peak == min(count, 2)
+            assert registry.ready
+            assert_closed(journal, budget, registry, spent=count * 550_000, reason="wiederanlauf")
+            bookings = [r for r in journal.records if r["event"] == "budget_settle"]
+            assert len(bookings) == count and all(r["unconfirmed"] for r in bookings)
+            warnings = [r for r in read_rows(log.path) if r["event"] == "abschluss_unbestaetigt"]
+            assert {r["session_ref"] for r in warnings} == {f"local_{i}" for i in range(count)}
+            assert len(warnings) == count
+            # Sowohl der bisher belegte Nutzerplatz als auch die globale Kapazität sind frei.
+            await registry.start("user_0", "SYNTHETISCHE_SDP", None)
+        finally:
+            await registry.shutdown()
+            journal.close()
+            log.close()
+
+    asyncio.run(run())
+
+
+def test_recovery_hanging_force_close_respects_shared_deadline(tmp_path):
+    async def run():
+        await seed_open_sessions(tmp_path, 5)
+        journal, log, budget, starter, registry = make(
+            tmp_path,
+            max_parallel=2,
+            unclear_retry_offsets_s=(0,),
+            unclear_deadline_s=0.06,
+        )
+        starter.force_gate.clear()  # Niemals zurückkehrender, aber abbrechbarer Provider-Aufruf.
+        try:
+            started = asyncio.get_running_loop().time()
+            await asyncio.wait_for(registry.recover(), 0.4)
+            elapsed = asyncio.get_running_loop().time() - started
+            assert 0.055 <= elapsed < 0.3
+            assert len(starter.calls) == 2  # Wartende Aufrufe starten nach Fristende nicht mehr.
+            assert registry.ready
+            assert_closed(journal, budget, registry, spent=5 * 550_000)
+        finally:
+            await registry.shutdown()
+            journal.close()
+            log.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("phase", ["booking", "final_state"])
+def test_unconfirmed_journal_failure_and_crash_recovery(tmp_path, monkeypatch, phase):
+    async def run():
+        await seed_open_sessions(tmp_path)
+        journal, log, budget, starter, registry = make(
+            tmp_path, unclear_retry_offsets_s=(0,), unclear_deadline_s=0.025
+        )
+        starter.force_confirmed = False
+        original_write = journal._write
+
+        def fail(data):
+            row = json.loads(data)
+            if (phase == "booking" and row["event"] == "budget_settle") or (
+                phase == "final_state" and row.get("state") == "beendet"
+            ):
+                raise OSError("GEHEIMER_FEHLERTEXT")
+            original_write(data)
+
+        monkeypatch.setattr(journal, "_write", fail)
+        with pytest.raises(StartsBlocked):
+            await registry.recover()
+        assert not registry.ready and journal.failed
+        bookings = [r for r in journal.records if r["event"] == "budget_settle"]
+        assert len(bookings) == (1 if phase == "final_state" else 0)
+        if bookings:
+            assert bookings[0]["unconfirmed"] is True
+        with pytest.raises(StartsBlocked):
+            await registry.recover()
+        await registry.shutdown()
+        journal.close()
+        log.close()
+        assert "GEHEIMER" not in log.path.read_text()
+        assert "GEHEIMER" not in (tmp_path / "state" / "journal.jsonl").read_text()
+
+        # Echter Journal-Reload: Buchung vor fehlendem beendet-Eintrag ist bereits endgültig.
+        journal, log, budget, starter, registry = make(tmp_path)
+        try:
+            await registry.recover()
+            assert registry.ready
+            assert budget.status().spent_micro == 550_000
+            assert not registry.snapshot()
+            assert len([r for r in journal.records if r["event"] == "budget_settle"]) == 1
+            assert len(starter.calls) == (0 if phase == "final_state" else 1)
+        finally:
+            await registry.shutdown()
+            journal.close()
+            log.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "usage,amount",
+    [
+        (UsageSummary(None, backend_complete=False), 550_000),
+        (UsageSummary(60, final=True), 550_000),
+        (UsageSummary(1200, final=True), 1_000_000),
+        (UsageSummary(None, {"output_tokens": 1_000_000}), 1_600_000),
+        (UsageSummary(1200, {"input_tokens": 1_000_000}), 1_400_000),
+    ],
+)
+def test_unconfirmed_budget_uses_maximum_of_reserve_and_observed_cost(tmp_path, usage, amount):
+    async def run():
+        with Journal(tmp_path) as journal:
+            budget = Budget(journal)
+            await budget.reserve("local")
+            assert await budget.settle_unconfirmed("local", usage=usage) == amount
+            assert await budget.settle_unconfirmed("local", usage=usage) == amount
+            assert (
+                await budget.settle(
+                    "local", usage=UsageSummary(0, final=True), closure=CloseOutcome(True, "nutzer")
+                )
+                == amount
+            )
+            bookings = [r for r in journal.records if r["event"] == "budget_settle"]
+            assert len(bookings) == 1
+            assert bookings[0]["unconfirmed"] is True and bookings[0]["estimated"] is True
+        with Journal(tmp_path) as journal:
+            budget = Budget(journal)
+            assert budget.status().spent_micro == amount and budget.status().bound_micro == 0
+            assert await budget.settle_unconfirmed("local", usage=usage) == amount
+
+    asyncio.run(run())
+
+
+def test_running_unconfirmed_end_retries_and_books_latest_usage(tmp_path):
+    async def run():
+        journal, log, budget, starter, registry = make(
+            tmp_path, max_parallel=1, unclear_retry_offsets_s=(0, 0.02), unclear_deadline_s=0.06
+        )
+        try:
+            await registry.recover()
+            result = await registry.start("user", "SDP", None)
+            handle = starter.handles[0]
+            handle.close_confirmed = False
+            starter.force_confirmed = False
+            assert await registry.end("user", result.session_ref, reason="nutzer")
+            with pytest.raises(UserHasSession):
+                await registry.start("user", "SDP", None)
+            with pytest.raises(CapacityExhausted):
+                await registry.start("other", "SDP", None)
+            # Nach dem ersten Fehlversuch beobachtete Usage muss berücksichtigt werden.
+            handle.summary = UsageSummary(1200, {"input_tokens": 1_000_000})
+            await until(lambda: not registry.snapshot())
+            # Die zuvor gemeldeten zehn Output-Tokens bleiben ebenfalls berücksichtigt.
+            assert_closed(journal, budget, registry, spent=1_400_016, reason="nutzer")
+            bookings = [r for r in journal.records if r["event"] == "budget_settle"]
+            assert len(bookings) == 1 and bookings[0]["unconfirmed"] is True
+            assert sum(c[0] == "force" for c in starter.calls) == 3
+            assert registry.ready
+            await registry.start("user", "SDP", None)
+        finally:
+            await registry.shutdown()
+            journal.close()
+            log.close()
+
+    asyncio.run(run())
+
+
+def test_running_end_and_watcher_share_one_retry_task(tmp_path):
+    async def run():
+        journal, log, budget, starter, registry = make(
+            tmp_path, unclear_retry_offsets_s=(0, 0.02), unclear_deadline_s=0.06
+        )
+        try:
+            await registry.recover()
+            result = await registry.start("user", "SDP", None)
+            session = registry._sessions[result.session_ref]
+            handle = starter.handles[0]
+            handle.close_confirmed = False
+            starter.force_confirmed = False
+            handle.finish("zeitlimit", confirmed=False)
+            await asyncio.gather(
+                *(registry.end("user", result.session_ref, reason="nutzer") for _ in range(12))
+            )
+            retry = session.reconciler
+            assert retry is not None
+            await until(lambda: not registry.snapshot())
+            assert session.reconciler is retry
+            assert len([r for r in journal.records if r["event"] == "budget_settle"]) == 1
+            assert (
+                len([r for r in read_rows(log.path) if r["event"] == "abschluss_unbestaetigt"]) == 1
+            )
+        finally:
+            await registry.shutdown()
+            journal.close()
+            log.close()
+
+    asyncio.run(run())
+
+
+def test_shutdown_cancels_running_retries_without_replacement_booking(tmp_path):
+    async def run():
+        journal, log, budget, starter, registry = make(
+            tmp_path,
+            close_timeout_s=0.01,
+            unclear_retry_offsets_s=(0, 0.03),
+            unclear_deadline_s=0.08,
+        )
+        await registry.recover()
+        result = await registry.start("user", "SDP", None)
+        handle = starter.handles[0]
+        handle.close_confirmed = False
+        starter.force_confirmed = False
+        handle.finish("zeitlimit", confirmed=False)
+        endings = [
+            asyncio.create_task(registry.end("user", result.session_ref, reason="nutzer"))
+            for _ in range(8)
+        ]
+        await until(lambda: registry._sessions[result.session_ref].reconciler is not None)
+        session = registry._sessions[result.session_ref]
+        starter.force_gate.clear()
+        await registry.shutdown()
+        await asyncio.gather(*endings)
+        assert session.reconciler.done()
+        await asyncio.sleep(0.09)  # Über die ursprüngliche Frist hinaus passiert keine Buchung.
+        assert budget.status().spent_micro == 0 and budget.status().bound_micro == 550_000
+        assert not registry.ready
+        assert not any(r["event"] == "budget_settle" for r in journal.records)
+        assert all(t.done() for t in registry._tasks)
+        journal.close()
+        log.close()
+
+    asyncio.run(run())
+
+
+def test_unconfirmed_journal_marker_must_be_boolean(tmp_path):
+    async def run():
+        with Journal(tmp_path) as journal:
+            budget = Budget(journal)
+            await budget.reserve("local")
+            await journal.append(
+                "budget_settle",
+                local_id="local",
+                amount_micro=550_000,
+                estimated=True,
+                unconfirmed="true",
+            )
+            with pytest.raises(JournalError):
+                Budget(journal)
+            assert journal.failed
+
+    asyncio.run(run())
+
+
+def test_running_retry_confirmation_settles_normally(tmp_path, monkeypatch):
+    async def run():
+        journal, log, budget, starter, registry = make(
+            tmp_path, unclear_retry_offsets_s=(0, 0.02), unclear_deadline_s=0.2
+        )
+        calls = []
+
+        async def force(provider_id):
+            calls.append(provider_id)
+            return CloseOutcome(len(calls) >= 3, "wiederanlauf")
+
+        monkeypatch.setattr(starter, "force_close", force)
+        try:
+            await registry.recover()
+            result = await registry.start("user", "SDP", None)
+            session = registry._sessions[result.session_ref]
+            starter.handles[0].close_confirmed = False
+            await registry.end("user", result.session_ref, reason="nutzer")
+            await until(lambda: not registry.snapshot() and session.reconciler.done())
+            assert len(calls) == 3
+            assert_closed(journal, budget, registry, spent=50_056, reason="nutzer")
+            bookings = [r for r in journal.records if r["event"] == "budget_settle"]
+            assert len(bookings) == 1 and not bookings[0].get("unconfirmed", False)
+        finally:
+            await registry.shutdown()
+            journal.close()
+            log.close()
+
+    asyncio.run(run())
+
+
+def test_replacement_keeps_observed_usage_and_late_provider_block(tmp_path):
+    async def run():
+        journal, log, budget, starter, registry = make(
+            tmp_path, unclear_retry_offsets_s=(0, 0.02), unclear_deadline_s=0.05
+        )
+        try:
+            await registry.recover()
+            result = await registry.start("user", "SDP", None)
+            handle = starter.handles[0]
+            handle.summary = UsageSummary(1200, {"input_tokens": 1_000_000})
+            handle.close_confirmed = False
+            starter.force_confirmed = False
+            await registry.end("user", result.session_ref, reason="zeitlimit")
+            handle.summary = UsageSummary(None, backend_complete=False)
+            handle.blocked = True
+            await until(lambda: not registry.snapshot())
+            assert_closed(journal, budget, registry, spent=1_400_000, reason="zeitlimit")
+            assert budget.status().blocked
+            assert len([r for r in journal.records if r["event"] == "budget_settle"]) == 1
+        finally:
+            await registry.shutdown()
+            journal.close()
+            log.close()
 
     asyncio.run(run())

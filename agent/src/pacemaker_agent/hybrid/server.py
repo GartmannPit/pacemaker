@@ -7,6 +7,7 @@ Journal und Betriebslog schließen.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -110,10 +111,22 @@ def build(cfg: ServerConfig) -> web.Application:
         auth=auth,
         registry=_Proxy(),
         budget_status=budget.status,
-        ready=lambda: "registry" in holder and registry().ready,
+        ready=lambda: (
+            "registry" in holder and not holder.get("recovery_failed", False) and registry().ready
+        ),
         config=cfg.app,
         oplog=oplog,
     )
+
+    async def recover() -> None:
+        try:
+            await registry().recover()
+        except Exception:
+            holder["recovery_failed"] = True
+            try:
+                oplog.write("wiederanlauf_fehlgeschlagen")
+            except OSError:
+                pass
 
     async def startup(_app: web.Application) -> None:
         holder["http"] = aiohttp.ClientSession()
@@ -126,9 +139,12 @@ def build(cfg: ServerConfig) -> web.Application:
             max_duration_s=cfg.max_duration_s,
         )
         oplog.write("server_start")
-        await registry().recover()
+        holder["recovery"] = asyncio.create_task(recover())
 
     async def cleanup(_app: web.Application) -> None:
+        if "recovery" in holder:
+            holder["recovery"].cancel()
+            await asyncio.gather(holder["recovery"], return_exceptions=True)
         if "registry" in holder:
             await registry().shutdown()
         if "http" in holder:

@@ -27,6 +27,8 @@ EVENTS = frozenset(
         "http_request",
         "server_start",
         "server_ende",
+        "abschluss_unbestaetigt",
+        "wiederanlauf_fehlgeschlagen",
     }
 )
 _IDENTIFIER = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
