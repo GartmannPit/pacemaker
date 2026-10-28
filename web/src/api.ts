@@ -59,8 +59,12 @@ export interface Auswertung {
   punkte: { posten: { label: string; punkte: number }[]; gesamt: number; max: number };
 }
 
+// Server: Erzeugung bis 30 s (live.CREATE_TIMEOUT_S) plus Anbindung bis 12 s
+// (sideband.ATTACH_TIMEOUT_S); ein früherer Abbruch würde einen gültigen Start verwerfen.
+const START_ZEITLIMIT_MS = 50000;
+
 export function sitzungStarten(sdp: string): Promise<StartAntwort> {
-  return api<StartAntwort>("/api/session", { sdp }, 25000);
+  return api<StartAntwort>("/api/session", { sdp }, START_ZEITLIMIT_MS);
 }
 export function sitzungBeenden(session_ref: string): Promise<unknown> {
   return api("/api/end", { session_ref });
