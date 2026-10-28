@@ -16,6 +16,7 @@ from pacemaker_agent.hybrid.contracts import (
     CapacityExhausted,
     CloseOutcome,
     CreateUnclear,
+    HeartbeatStatus,
     ProviderBlocked,
     StartFailed,
     StartsBlocked,
@@ -155,6 +156,9 @@ def test_end_owned_session_and_idempotent_settlement(tmp_path, reason):
             assert registry.snapshot() == {start.session_ref: "laufend"}
             assert await registry.end("user_a", start.session_ref, reason=reason)
             assert_closed(journal, budget, registry, spent=50_056, reason=reason)
+            assert await registry.heartbeat("user_a", start.session_ref) == HeartbeatStatus(
+                "beendet", reason
+            )
             assert not await registry.end("user_a", start.session_ref, reason=reason)
             assert (
                 await budget.settle(
@@ -186,13 +190,16 @@ def test_watcher_for_remote_and_transport_ends(tmp_path, reason, confirmed, watc
     async def run():
         journal, log, budget, starter, registry = make(tmp_path)
         await registry.recover()
-        await registry.start("a", "SDP", None)
+        result = await registry.start("a", "SDP", None)
         if watch_error:
             starter.handles[0].future.set_exception(watch_error)
         else:
             starter.handles[0].finish(reason, confirmed=confirmed)
         await until(lambda: not registry.snapshot())
         assert_closed(journal, budget, registry, spent=50_056, reason=reason)
+        assert await registry.heartbeat("a", result.session_ref) == HeartbeatStatus(
+            "beendet", reason
+        )
         assert sum(c[0] == "force" for c in starter.calls) == (0 if confirmed else 1)
         assert budget.status().blocked == isinstance(watch_error, ProviderBlocked)
         await registry.shutdown()
@@ -362,6 +369,7 @@ def test_end_and_shutdown_during_start(tmp_path, phase):
         await until(lambda: any(c[0] == phase for c in starter.calls))
         ref = next(iter(registry.snapshot()))
         assert await registry.end("a", ref, reason="nutzer")
+        assert await registry.heartbeat("a", ref) == HeartbeatStatus("endend", "nutzer")
         stop = asyncio.create_task(registry.shutdown())
         await asyncio.sleep(0)
         gate.set()
@@ -406,12 +414,15 @@ def test_deadline_forwarding_and_registry_fallback(tmp_path):
     async def run():
         journal, log, budget, starter, registry = make(tmp_path, max_duration_s=0.08)
         await registry.recover()
-        await registry.start("a", "SDP", None)
+        result = await registry.start("a", "SDP", None)
         deadline, idle = starter.attach_parameters[0]
         assert 0 < deadline <= 0.08  # verbleibende Sekunden (contracts.Starter.attach)
         assert idle == 120
         await until(lambda: not registry.snapshot())
         assert_closed(journal, budget, registry, reason="zeitlimit")
+        assert await registry.heartbeat("a", result.session_ref) == HeartbeatStatus(
+            "beendet", "zeitlimit"
+        )
         await registry.shutdown()
         journal.close()
         log.close()
@@ -546,6 +557,7 @@ def test_recover_open_provider_id_before_readiness(tmp_path, state, confirmed):
         await recovery
         assert registry.ready
         assert_closed(journal, budget, registry, spent=550_000, reason="wiederanlauf")
+        assert await registry.heartbeat("a", "local") == HeartbeatStatus("beendet", "wiederanlauf")
         assert all(c[0] == "force" for c in starter.calls)
         await registry.recover()
         await registry.shutdown()
@@ -1115,6 +1127,9 @@ def test_running_unconfirmed_end_retries_and_books_latest_usage(tmp_path):
             await until(lambda: not registry.snapshot())
             # Die zuvor gemeldeten zehn Output-Tokens bleiben ebenfalls berücksichtigt.
             assert_closed(journal, budget, registry, spent=1_400_016, reason="nutzer")
+            assert await registry.heartbeat("user", result.session_ref) == HeartbeatStatus(
+                "beendet", "nutzer"
+            )
             bookings = [r for r in journal.records if r["event"] == "budget_settle"]
             assert len(bookings) == 1 and bookings[0]["unconfirmed"] is True
             assert sum(c[0] == "force" for c in starter.calls) == 3
@@ -1352,6 +1367,9 @@ def test_heartbeat_deadline_commissions_close_within_timeout_and_check(tmp_path,
             assert commissioned[0][1] == "herzschlag_fehlt"
             assert starter.handles[0].close_calls == ["herzschlag_fehlt"]
             assert_closed(journal, budget, registry, spent=50_056, reason="herzschlag_fehlt")
+            assert await registry.heartbeat("user", result.session_ref) == HeartbeatStatus(
+                "beendet", "herzschlag_fehlt"
+            )
             assert session.heartbeat_watcher.done()
             assert len([r for r in journal.records if r["event"] == "budget_settle"]) == 1
             assert any(r.get("reason") == "herzschlag_fehlt" for r in read_rows(log.path))
@@ -1376,7 +1394,9 @@ def test_regular_heartbeat_extends_deadline_and_exact_boundary_does_not_expire(t
             session = registry._sessions[result.session_ref]
             assert session.last_seen == now
             for now in (109.0, 118.0, 127.0, 136.0):
-                assert await registry.heartbeat("user", result.session_ref)
+                assert await registry.heartbeat("user", result.session_ref) == HeartbeatStatus(
+                    "laufend", None
+                )
                 assert session.last_seen == now
                 await asyncio.sleep(0.012)  # Mehrere Prüftakte je Herzschlag.
                 assert session.state == "laufend"
@@ -1408,7 +1428,9 @@ def test_heartbeat_during_start_is_volatile_and_running_resets_last_seen(tmp_pat
             session = next(iter(registry._sessions.values()))
             before = (list(journal.records), log.path.read_text())
             now = 110.0
-            assert await registry.heartbeat("user", session.local_id)
+            assert await registry.heartbeat("user", session.local_id) == HeartbeatStatus(
+                "laufend", None
+            )
             assert session.last_seen == now
             assert (journal.records, log.path.read_text()) == before
             now = 120.0
@@ -1417,7 +1439,9 @@ def test_heartbeat_during_start_is_volatile_and_running_resets_last_seen(tmp_pat
             assert session.last_seen == now
             before = (list(journal.records), log.path.read_text())
             now = 121.0
-            assert await registry.heartbeat("user", session.local_id)
+            assert await registry.heartbeat("user", session.local_id) == HeartbeatStatus(
+                "laufend", None
+            )
             assert session.last_seen == now
             assert (journal.records, log.path.read_text()) == before
         finally:
@@ -1433,7 +1457,8 @@ def test_heartbeat_during_start_is_volatile_and_running_resets_last_seen(tmp_pat
     "state",
     ["startend", "laufend", "endend", "abschluss_ungeklaert", "erzeugung_ungeklaert", "beendet"],
 )
-def test_rejected_heartbeat_has_no_effect(tmp_path, state):
+@pytest.mark.parametrize("reason", [None, "nutzer"])
+def test_heartbeat_state_projection_and_ownership(tmp_path, state, reason):
     async def run():
         now = 100.0
         journal, log, budget, starter, registry = make(tmp_path, clock=lambda: now)
@@ -1442,17 +1467,183 @@ def test_rejected_heartbeat_has_no_effect(tmp_path, state):
             result = await registry.start("user", "SDP", None)
             session = registry._sessions[result.session_ref]
             session.state = state  # Vertrag für alle Zustände unabhängig von Provider-Fehlern.
+            session.reason = reason
             before = (session.last_seen, list(journal.records), log.path.read_text())
             now = 105.0
-            assert not await registry.heartbeat("other", result.session_ref)
-            assert not await registry.heartbeat("user", "unbekannt")
-            if state not in {"startend", "laufend"}:
-                assert not await registry.heartbeat("user", result.session_ref)
+            assert await registry.heartbeat("other", result.session_ref) is None
+            assert await registry.heartbeat("user", "unbekannt") is None
             assert (session.last_seen, journal.records, log.path.read_text()) == before
+            status = await registry.heartbeat("user", result.session_ref)
+            if state in {"startend", "laufend"} and reason is None:
+                assert status == HeartbeatStatus("laufend", None)
+                assert session.last_seen == now
+            else:
+                expected = (
+                    None
+                    if state in {"erzeugung_ungeklaert", "beendet"}
+                    else HeartbeatStatus("endend", reason)
+                )
+                assert status == expected
+                assert session.last_seen == before[0]
+            assert (journal.records, log.path.read_text()) == before[1:]
             assert session.closer is None
             assert starter.handles[0].close_calls == []
         finally:
             session.state = "laufend"
+            await registry.shutdown()
+            journal.close()
+            log.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("confirmed", [True, False])
+def test_heartbeat_during_close_does_not_extend_deadline_or_restart_close(tmp_path, confirmed):
+    async def run():
+        now = 100.0
+        journal, log, budget, starter, registry = make(tmp_path, clock=lambda: now)
+        try:
+            await registry.recover()
+            result = await registry.start("user", "SDP", None)
+            session = registry._sessions[result.session_ref]
+            handle = starter.handles[0]
+            handle.close_gate.clear()
+            handle.close_confirmed = confirmed
+            starter.force_confirmed = confirmed
+            ending = asyncio.create_task(registry.end("user", result.session_ref, reason="nutzer"))
+            await until(lambda: handle.close_calls)
+            closer = session.closer
+            before = (list(journal.records), log.path.read_text())
+            now = 105.0
+            assert await registry.heartbeat("user", result.session_ref) == HeartbeatStatus(
+                "endend", "nutzer"
+            )
+            assert session.last_seen == 100.0
+            assert session.closer is closer
+            assert handle.close_calls == ["nutzer"]
+            assert (journal.records, log.path.read_text()) == before
+            handle.close_gate.set()
+            assert await ending
+            if not confirmed:
+                assert session.state == "abschluss_ungeklaert"
+                reconciler = session.reconciler
+                before = (list(journal.records), log.path.read_text())
+                now = 110.0
+                assert await registry.heartbeat("user", result.session_ref) == HeartbeatStatus(
+                    "endend", "nutzer"
+                )
+                assert session.last_seen == 100.0
+                assert session.closer is closer and session.reconciler is reconciler
+                assert handle.close_calls == ["nutzer"]
+                assert (journal.records, log.path.read_text()) == before
+        finally:
+            starter.handles[0].close_gate.set()
+            await registry.shutdown()
+            journal.close()
+            log.close()
+
+    asyncio.run(run())
+
+
+def test_completed_heartbeat_expires_without_refresh_or_side_effects(tmp_path):
+    async def run():
+        now = 100.0
+        journal, log, budget, starter, registry = make(tmp_path, clock=lambda: now)
+        try:
+            await registry.recover()
+            result = await registry.start("user", "SDP", None)
+            session = registry._sessions[result.session_ref]
+            now = 105.0
+            assert await registry.end("user", result.session_ref, reason="nutzer")
+            before = (
+                list(journal.records),
+                log.path.read_text(),
+                list(starter.calls),
+                list(starter.handles[0].close_calls),
+            )
+            for heartbeat_time in (110.0, 600.0, 704.999):
+                now = heartbeat_time
+                assert await registry.heartbeat("other", result.session_ref) is None
+                assert await registry.heartbeat("user", result.session_ref) == HeartbeatStatus(
+                    "beendet", "nutzer"
+                )
+                assert session.last_seen == 100.0
+                assert registry.snapshot() == {}
+            now = 705.0
+            assert await registry.heartbeat("user", result.session_ref) is None
+            assert not await registry.end("user", result.session_ref, reason="nutzer")
+            assert (
+                journal.records,
+                log.path.read_text(),
+                starter.calls,
+                starter.handles[0].close_calls,
+            ) == before
+        finally:
+            await registry.shutdown()
+            journal.close()
+            log.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("max_parallel", [1, 2])
+def test_completed_heartbeats_evict_oldest_completion_even_after_read(tmp_path, max_parallel):
+    async def run():
+        # Gleiche Zeitstempel: die tatsächliche Abschlussreihenfolge entscheidet.
+        journal, log, budget, starter, registry = make(
+            tmp_path, max_parallel=max_parallel, clock=lambda: 100.0
+        )
+        try:
+            await registry.recover()
+            refs = []
+            for _ in range(2 * max_parallel):
+                result = await registry.start("user", "SDP", None)
+                refs.append(result.session_ref)
+                assert await registry.end("user", result.session_ref, reason="nutzer")
+            for ref in refs:
+                assert await registry.heartbeat("user", ref) == HeartbeatStatus("beendet", "nutzer")
+            result = await registry.start("user", "SDP", None)
+            # Frühere Endstatus bleiben auch während eines neuen Gesprächs erreichbar.
+            assert await registry.heartbeat("user", refs[0]) == HeartbeatStatus("beendet", "nutzer")
+            assert await registry.heartbeat("user", result.session_ref) == HeartbeatStatus(
+                "laufend", None
+            )
+            assert await registry.end("user", result.session_ref, reason="nutzer")
+            assert await registry.heartbeat("user", refs[0]) is None
+            for ref in [*refs[1:], result.session_ref]:
+                assert await registry.heartbeat("user", ref) == HeartbeatStatus("beendet", "nutzer")
+        finally:
+            await registry.shutdown()
+            journal.close()
+            log.close()
+
+    asyncio.run(run())
+
+
+def test_completed_heartbeat_is_not_restored_from_journal(tmp_path):
+    async def run():
+        journal, log, budget, starter, registry = make(tmp_path)
+        try:
+            await registry.recover()
+            result = await registry.start("user", "SDP", None)
+            assert await registry.end("user", result.session_ref, reason="nutzer")
+            assert await registry.heartbeat("user", result.session_ref) == HeartbeatStatus(
+                "beendet", "nutzer"
+            )
+        finally:
+            await registry.shutdown()
+            journal.close()
+            log.close()
+        journal, log, budget, starter, registry = make(tmp_path)
+        try:
+            await registry.recover()
+            before = (list(journal.records), log.path.read_text())
+            assert await registry.heartbeat("user", result.session_ref) is None
+            assert await registry.heartbeat("other", result.session_ref) is None
+            assert registry.snapshot() == {}
+            assert starter.calls == []
+            assert (journal.records, log.path.read_text()) == before
+        finally:
             await registry.shutdown()
             journal.close()
             log.close()
@@ -1573,7 +1764,15 @@ def test_heartbeat_task_cleanup_when_leaving_running(tmp_path, trigger):
                 await stop
             await until(lambda: not registry.snapshot())
             await until(heartbeat.done)
-            assert not await registry.heartbeat("user", result.session_ref)
+            reason = {
+                "end": "nutzer",
+                "remote": "inaktiv",
+                "deadline": "zeitlimit",
+                "shutdown": "server_ende",
+            }[trigger]
+            assert await registry.heartbeat("user", result.session_ref) == HeartbeatStatus(
+                "beendet", reason
+            )
         finally:
             await registry.shutdown()
             assert not registry._tasks

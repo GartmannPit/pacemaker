@@ -6,6 +6,7 @@ import asyncio
 import math
 import secrets
 import time
+from collections import OrderedDict
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from typing import Any, get_args
@@ -16,6 +17,7 @@ from .contracts import (
     CloseOutcome,
     CreateUnclear,
     EndReason,
+    HeartbeatStatus,
     OpLog,
     ProviderBlocked,
     SessionState,
@@ -33,6 +35,13 @@ from .journal import Journal, JournalError, durable
 
 def _unknown_usage() -> UsageSummary:
     return UsageSummary(None, backend_complete=False)
+
+
+@dataclass(frozen=True)
+class _CompletedSession:
+    user_id: str
+    reason: EndReason | None
+    completed_at: float
 
 
 @dataclass
@@ -59,7 +68,8 @@ class SessionRegistry:
     """Vor dem ersten Start recover(), vor Journal.close() shutdown() aufrufen.
 
     user_id kommt ausschließlich aus der geprüften Anmeldung des HTTP-Layers.
-    Das Register enthält nur offene/ungeklärte Sitzungen; Abschlüsse stehen im Journal.
+    Offene/ungeklärte Sitzungen belegen Plätze. Endstatus bleiben zusätzlich höchstens
+    zehn Minuten und für 2 × max_parallel Sitzungen ausschließlich im Speicher abrufbar.
     """
 
     def __init__(
@@ -122,6 +132,7 @@ class SessionRegistry:
         self._ready = False
         self._stopping = False
         self._sessions: dict[str, _Session] = {}
+        self._completed: OrderedDict[str, _CompletedSession] = OrderedDict()
         self._tasks: set[asyncio.Task[Any]] = set()
         self._starts: set[asyncio.Task[StartResult]] = set()
         try:
@@ -334,7 +345,26 @@ class SessionRegistry:
         async with self._lock:
             await self.budget.release_uncreated(session.local_id)
             await self._record(session, "beendet")
+            self._remember_completed(session)
             self._sessions.pop(session.local_id, None)
+
+    def _prune_completed(self) -> None:
+        """Unter self._lock abgelaufene Endstatus entfernen; Abrufe verlängern nichts."""
+        cutoff = self._clock() - 600
+        while self._completed:
+            oldest = next(iter(self._completed.values()))
+            if oldest.completed_at > cutoff:
+                break
+            self._completed.popitem(last=False)
+
+    def _remember_completed(self, session: _Session) -> None:
+        """Unter self._lock nur Referenz, Nutzer, Grund und Abschlusszeit behalten."""
+        self._prune_completed()
+        self._completed[session.local_id] = _CompletedSession(
+            session.user_id, session.reason, self._clock()
+        )
+        while len(self._completed) > 2 * self.max_parallel:
+            self._completed.popitem(last=False)
 
     async def _force_close(
         self, session: _Session, *, timeout_s: float | None = None
@@ -507,6 +537,7 @@ class SessionRegistry:
                                 closure=CloseOutcome(True, session.reason),
                             )
                         await self._record(session, "beendet")
+                        self._remember_completed(session)
                         self._sessions.pop(session.local_id, None)
                 except JournalError:
                     session.state = "abschluss_ungeklaert"
@@ -584,6 +615,7 @@ class SessionRegistry:
                             session.local_id, usage=_unknown_usage()
                         )
                     await self._record(session, "beendet")
+                    self._remember_completed(session)
                     self._sessions.pop(session.local_id, None)
                     self._log("abschluss_unbestaetigt", session_ref=session.local_id)
                 except JournalError:
@@ -601,17 +633,25 @@ class SessionRegistry:
             await asyncio.shield(closer)
         return True
 
-    async def heartbeat(self, user_id: str, session_ref: str) -> bool:
+    async def heartbeat(self, user_id: str, session_ref: str) -> HeartbeatStatus | None:
         async with self._lock:
+            self._prune_completed()
             session = self._sessions.get(session_ref)
-            if (
-                session is None
-                or session.user_id != user_id
-                or session.state not in {"startend", "laufend"}
-            ):
-                return False
-            session.last_seen = self._clock()
-            return True
+            if session is not None:
+                if session.user_id != user_id:
+                    return None
+                if session.state in {"startend", "laufend"}:
+                    if session.reason is not None:
+                        return HeartbeatStatus("endend", session.reason)
+                    session.last_seen = self._clock()
+                    return HeartbeatStatus("laufend", None)
+                if session.state in {"endend", "abschluss_ungeklaert"}:
+                    return HeartbeatStatus("endend", session.reason)
+                return None
+            completed = self._completed.get(session_ref)
+            if completed is not None and completed.user_id == user_id:
+                return HeartbeatStatus("beendet", completed.reason)
+            return None
 
     async def _watch_heartbeat(self, session: _Session) -> None:
         while True:

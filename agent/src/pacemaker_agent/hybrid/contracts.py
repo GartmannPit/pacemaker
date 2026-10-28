@@ -30,6 +30,14 @@ SessionState = Literal[
     "erzeugung_ungeklaert",
     "beendet",
 ]
+HeartbeatState = Literal["laufend", "endend", "beendet"]
+
+
+@dataclass(frozen=True)
+class HeartbeatStatus:
+    state: HeartbeatState
+    reason: EndReason | None
+
 
 # Stimmen-Allowlist (Browsertest 2026-10-27); None = Vorgabe der API.
 VOICES = ("vesper", "meridian", "stone", "ripple", "gleam", "willow", "quartz", "delta")
