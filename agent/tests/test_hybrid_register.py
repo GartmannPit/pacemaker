@@ -1195,6 +1195,41 @@ def test_shutdown_cancels_running_retries_without_replacement_booking(tmp_path):
     asyncio.run(run())
 
 
+def test_shutdown_retries_close_after_unconfirmed_initial_close(tmp_path):
+    # Codex-Integrationsreview: Shutdown bricht die Nachbehandlung ab und muss daher selbst
+    # noch einmal schließen, auch wenn der initiale Auftrag schon erledigt ist.
+    async def run():
+        journal, log, budget, starter, registry = make(
+            tmp_path,
+            close_timeout_s=0.01,
+            unclear_retry_offsets_s=(0, 5),
+            unclear_deadline_s=10,
+        )
+        await registry.recover()
+        result = await registry.start("user", "SDP", None)
+        handle = starter.handles[0]
+        handle.close_confirmed = False
+        starter.force_confirmed = False
+        await registry.end("user", result.session_ref, reason="nutzer")
+        session = registry._sessions[result.session_ref]
+        # Initialer Notschluss und erster Nachbehandlungsversuch (Offset 0) sind gelaufen;
+        # der nächste Versuch käme erst nach 5 s.
+        await until(lambda: starter.calls.count(("force", "provider_1")) >= 2)
+        await asyncio.sleep(0.05)
+        assert session.state == "abschluss_ungeklaert" and session.closer.done()
+        forces = starter.calls.count(("force", "provider_1"))
+        starter.force_confirmed = True  # Provider wieder erreichbar
+        await registry.shutdown()
+        assert starter.calls.count(("force", "provider_1")) > forces
+        assert_closed(journal, budget, registry, reason="nutzer")
+        assert not any(r.get("unconfirmed") for r in journal.records)
+        assert all(t.done() for t in registry._tasks)
+        journal.close()
+        log.close()
+
+    asyncio.run(run())
+
+
 def test_unconfirmed_journal_marker_must_be_boolean(tmp_path):
     async def run():
         with Journal(tmp_path) as journal:

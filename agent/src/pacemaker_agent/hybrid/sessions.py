@@ -401,17 +401,31 @@ class SessionRegistry:
             return _unknown_usage()
 
     async def _request_close(
-        self, session: _Session, reason: EndReason, *, usage: UsageSummary | None = None
+        self,
+        session: _Session,
+        reason: EndReason,
+        *,
+        usage: UsageSummary | None = None,
+        renew: bool = False,
     ) -> None:
         async with self._lock:
-            closer = self._schedule_close(session, reason, usage=usage)
+            closer = self._schedule_close(session, reason, usage=usage, renew=renew)
         if closer is not None:
             await asyncio.shield(closer)
 
     def _schedule_close(
-        self, session: _Session, reason: EndReason, *, usage: UsageSummary | None = None
+        self,
+        session: _Session,
+        reason: EndReason,
+        *,
+        usage: UsageSummary | None = None,
+        renew: bool = False,
     ) -> asyncio.Task[None] | None:
-        """Unter self._lock genau einen initialen Abschlussauftrag speichern."""
+        """Unter self._lock genau einen initialen Abschlussauftrag speichern.
+
+        `renew` (nur Shutdown): nach erledigtem, unbestätigtem Auftrag einen weiteren
+        begrenzten Schließversuch erlauben, da der Shutdown die Nachbehandlung abbricht.
+        """
         if usage is not None:
             self._remember_usage(session, usage)
         if session.state in {"beendet", "erzeugung_ungeklaert"}:
@@ -420,7 +434,7 @@ class SessionRegistry:
         if session.initializing or session.provider_id is None:
             # Ein Ende während create/attach wird nach erfolgreichem Attach beauftragt.
             return None
-        if session.closer is None:
+        if session.closer is None or (renew and session.closer.done()):
             session.closer = self._spawn(self._close(session, session.reason, usage=usage))
         return session.closer
 
@@ -661,7 +675,10 @@ class SessionRegistry:
         if self._starts:
             await asyncio.gather(*list(self._starts), return_exceptions=True)
         await asyncio.gather(
-            *(self._request_close(s, "server_ende") for s in list(self._sessions.values()))
+            *(
+                self._request_close(s, "server_ende", renew=True)
+                for s in list(self._sessions.values())
+            )
         )
         # Ein bestätigter force_close kann den alten Receiver bereits beendet haben. Ein
         # defekter Receiver darf den Shutdown aber nicht unbegrenzt festhalten.
