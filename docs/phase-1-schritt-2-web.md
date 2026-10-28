@@ -246,3 +246,46 @@ Beenden). Schrift Bricolage Grotesque (OFL, selbst gehostet).
   eigener Auftrag, zusammen mit dem Scoring (Hauptplan Schritt 6).
 - Offen: Punkteregeln insgesamt, Einfluss auf das spätere Scoring (Prinzip: nur Inhalt und
   Struktur), ein „Ernstfall-Modus“ ohne Hilfen und Einblendungen.
+
+## 10. Sales-Frameworks als Spielziel (Pit, Marvin, 2026-10-28)
+
+**Idee (Marvin: „unser USP“):** Der Kunde gibt ein Qualifizierungs-Framework vor (z. B. BANT;
+Alternativen: MEDDIC/MEDDPICC, CHAMP, ANUM, SPICED, GPCTBA/C&I, FAINT, NEAT). Ziel eines
+Gesprächs: **Framework füllen + Termin legen.**
+- **Briefing vor dem Call:** Firmografie (öffentlich) plus die Framework-Kriterien als **leere
+  Felder** mit Leitfrage – der Trainee weiß, worauf er hinarbeitet.
+- **Charakterkarte:** Die echten Werte je Kriterium liegen verdeckt in der Persona und kommen nur
+  bei guten Fragen heraus (Brandt: Budget bis ~15.000 €/Jahr allein, darüber Geschäftsführer;
+  Bedarf = Schmerzpunkte; Zeitpunkt = Vertrag des bisherigen Tools läuft noch neun Monate).
+- **Im Gespräch:** Kriterien-Leiste zeigt „angesprochen“ (nicht den Wert), sobald der
+  Protokollant es erkennt.
+- **Nach dem Call (Marvin):** Der Trainee trägt je Buchstabe ein, was er erfahren hat; OneTry
+  gleicht mit der Charakterkarte ab und zeigt je Feld geklärt/teilweise/offen mit
+  Transkriptstelle und Tipp für den nächsten Versuch.
+- **Punkte (Marvin, Pit):** kleine Punkte für Ereignisse (gute Frage, Einwand behandelt …),
+  **viele Punkte je geklärtem Framework-Feld**, **volle Punktzahl erst mit Termin**; Abzüge
+  für Hilfen (§9). Gewichte offen.
+- Entwurf: `docs/design/entwurf-c/index.html` (Ansichten Briefing, Gespräch, Auswertung; Werte
+  simuliert).
+
+**Schrittzuordnung:**
+- **Schritt 2 (jetzt, optisch + Verdrahtung):** Briefing-Ansicht mit leeren Feldern;
+  Kriterien-Leiste im Gespräch als „folgt“; Auswertungs-Ansicht mit Notizfeldern, Abgleich als
+  „folgt in Schritt 3“ (Notizen bleiben im Browser, werden nicht gesendet). Öffentliche
+  Briefing-Daten vom Server (`GET /api/briefing`), damit Framework und Persona nicht im Bundle
+  festgeschrieben sind.
+- **Schritt 3:** Charakterkarte (Persona-Modell um Werte je Kriterium erweitern, aufbauend auf
+  `persona-extension`), Protokollant meldet `kriterium_angesprochen`; Snapshot im Herzschlag.
+- **Abgleich, Punkte, Speicherung:** eigener Auftrag mit Scoring (Hauptplan Schritt 6);
+  Abgleich per Modell nur nach Datenflussprüfung (EU, §1).
+
+**Schnittstellen (Entwurf, Review vor Umsetzung):**
+- `GET /api/briefing` → `{persona: {name, rolle, unternehmen, standorte, hinweis}, produkt:
+  {name, nutzen, preis}, framework: {id, name, quelle, kriterien: [{key, label, leitfrage}]},
+  punkte: {schema: "kleine Punkte | je Feld | Termin"}, max_dauer_s}` – **nur öffentliche
+  Angaben**, nie Werte der Charakterkarte.
+- Ab Schritt 3, Herzschlag-Snapshot: `{revision, kriterien: {B: "offen"|"angesprochen"}, …}`.
+- Ab Abgleich: `POST /api/auswertung {session_ref, notizen: {B: str, …}}` →
+  `{kriterien: [{key, status, wert, zitat: {text, zeit}, tipp}], punkte: {posten, gesamt,
+  max}}`; Werte der Charakterkarte erst hier offengelegt.
+- Datensparsamkeit: Notizen und Zitate bis Schritt 6 nur flüchtig (Anzeige), nicht gespeichert.
