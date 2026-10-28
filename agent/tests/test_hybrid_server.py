@@ -598,7 +598,8 @@ def test_review_disable_enable_keeps_logins_revoked(tmp_path) -> None:
 
 
 def test_review_payload_without_raw_errors_and_transport_unclear(monkeypatch) -> None:
-    assert "error" not in live.BROWSER_SERVER_EVENTS
+    assert all(set(e) == {"type"} for e in live.BROWSER_SERVER_EVENTS)
+    assert "error" not in {e["type"] for e in live.BROWSER_SERVER_EVENTS}
 
     class Boom:
         def post(self, *_a, **_k):

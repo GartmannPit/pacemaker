@@ -52,13 +52,14 @@ MAX_DURATION_S = float(os.environ.get("GPTLIVE_MAX_DURATION_S", "300"))
 DEBUG_TRIGGERS = os.environ.get("GPTLIVE_DEBUG") == "1"
 # Länger als der interne Attach von sideband.py (Verbindung + Bereitschaft, je 12 s).
 ATTACH_TIMEOUT_S = 30.0
-# Ereignisse, die die Seite für Anzeige und Lebenszyklus braucht (K1, K2).
+# Ereignisse, die die Seite für Anzeige und Lebenszyklus braucht (K1, K2);
+# als ServerEventSelector-Objekte (API-Format seit spätestens 2026-10-28).
 BROWSER_SERVER_EVENTS = [
-    "session.started",
-    "session.closed",
-    "session.input_transcript.delta",
-    "session.output_transcript.delta",
-    "error",
+    {"type": "session.started"},
+    {"type": "session.closed"},
+    {"type": "session.input_transcript.delta"},
+    {"type": "session.output_transcript.delta"},
+    {"type": "error"},
 ]
 
 

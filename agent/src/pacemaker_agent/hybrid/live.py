@@ -30,12 +30,14 @@ from .sideband import BLOCKING_CODES, HybridSideband, force_close
 
 CREATE_TIMEOUT_S = 30.0
 # Serverereignisse, die der Browser für Anzeige und Lebenszyklus braucht (Plan A6).
+# ServerEventSelector-Objekte (API-Format seit spätestens 2026-10-28; Strings: 400 invalid_type).
+# Bewusst ohne "error": Provider-Texte nicht ungefiltert an den Browser.
 BROWSER_SERVER_EVENTS = [
-    "session.started",
-    "session.closed",
-    "session.input_transcript.delta",
-    "session.output_transcript.delta",
-]  # bewusst ohne "error": Provider-Texte nicht ungefiltert an den Browser
+    {"type": "session.started"},
+    {"type": "session.closed"},
+    {"type": "session.input_transcript.delta"},
+    {"type": "session.output_transcript.delta"},
+]
 
 
 @dataclass(frozen=True)
