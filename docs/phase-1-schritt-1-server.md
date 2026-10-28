@@ -192,3 +192,44 @@ Deadline und Inaktivität genau einmal; Abbruch der HTTP-Anfrage bricht das Aufr
 - Offen: Live-Abnahme (Freigabe Pit, ≤ 0,50 $); Verhalten von OpenAI beim Anhängen an eine
   bereits beendete Sitzung (404/410 als „beendet“ angenommen) – davon hängt ab, ob ein
   Wiederanlauf den Server dauerhaft „nicht bereit“ lassen kann.
+
+## Nachtrag: Live-Abnahme (2026-10-28)
+
+Region `referenz`, Pits Stimme (Gründerfreigabe 2026-10-15), Chrome lokal, Server
+`127.0.0.1:8080`. Kosten laut Journal ≈ 0,61 $ (Runde 1 ≈ 0,26 $, Runde 2 ≈ 0,33 $,
+Diagnose ≈ 0,02 $); **freigegeben waren 0,50 $** – überschritten durch ein 5:22 min langes
+Auflege-Gespräch im Nachtest, für das kein Zeitlimit genannt war.
+
+| Fall | Ergebnis |
+|---|---|
+| Start (Runde 1) | zunächst **fehlgeschlagen**: Live-API lehnte `allowed_server_events` als Stringliste mit `400 invalid_type` ab (Formatänderung seit spätestens 2026-10-28, ohne Ankündigung gefunden). Behoben: `ServerEventSelector`-Objekte (`15e687a`); Startfehler-Codes jetzt im Betriebslog (`6a77063`). Anlass für den API-Wächter (`docs/phase-1-mvp.md` §1). |
+| 1 Persona legt auf | Runde 1 nicht erreicht; Nachtest **bestanden** (`auflegen`). Pit: Brandt legte nach Terminvereinbarung recht schnell auf – Persona-Feinschliff in Schritt 3. |
+| 2 Beenden | bestanden (`nutzer`, Abschluss in ≈ 3 s) |
+| 3 Tab schließen | Runde 1: beendet, aber als `nutzer` gezählt (Chrome sendet Origin beim Beacon) → Kennzeichen `grund: "tab"` (`7abca16`). Nachtest: **nicht bestanden** – Ende als `verbindung_verloren` nach 70 s Gesprächsdauer; Endpunkt per curl geprüft (mit/ohne Origin, mit Kennzeichen → korrekt), Beacon kam offenbar nicht an. Ursache offen. Anmeldung blieb erhalten. |
+| 4 Abbruch ohne Beacon | bestanden (`verbindung_verloren`; Nachlauf nicht gemessen) |
+| 5 Zweiter Start | bestanden (409 ohne Provider-Aufruf, `start_abgewiesen`) |
+| 6 `kill -9` während Gespräch | bestanden: nach 3 s bereit, laufende Sitzung per force_close bestätigt geschlossen, Reserve geschätzt gebucht |
+
+**Attach an beendete Sitzung (offene Frage aus dem Nachtrag oben):** zuerst HTTP 404, Minuten
+später durchgehend **HTTP 503**. Ein später Neustart hätte den Server dauerhaft gesperrt.
+Behoben (`9577abd`, Plan von Codex geprüft, Umsetzung Codex, Review Claude): force_close-
+Wiederholungen nach 0/5/15/30/60 s mit gemeinsamer Frist 120 s, danach Ersatzabschluss mit
+voller Reserve bzw. höherer beobachteter Usage (`budget_settle` mit `unconfirmed: true`,
+Oplog `abschluss_unbestaetigt`); gilt auch im laufenden Betrieb; Recovery im Hintergrund,
+`/healthz` währenddessen 503. **Ersetzt** die Regel aus §3/A3, dass eine Reserve bis zur
+Bestätigung gebunden bleibt (Freigabe Pit 2026-10-28). Live geprüft (kostenlos, tote Sitzung):
+`/healthz` 503, nach 123 s bereit, Buchung 0,55 $ markiert.
+
+**Restrisiko (akzeptiert):** Ist 503 ein echter Ausfall und lebt die Sitzung weiter, läuft sie
+ohne unsere Frist, bis der Browser trennt; OpenAI erzwingt keine Höchstdauer. Dann sind
+„1 Gespräch je Nutzer / 20 gesamt“ für tatsächlich lebende Provider-Sitzungen nicht garantiert,
+und Kosten können die Reserve übersteigen. 503 gilt nie als Bestätigung. Sitzungen ohne
+`provider_id` (`erzeugung_ungeklaert`) sind nicht nachbehandelt (bekannte Lücke).
+
+**Datensparsamkeit:** `session.store = false` ausdrücklich gesetzt (`7abca16`; Standard laut
+API-Referenz heute false, betrifft Forking/Aufnahme-Download – keine Aussage über sonstige
+Provider-Aufbewahrung; DPA bleibt Pilotblocker).
+
+**Offen:** Ursache Beacon (Fall 3); Nachtest der Datenkanalsperre nach der API-Formatänderung
+(`allowed_client_events: []` unverändert dokumentiert, live nicht erneut geprüft);
+Nachlaufzeit ohne Beacon messen. Prüfungen: 228 Tests, ruff grün.
