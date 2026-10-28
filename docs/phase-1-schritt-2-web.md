@@ -56,7 +56,7 @@ Nicht in Schritt 2: Personas-Auswahl, Scoring/Ergebnisse, Verlauf, Self-Service-
   Im Pilot liefert der ohnehin nötige TLS-Proxy `web/dist` unter derselben Herkunft aus und
   leitet `/api` und `/healthz` weiter; Auswahl und Konfiguration mit dem EU-Hosting in Schritt 7.
 - CSP für die Seite: `default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self';
-  media-src 'self' blob:; img-src 'self'; base-uri 'none'; form-action 'none';
+  media-src 'self' blob:; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none';
   frame-ancestors 'none'`. Vite-Build ohne Inline-Anteile: nur externe Module und CSS, keine
   Inline-Handler, `build.assetsInlineLimit: 0`, `build.modulePreload.polyfill: false`; den
   Build auf Inline-Anteile prüfen ([Vite-CSP](https://vite.dev/guide/features.html#content-security-policy-csp)).
@@ -166,3 +166,23 @@ Nicht in Schritt 2: Personas-Auswahl, Scoring/Ergebnisse, Verlauf, Self-Service-
 3. Codex: Seite nach §3.3–§3.6 im eigenen Worktree auf Basis des Gerüsts.
 4. Cross-Review, alle Prüfungen durch Claude, Merge; Live-Abnahme W8 (≈ 0,80 $, Kleinlauf).
 5. Ergebnis als Nachtrag; CLAUDE.md-Befehle für `web/` prüfen und anpassen.
+
+## 8. Design-Werkzeuge (Recherche 2026-10-28, Claude und Codex)
+
+Auftrag Pit: Skills und Werkzeuge, mit denen das Frontend hochwertig aussieht. Primärquellen
+geprüft (Repos, Autorenseiten); Werkzeuge nicht praktisch getestet.
+
+| Fund | Nutzen | Passung / Datenfluss |
+|---|---|---|
+| [Impeccable](https://github.com/pbakaus/impeccable) (Paul Bakaus, Apache-2.0, Skill 4.8.0 vom 26.10.2026) | Designsprache für Agenten: `shape`, `critique`, `audit`, `polish`, `harden`, `typeset`, `layout`; 62 deterministische Prüfregeln; Claude und Codex | Kein Framework nötig. Ruft beim Start eines neuen Designs die API von impeccable.style auf (laut Anbieter ohne Code/Dateien); Telemetrie standardmäßig an, abschaltbar (`IMPECCABLE_NO_TELEMETRY=1`); optionale Hooks und Engine-Binary |
+| [Interface Design](https://github.com/Dammyjay93/interface-design) (MIT) | Für Produktoberflächen: Hierarchie, Typografie, Abstände, Zustände, Tokens; hält Entscheidungen in `.interface-design/system.md` fest | Reine Anleitung, kein Dienst; kleines Community-Projekt; schlankere Alternative zu Impeccable |
+| [Emil Kowalski Skills](https://github.com/emilkowalski/skills) (MIT) | `emil-design-eng`, `review-animations`, `break-ui`: Timing, Easing, Zustände, Extremtexte | Reine Anleitungen; React-/Library-Teile (`pick-ui-library`, `ask-sonner`) nicht übernehmen |
+| [Vercel Web Interface Guidelines](https://github.com/vercel-labs/web-interface-guidelines) (MIT) | 100+ Regeln für Fokus, Tastatur, Formulare, Bewegung, Typografie, Fehlerzustände | Als Review-Checkliste; React-/CDN-Teile auslassen |
+| [Anthropic Frontend Design](https://github.com/anthropics/skills/tree/main/skills/frontend-design) (Apache-2.0) | Visuelle Richtung, eigenständige Typografie | Bei Claude bereits installiert |
+| Playwright MCP / [Chrome DevTools MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp) | Agenten sehen die Seite (Screenshots, Accessibility-Baum) | Playwright-MCP ist konfiguriert, scheitert nur an fehlendem `npx` (Node-Installation behebt das); Chrome DevTools: Telemetrie abschalten. Nur mit synthetischen Inhalten |
+| Weitere: Addy Osmani Web Quality Skills, UI UX Pro Max (Tailwind-lastig), Open Props (Token-Referenz), axe-core, Figma-/Penpot-MCP (erst bei vorhandenen Entwürfen), GSAP-Skills (ausgeschlossen: Laufzeitbibliothek) | | |
+
+Folgen für den Plan: Selbstgehostete Schrift (OFL) braucht `font-src 'self'` in der CSP
+(§3.2). Skills werden als geprüfte Kopie mit festem Stand versioniert
+(`.claude/skills/`, `.agents/skills/`), nicht per Installer mit Telemetrie; Inhalt vor Aufnahme
+gelesen (Skills sind Anweisungen an die Agenten).
