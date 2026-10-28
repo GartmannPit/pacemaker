@@ -24,6 +24,7 @@ from .contracts import (
     ProviderBlocked,
     ProviderConfig,
     ProviderUnavailable,
+    StartFailed,
 )
 from .sideband import BLOCKING_CODES, HybridSideband, force_close
 
@@ -112,6 +113,13 @@ def _error_code(body: bytes) -> str | None:
     return code if isinstance(code, str) else None
 
 
+def _provider_error[E: (StartFailed, ProviderBlocked)](exc: E, status: int, code: str | None) -> E:
+    """Status und Code für das Betriebslog anhängen (Diagnose ohne Antworttext)."""
+    exc.provider_status = status
+    exc.provider_code = code
+    return exc
+
+
 class LiveStarter:
     """contracts.Starter für GPT-Live über HTTP (Erzeugung) und Sideband (Steuerung)."""
 
@@ -148,13 +156,13 @@ class LiveStarter:
                 raise CreateUnclear() from exc
         code = _error_code(raw)
         if code in BLOCKING_CODES:
-            raise ProviderBlocked(code)
+            raise _provider_error(ProviderBlocked(code), status, code)
         if code == "invalid_offer":
-            raise OfferRejected(code)
+            raise _provider_error(OfferRejected(code), status, code)
         if status >= 500 or status == 429:
-            raise ProviderUnavailable(f"http_{status}")
+            raise _provider_error(ProviderUnavailable(f"http_{status}"), status, code)
         # Übrige 4xx (z. B. unknown_parameter, 401/403): unsere Konfiguration
-        raise ProviderConfig(f"http_{status}:{code or '-'}")
+        raise _provider_error(ProviderConfig(f"http_{status}:{code or '-'}"), status, code)
 
     async def attach(
         self, provider_id: str, *, deadline_s: float, idle_timeout_s: float

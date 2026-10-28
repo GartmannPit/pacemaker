@@ -245,8 +245,15 @@ def create_app(
         try:
             result = await registry.start(user.user_id, sdp, voice)
         except StartRefused as exc:
+            oplog.write("start_abgewiesen", code=exc.code)
             raise Fehler(exc.code) from exc
         except (ProviderBlocked, CreateUnclear, StartFailed) as exc:
+            oplog.write(
+                "provider_gesperrt" if isinstance(exc, ProviderBlocked) else "start_fehlgeschlagen",
+                code=exc.code,
+                provider_status=getattr(exc, "provider_status", None),
+                provider_code=getattr(exc, "provider_code", None),
+            )
             raise Fehler(exc.code) from exc
         return web.json_response({"session_ref": result.session_ref, "sdp": result.answer_sdp})
 

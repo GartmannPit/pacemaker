@@ -21,6 +21,7 @@ EVENTS = frozenset(
         "framework_log",
         "provider_gesperrt",
         "start_abgewiesen",
+        "start_fehlgeschlagen",
         "anmeldung",
         "abmeldung",
         "http_request",
@@ -39,6 +40,9 @@ _CODES = frozenset(
         "start_fehlgeschlagen",
         "provider_gesperrt",
         "erzeugung_ungeklaert",
+        "angebot_abgelehnt",
+        "provider_konfiguration",
+        "provider_nicht_verfuegbar",
     }
 )
 
@@ -79,6 +83,13 @@ class OpLog:
                 row[key] = value
             elif key == "method" and value in ("GET", "POST", "HEAD", "OPTIONS"):
                 row[key] = value
+            elif key == "provider_status":
+                if type(value) is int and 100 <= value <= 599:
+                    row[key] = value
+            elif key == "provider_code":
+                # Nur Bezeichner wie "insufficient_quota", nie Fehlertext des Providers
+                if isinstance(value, str) and _IDENTIFIER.fullmatch(value):
+                    row[key] = value
         data = (json.dumps(row, allow_nan=False, separators=(",", ":")) + "\n").encode()
         with self._lock:
             view = memoryview(data)

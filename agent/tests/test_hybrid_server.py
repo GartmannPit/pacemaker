@@ -19,6 +19,7 @@ from pacemaker_agent.hybrid.contracts import (
     BudgetStatus,
     CreateUnclear,
     ProviderBlocked,
+    ProviderConfig,
     StartFailed,
     StartResult,
     UserHasSession,
@@ -161,6 +162,10 @@ def test_create_maps_provider_answers(status, body, expected) -> None:
                     with pytest.raises(expected) as info:
                         await starter.create("SDP", None)
                     assert "GEHEIM" not in str(info.value)
+                    if expected is not CreateUnclear:
+                        # Fürs Betriebslog: Status und Code, nie der Fehlertext
+                        assert info.value.provider_status == status
+                        assert info.value.provider_code == (body.get("error") or {}).get("code")
         assert seen["auth"] == "Bearer test-key"
         assert seen["body"]["transport"] == {"type": "webrtc", "sdp": "SDP"}
 
@@ -458,6 +463,19 @@ def test_app_login_start_end_and_headers(tmp_path) -> None:
             r = await client.post("/api/session", json={"sdp": "OFFER"}, headers=h)
             body = await r.json()
             assert r.status == 503 and "credit" not in json.dumps(body)
+            failed = ProviderConfig("http_401:invalid_api_key")
+            failed.provider_status, failed.provider_code = 401, "invalid_api_key"
+            registry.refuse = failed
+            r = await client.post("/api/session", json={"sdp": "OFFER"}, headers=h)
+            assert r.status == 503
+            starts = [row for row in oplog.rows if row[0].startswith(("start_", "provider_"))]
+            assert [(event, fields.get("code")) for event, fields in starts] == [
+                ("start_abgewiesen", "nutzer_hat_gespraech"),
+                ("provider_gesperrt", "provider_gesperrt"),
+                ("start_fehlgeschlagen", "provider_konfiguration"),
+            ]
+            assert starts[-1][1]["provider_status"] == 401
+            assert starts[-1][1]["provider_code"] == "invalid_api_key"
             r = await client.post("/api/end", json={"session_ref": "R" * 32}, headers=h)
             assert r.status == 200
             r = await client.post("/api/end", json={"session_ref": "R" * 32})  # Beacon

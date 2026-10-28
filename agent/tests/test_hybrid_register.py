@@ -742,6 +742,13 @@ def test_oplog_allowlist_framework_exception_and_access_logs(tmp_path):
     )
     log.write("GEHEIM", message="GEHEIM")
     log.write("http_request", status=200, method="POST", duration_s=0.2, path="GEHEIM")
+    log.write(
+        "start_fehlgeschlagen",
+        code="provider_konfiguration",
+        provider_status=401,
+        provider_code="invalid_api_key",
+    )
+    log.write("start_fehlgeschlagen", provider_status=99, provider_code="Fehler mit GEHEIM")
     root = logging.getLogger()
     previous_handlers, previous_level = root.handlers[:], root.level
     previous_loggers = [
@@ -771,6 +778,8 @@ def test_oplog_allowlist_framework_exception_and_access_logs(tmp_path):
     rows = read_rows(log.path)
     assert rows[0].keys() == {"timestamp", "event", "session_ref", "state"}
     assert rows[1]["status"] == 200
+    assert rows[2]["provider_status"] == 401 and rows[2]["provider_code"] == "invalid_api_key"
+    assert rows[3].keys() == {"timestamp", "event"}  # unzulässige Werte verworfen
     assert sum(r["event"] == "framework_log" for r in rows) == 3
     assert "GEHEIM" not in log.path.read_text()
 

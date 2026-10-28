@@ -98,6 +98,8 @@ class StartFailed(Exception):
     """Start nach Provider-Aufruf fehlgeschlagen; Aufräumen ist erfolgt oder eingeleitet."""
 
     code = "start_fehlgeschlagen"
+    provider_status: int | None = None  # HTTP-Status des Providers, nur fürs Betriebslog
+    provider_code: str | None = None  # Fehlercode des Providers, nie Fehlertext
 
 
 class OfferRejected(StartFailed):
@@ -122,6 +124,8 @@ class ProviderBlocked(Exception):
     """Provider meldet Guthaben-/Quota-Ende; sperrt neue Starts (Starter wirft, Registry sperrt)."""
 
     code = "provider_gesperrt"
+    provider_status: int | None = None
+    provider_code: str | None = None
 
 
 class CreateUnclear(Exception):
