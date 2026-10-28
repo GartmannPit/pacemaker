@@ -17,6 +17,55 @@ export interface Kontingent {
   gesperrt: boolean;
 }
 
+export interface FrameworkKriterium {
+  key: string;
+  label: string;
+  leitfrage: string;
+}
+export interface Briefing {
+  persona: {
+    name: string;
+    rolle: string;
+    unternehmen: string;
+    standorte: string;
+    hinweis: string;
+  };
+  produkt: { name: string; nutzen: string; preis: string };
+  ziel: string;
+  punkte: string[];
+  framework: { id: string; name: string; quelle: string; kriterien: FrameworkKriterium[] };
+  max_dauer_s: number;
+}
+
+// Schnittstellenentwurf gemäß Plan §10. Bis zum jeweiligen Planschritt ungenutzt;
+// Detailformate von Zeit und Punkteposten sind vor der Anbindung abzustimmen.
+export type KriteriumStatus = "offen" | "angesprochen";
+export interface FrameworkSnapshot {
+  revision: number;
+  kriterien: Record<string, KriteriumStatus>;
+}
+export interface AuswertungAnfrage {
+  session_ref: string;
+  notizen: Record<string, string>;
+}
+export interface Auswertung {
+  kriterien: {
+    key: string;
+    status: "geklaert" | "teilweise" | "offen";
+    wert: string;
+    zitat: { text: string; zeit: number } | null;
+    tipp: string;
+  }[];
+  punkte: { posten: { label: string; punkte: number }[]; gesamt: number; max: number };
+}
+
+export function sitzungStarten(sdp: string): Promise<StartAntwort> {
+  return api<StartAntwort>("/api/session", { sdp }, 25000);
+}
+export function sitzungBeenden(session_ref: string): Promise<unknown> {
+  return api("/api/end", { session_ref });
+}
+
 export async function api<T>(pfad: string, daten?: object, zeitlimit = 10000): Promise<T> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => {

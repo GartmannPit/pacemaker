@@ -1,6 +1,6 @@
 import "./style.css";
-import { api, ApiFehler, fehlermeldung } from "./api.ts";
-import type { Kontingent, StartAntwort } from "./api.ts";
+import { api, ApiFehler, fehlermeldung, sitzungStarten, sitzungBeenden } from "./api.ts";
+import type { Briefing, Kontingent } from "./api.ts";
 import { Ansicht, element } from "./ansicht.ts";
 import { browserVerbindung, Gespraech, herzschlagStarten, systemUhr } from "./gespraech.ts";
 import { PEGEL_AKTIV, pegelStarten } from "./pegel.ts";
@@ -10,6 +10,7 @@ const ansicht = new Ansicht();
 const audio = element<HTMLAudioElement>("audio");
 let benutzer = "";
 let revision = 0;
+let ladeRevision = 0;
 let pegel: Pegel | null = null;
 let pegelEin = PEGEL_AKTIV && new URLSearchParams(location.search).get("pegel") !== "0";
 let tonRevision = 0;
@@ -61,8 +62,9 @@ const gespraech = new Gespraech<MediaStream>({
   mikrofon: () => navigator.mediaDevices.getUserMedia({ audio: true }),
   peer: (stream, analyse, callbacks) =>
     browserVerbindung(stream, analyse, audio, { ...callbacks, tonBlockiert }),
-  starten: (sdp) => api<StartAntwort>("/api/session", { sdp }, 25000),
-  beenden: (ref) => api("/api/end", { session_ref: ref }),
+  starten: sitzungStarten,
+  beenden: sitzungBeenden,
+  personaName: () => ansicht.gegenueber(),
   herz: (ref, ende) => herzschlagStarten(ref, ende),
   beacon: (ref) => {
     navigator.sendBeacon(
@@ -90,11 +92,17 @@ const gespraech = new Gespraech<MediaStream>({
 
 async function statusLaden() {
   const aktuell = revision;
+  const ladung = ++ladeRevision;
   element<HTMLButtonElement>("start").disabled = true;
   element("status-neu").hidden = true;
   try {
-    const status = await api<Kontingent>("/api/status");
-    if (aktuell !== revision || !benutzer) return;
+    const [status, briefing] = await Promise.all([
+      api<Kontingent>("/api/status"),
+      api<Briefing>("/api/briefing"),
+    ]);
+    if (aktuell !== revision || ladung !== ladeRevision || !benutzer) return;
+    ansicht.briefing(briefing);
+    ansicht.status("Ihr Briefing ist bereit.");
     element("kontingent").hidden = !status.kontingent_knapp && !status.gesperrt;
     element("kontingent").textContent = status.gesperrt
       ? "Das Übungskontingent ist aufgebraucht. Es kann zurzeit kein Gespräch gestartet werden."
@@ -102,7 +110,7 @@ async function statusLaden() {
     element<HTMLButtonElement>("start").disabled = status.gesperrt;
     element("status-neu").hidden = !status.gesperrt;
   } catch (fehler) {
-    if (aktuell !== revision) return;
+    if (aktuell !== revision || ladung !== ladeRevision) return;
     if (fehler instanceof ApiFehler && fehler.status === 401) anmeldung(fehler.message);
     else {
       ansicht.status(fehlermeldung(fehler));
@@ -167,7 +175,7 @@ element("abmelden").addEventListener("click", () => {
     });
 });
 element("start").addEventListener("click", () => {
-  if (benutzer) void gespraech.starten();
+  if (benutzer && !element<HTMLButtonElement>("start").disabled) void gespraech.starten();
 });
 element("beenden").addEventListener("click", () => {
   gespraech.beenden();

@@ -39,6 +39,7 @@ export interface Ports<Stream extends Mikrofon> {
   ): Verbindung;
   starten(sdp: string): Promise<StartAntwort>;
   beenden(ref: string): Promise<unknown>;
+  personaName?(): string;
   herz(ref: string, ende: (ereignis: HerzEnde) => void): () => void;
   beacon(ref: string): void;
   zustand(wert: Zustand): void;
@@ -58,12 +59,12 @@ interface Kontext<Stream extends Mikrofon> {
   verbindungStop: () => void;
 }
 
-export function abschlusstext(grund: EndeGrund | null): string {
+export function abschlusstext(grund: EndeGrund | null, personaName = "Ihr Gegenüber"): string {
   switch (grund) {
     case "nutzer":
       return "Sie haben das Gespräch beendet.";
     case "auflegen":
-      return "Markus Brandt hat aufgelegt. Das Gespräch ist beendet.";
+      return `${personaName} hat aufgelegt. Das Gespräch ist beendet.`;
     case "zeitlimit":
       return "Die vorgesehene Gesprächszeit ist abgelaufen.";
     case "inaktiv":
@@ -245,7 +246,7 @@ export class Gespraech<Stream extends Mikrofon> {
             k,
             ereignis.art === "frist"
               ? "Der Server ist nicht mehr erreichbar. Das Gespräch wurde lokal beendet. Bitte prüfen Sie Ihre Verbindung."
-              : abschlusstext(ereignis.grund),
+              : abschlusstext(ereignis.grund, this.ports.personaName?.()),
             ereignis.art === "frist",
           );
         }

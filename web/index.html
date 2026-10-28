@@ -23,7 +23,7 @@
         </svg>
         <span>OneTry</span>
       </a>
-      <span class="szene"><b>Probe</b> · Kaltakquise mit Markus Brandt</span>
+      <span class="szene" id="szene">Gesprächstraining mit einer KI-Trainingsfigur</span>
       <div class="kopf-aktionen">
         <button
           class="sekundaer"
@@ -60,32 +60,44 @@
           </form>
           <p class="klein">Sie sprechen mit einer KI-Trainingsfigur.</p>
         </div>
-        <div class="einstieg-zeichen" aria-hidden="true"><span>MB</span></div>
+        <div class="einstieg-zeichen" aria-hidden="true"><span>KI</span></div>
       </section>
-      <section id="bereit" class="einstieg" aria-labelledby="bereit-titel" hidden>
-        <div class="einstieg-inhalt">
-          <h1 id="bereit-titel" tabindex="-1">Ihr Gegenüber: Markus Brandt</h1>
-          <p>Head of Operations bei einem Logistikdienstleister mit rund 180 Mitarbeitenden.</p>
-          <p>
-            Sie verkaufen PlanWerk, eine Software für Schicht- und Einsatzplanung. Üben Sie ein
-            erstes Gespräch am Telefon.
-          </p>
-          <p class="ki-hinweis">Sie sprechen mit einer <strong>KI-Trainingsfigur</strong>.</p>
-          <p class="klein">
-            Verwenden Sie möglichst ein Headset. So vermeiden Sie Echo und können sich auf das
-            Gespräch konzentrieren.
-          </p>
+      <section id="bereit" class="briefing-seite" aria-labelledby="bereit-titel" hidden>
+        <h1 id="bereit-titel" tabindex="-1">Ihr Briefing wird geladen …</h1>
+        <p id="briefing-ziel" class="einleitung"></p>
+        <p class="ki-hinweis">Sie sprechen mit einer <strong>KI-Trainingsfigur</strong>.</p>
+        <div id="briefing-inhalt" class="briefing-spalten" hidden>
+          <section class="briefing-panel" aria-labelledby="fakten-titel">
+            <h2 id="fakten-titel">Was Sie wissen</h2>
+            <dl id="briefing-fakten" class="fakten"></dl>
+            <p class="briefing-zeit">Zeit: höchstens <strong id="briefing-dauer"></strong></p>
+            <p id="briefing-hinweis" class="klein"></p>
+          </section>
+          <section class="briefing-panel" aria-labelledby="framework-name">
+            <div class="framework-kopf">
+              <h2 id="framework-name"></h2>
+              <span id="framework-quelle" class="klein"></span>
+            </div>
+            <ul id="briefing-kriterien" class="kriterien"></ul>
+            <h3 class="punkte-titel">Punkteschema</h3>
+            <ul id="briefing-punkte" class="punkte-schema"></ul>
+          </section>
+        </div>
+        <div class="briefing-start">
           <p id="kontingent" class="warnung" hidden></p>
           <button class="primaer" id="start" disabled>Gespräch starten</button>
-          <button class="sekundaer" id="status-neu" hidden>Status erneut prüfen</button>
+          <button class="sekundaer" id="status-neu" hidden>Briefing erneut laden</button>
+          <p class="klein">
+            Verwenden Sie möglichst ein Headset, um Echo zu vermeiden. Beim Start wird Ihr Mikrofon
+            angefragt.
+          </p>
           <p class="klein">
             Das Transkript bleibt nur in diesem Browserfenster und wird von OneTry nicht
             gespeichert.
           </p>
         </div>
-        <div class="einstieg-zeichen" aria-hidden="true"><span>MB</span></div>
       </section>
-      <section id="sitzung" aria-label="Gespräch mit Markus Brandt" hidden>
+      <section id="sitzung" aria-label="Ihr Übungsgespräch" hidden>
         <section class="meilensteine" aria-label="Auswertung folgt">
           <ol class="strecke" aria-label="Geplante Meilensteine; Auswertung folgt">
             <li><span class="knoten" aria-hidden="true"></span>Gesprächserlaubnis</li>
@@ -101,13 +113,14 @@
           <aside class="gegenueber" aria-labelledby="gegenueber-titel">
             <h2 id="gegenueber-titel">Ihr Gegenüber</h2>
             <div>
-              <p class="persona-name">Markus Brandt</p>
-              <p class="beschreibung">
-                Head of Operations, Logistikdienstleister mit rund 180 Mitarbeitenden in Duisburg
-                und Hamm.
-              </p>
+              <p class="persona-name" id="persona-name"></p>
+              <p class="beschreibung" id="persona-beschreibung"></p>
               <span class="abzeichen">KI-Trainingsfigur</span>
             </div>
+            <section class="qualifizierung" aria-labelledby="kriterien-titel">
+              <h2 id="kriterien-titel">Qualifizierung</h2>
+              <ul id="gespraech-kriterien" class="kriterien-mini"></ul>
+            </section>
             <dl class="persona-zustand">
               <div>
                 <dt>Geduld</dt>
@@ -118,21 +131,40 @@
                 <dd>folgt</dd>
               </div>
             </dl>
-            <p class="gegenueber-fuss">
-              Sie verkaufen PlanWerk, eine Software für Schicht- und Einsatzplanung.
-            </p>
+            <p class="gegenueber-fuss" id="persona-produkt"></p>
           </aside>
-          <div class="buehne">
+          <div class="buehne" id="buehne">
             <canvas id="ringe" aria-hidden="true"></canvas>
             <div id="sprechend" class="sprechend">
               <h1 id="gespraech-titel" tabindex="-1">Gespräch wird aufgebaut …</h1>
               <p id="sprecher" aria-live="polite">Bitte warten Sie.</p>
             </div>
             <div id="abschluss" class="abschluss" hidden>
-              <h1 id="abschluss-titel" tabindex="-1">Gespräch beendet</h1>
+              <h1 id="abschluss-titel" tabindex="-1">Ihre Auswertung</h1>
               <p id="abschluss-text"></p>
               <p id="dauer" class="klein"></p>
-              <button class="primaer" id="neustart">Neues Gespräch</button>
+              <p class="klein">Ihr Gegenüber ist eine KI-Trainingsfigur.</p>
+              <p>Was haben Sie erfahren? Halten Sie Ihre Erkenntnisse je Kriterium fest.</p>
+              <p id="notizen-hinweis" class="klein">
+                Ihre Notizen bleiben nur im Speicher dieser Seite. Sie werden nicht gesendet und bei
+                einem neuen Versuch oder beim Abmelden verworfen.
+              </p>
+              <dl class="auswertung-folgt">
+                <div>
+                  <dt>Abgleich</dt>
+                  <dd>folgt in Schritt 3</dd>
+                </div>
+                <div>
+                  <dt>Punkte</dt>
+                  <dd>folgt in Schritt 3</dd>
+                </div>
+                <div>
+                  <dt>Zitate</dt>
+                  <dd>folgt in Schritt 3</dd>
+                </div>
+              </dl>
+              <div id="auswertung-notizen" class="notizen"></div>
+              <button class="primaer" id="neustart">Neuer Versuch</button>
               <p class="klein">
                 Ihr Transkript bleibt bis zum nächsten Gespräch oder bis zum Abmelden sichtbar.
               </p>
@@ -158,7 +190,7 @@
               aria-label="Gesprächsverlauf"
             >
               <p id="transkript-leer" class="klein">
-                Sobald Sie oder Brandt sprechen, erscheint hier das Transkript.
+                Sobald Sie oder Ihr Gegenüber sprechen, erscheint hier das Transkript.
               </p>
             </div>
           </aside>

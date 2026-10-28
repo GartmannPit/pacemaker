@@ -45,6 +45,10 @@ body {
   outline: 3px solid var(--persona);
   outline-offset: 4px;
 }
+/* Programmatisch fokussierte Überschriften (Ansichtswechsel) ohne Fokusrahmen. */
+[tabindex="-1"]:focus-visible {
+  outline: none;
+}
 h1,
 h2,
 p {
@@ -66,7 +70,8 @@ h2 {
   font-weight: 650;
 }
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 button {
@@ -231,7 +236,8 @@ button:disabled {
   margin-top: 20px;
   justify-self: start;
 }
-input {
+input,
+textarea {
   width: 100%;
   min-width: 0;
   padding: 11px 13px;
@@ -240,6 +246,210 @@ input {
   border: 1px solid #858ca8;
   border-radius: 8px;
   caret-color: var(--persona);
+}
+textarea {
+  display: block;
+  resize: vertical;
+  min-height: 92px;
+}
+.briefing-seite {
+  max-width: 1180px;
+  padding: 40px 32px 64px;
+  margin: auto;
+  overflow-wrap: anywhere;
+}
+.einleitung {
+  max-width: 65ch;
+  margin-top: 12px;
+  font-size: 1.125rem;
+  color: var(--secondary);
+}
+.briefing-seite .ki-hinweis {
+  margin-block: 24px;
+}
+.briefing-spalten {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  align-items: start;
+  gap: 28px;
+}
+.briefing-panel {
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  min-width: 0;
+}
+.briefing-panel h2 {
+  margin-bottom: 16px;
+}
+.fakten {
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1fr);
+  gap: 12px 16px;
+  margin: 0;
+  font-size: 0.9375rem;
+}
+.fakten dt {
+  color: var(--muted);
+}
+.fakten dd {
+  margin: 0;
+  font-weight: 560;
+}
+.briefing-zeit {
+  border-top: 1px solid var(--line);
+  margin-top: 20px;
+  padding-top: 16px;
+}
+#briefing-hinweis {
+  margin-top: 8px;
+}
+.framework-kopf {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 16px;
+}
+.framework-kopf h2 {
+  margin: 0;
+  color: var(--persona);
+  font-size: 1.625rem;
+}
+.kriterien,
+.kriterien-mini {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.kriterium {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  border: 1px dashed #858ca8;
+  border-radius: 12px;
+  padding: 12px;
+}
+.kriterium-key {
+  display: grid;
+  place-items: center;
+  min-height: 48px;
+  border-radius: 12px;
+  background: #e0e3fa;
+  color: var(--persona);
+  font-size: 1.5rem;
+  font-weight: 760;
+  overflow-wrap: anywhere;
+}
+.punkte-titel {
+  margin: 24px 0 8px;
+  font-size: 0.875rem;
+}
+.punkte-schema {
+  padding-left: 20px;
+  margin: 0;
+  color: var(--secondary);
+  font-size: 0.875rem;
+}
+.punkte-schema li + li {
+  margin-top: 6px;
+}
+.briefing-start {
+  margin-top: 28px;
+}
+.briefing-start > * + * {
+  margin-top: 16px;
+}
+.qualifizierung h2 {
+  margin-bottom: 10px;
+}
+.kriterien-mini {
+  grid-template-columns: repeat(auto-fit, minmax(38px, 1fr));
+  gap: 6px;
+}
+.kriterien-mini li {
+  min-width: 0;
+  padding: 8px 2px;
+  text-align: center;
+  border: 1px dashed #858ca8;
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.kriterien-mini b {
+  display: block;
+  color: var(--persona);
+  font-size: 1.25rem;
+}
+.kriterien-mini span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.buehne.ist-beendet {
+  display: block;
+  overflow-wrap: anywhere;
+}
+#sitzung.ist-beendet .gegenueber,
+#sitzung.ist-beendet > .meilensteine,
+#sitzung.ist-beendet > .cue-leiste {
+  display: none;
+}
+#sitzung.ist-beendet .gespraech-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+#sitzung.ist-beendet .gespraech-layout.offen {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+}
+.ist-beendet .abschluss {
+  max-width: 1080px;
+  margin-inline: auto;
+  text-align: left;
+  padding: 36px 28px;
+}
+.ist-beendet .audio-hilfe {
+  display: none;
+}
+.auswertung-folgt {
+  display: grid;
+  gap: 8px;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.auswertung-folgt div {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+}
+.auswertung-folgt dd {
+  margin: 0;
+}
+.notizen {
+  display: grid;
+  gap: 12px;
+}
+.notiz {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.notiz label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.9375rem;
+  font-weight: 620;
 }
 .klein {
   font-size: 0.8125rem;
@@ -321,6 +531,7 @@ input {
   grid-template-columns: 240px minmax(260px, 1fr) minmax(280px, 360px);
 }
 .gegenueber {
+  overflow-wrap: anywhere;
   padding: 28px 26px;
   border-right: 1px solid var(--line);
   display: flex;
@@ -559,6 +770,12 @@ input {
   white-space: nowrap;
 }
 @media (max-width: 1100px) {
+  #sitzung.ist-beendet .gespraech-layout.offen {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .briefing-spalten {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .szene {
     display: none;
   }
@@ -590,6 +807,27 @@ input {
   }
 }
 @media (max-width: 700px) {
+  .briefing-seite {
+    padding: 28px 18px 44px;
+  }
+  .briefing-panel {
+    padding: 18px;
+  }
+  .kriterium {
+    grid-template-columns: 40px minmax(0, 1fr);
+    gap: 10px;
+  }
+  .kriterium > .klein {
+    grid-column: 2;
+  }
+  .ist-beendet .abschluss {
+    padding: 28px 18px;
+  }
+  .notiz {
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 10px;
+    padding: 10px;
+  }
   .kopf {
     padding: 12px 18px;
     gap: 12px;

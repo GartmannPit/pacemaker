@@ -1,4 +1,13 @@
 import type { Phase, Rolle, Zustand } from "./gespraech.ts";
+import { briefingModell, Notizen } from "./briefing.ts";
+import type { Briefing } from "./api.ts";
+
+function textElement(tag: string, text: string, klasse = ""): HTMLElement {
+  const el = document.createElement(tag);
+  el.textContent = text;
+  el.className = klasse;
+  return el;
+}
 
 // Der Aufrufer kennt den konkreten Typ des statisch angelegten Elements.
 // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
@@ -13,6 +22,8 @@ export function zeit(ms: number): string {
 }
 
 export class Ansicht {
+  private notizen = new Notizen();
+  private personaName = "Ihr Gegenüber";
   private phase: Phase = "bereit";
   private zustand: Zustand | null = null;
   private zeile: { rolle: Rolle; text: HTMLParagraphElement } | null = null;
@@ -37,6 +48,8 @@ export class Ansicht {
     this.zustand = null;
     this.stop();
     this.leeren();
+    this.briefingLeeren();
+    element("auswertung-notizen").replaceChildren();
     this.ansicht("anmeldung");
     element("abmelden").hidden = true;
     element("transkript-knopf").hidden = true;
@@ -48,12 +61,106 @@ export class Ansicht {
     this.phase = "bereit";
     this.zustand = null;
     this.stop();
+    this.leeren();
+    this.briefingLeeren();
     this.ansicht("bereit");
     element("nutzer").textContent = name;
     element("abmelden").hidden = false;
     element("transkript-knopf").hidden = true;
-    this.status("Bereit für Ihr Gespräch.");
+    this.status("Ihr Briefing wird geladen …");
     this.fokus("bereit-titel");
+  }
+  private briefingLeeren() {
+    this.personaName = "Ihr Gegenüber";
+    element("bereit-titel").textContent = "Ihr Briefing wird geladen …";
+    element("szene").textContent = "Gesprächstraining mit einer KI-Trainingsfigur";
+    element("briefing-inhalt").hidden = true;
+    for (const id of [
+      "briefing-ziel",
+      "briefing-fakten",
+      "briefing-dauer",
+      "briefing-hinweis",
+      "framework-name",
+      "framework-quelle",
+      "briefing-kriterien",
+      "briefing-punkte",
+      "persona-name",
+      "persona-beschreibung",
+      "persona-produkt",
+      "gespraech-kriterien",
+    ])
+      element(id).replaceChildren();
+    element("kontingent").hidden = true;
+  }
+  briefing(daten: Briefing) {
+    const modell = briefingModell(daten);
+    this.personaName = modell.name;
+    element("bereit-titel").textContent = modell.titel;
+    element("briefing-ziel").textContent = `Ihr Ziel: ${modell.ziel}`;
+    element("szene").textContent = `Probe · Gespräch mit ${modell.name}`;
+    element("persona-name").textContent = modell.name;
+    element("persona-beschreibung").textContent = modell.beschreibung;
+    element("persona-produkt").textContent = `Sie verkaufen ${modell.produkt}.`;
+    element("briefing-fakten").replaceChildren(
+      ...modell.fakten.flatMap(({ label, wert }) => [
+        textElement("dt", label),
+        textElement("dd", wert),
+      ]),
+    );
+    element("briefing-dauer").textContent = modell.dauer;
+    element("briefing-hinweis").textContent = modell.hinweis;
+    element("framework-name").textContent = modell.framework;
+    element("framework-quelle").textContent = modell.quelle;
+    element("kriterien-titel").textContent = `Qualifizierung · ${modell.framework}`;
+    element("briefing-kriterien").replaceChildren(
+      ...modell.kriterien.map((k) => {
+        const zeile = textElement("li", "", "kriterium");
+        const inhalt = textElement("div", "");
+        inhalt.append(textElement("strong", k.label), textElement("p", k.leitfrage, "klein"));
+        zeile.append(
+          textElement("span", k.key, "kriterium-key"),
+          inhalt,
+          textElement("span", k.status, "klein"),
+        );
+        return zeile;
+      }),
+    );
+    element("briefing-punkte").replaceChildren(...modell.punkte.map((p) => textElement("li", p)));
+    element("gespraech-kriterien").replaceChildren(
+      ...modell.kriterien.map((k) => {
+        const zeile = textElement("li", "");
+        zeile.title = `${k.label}: ${k.leitfrage}`;
+        zeile.setAttribute("aria-label", `${k.key} · ${k.label}: ${k.gespraechStatus}`);
+        zeile.append(textElement("b", k.key), textElement("span", k.gespraechStatus));
+        return zeile;
+      }),
+    );
+    element("auswertung-notizen").replaceChildren(
+      ...modell.kriterien.map((k, index) => {
+        const zeile = textElement("div", "", "notiz");
+        const inhalt = textElement("div", "");
+        const label = document.createElement("label");
+        label.htmlFor = `notiz-${String(index)}`;
+        label.textContent = `${k.label} – Was haben Sie erfahren?`;
+        const feld = document.createElement("textarea");
+        feld.id = label.htmlFor;
+        feld.name = `notiz-${String(index)}`;
+        feld.autocomplete = "off";
+        feld.rows = 3;
+        feld.setAttribute("aria-describedby", "notizen-hinweis");
+        feld.value = this.notizen.lesen(k.key);
+        feld.addEventListener("input", () => {
+          this.notizen.setzen(k.key, feld.value);
+        });
+        inhalt.append(label, feld);
+        zeile.append(textElement("span", k.key, "kriterium-key"), inhalt);
+        return zeile;
+      }),
+    );
+    element("briefing-inhalt").hidden = false;
+  }
+  gegenueber(): string {
+    return this.personaName;
   }
   schublade(offen: boolean) {
     const knopf = element<HTMLButtonElement>("transkript-knopf");
@@ -68,6 +175,8 @@ export class Ansicht {
     else if (fokusImDrawer) knopf.focus();
   }
   leeren() {
+    this.notizen.leeren();
+    for (const feld of element("auswertung-notizen").querySelectorAll("textarea")) feld.value = "";
     this.zeile = null;
     this.deltaSprecher = null;
     this.sprecher = null;
@@ -77,7 +186,7 @@ export class Ansicht {
     const leer = document.createElement("p");
     leer.className = "klein";
     leer.id = "transkript-leer";
-    leer.textContent = "Sobald Sie oder Brandt sprechen, erscheint hier das Transkript.";
+    leer.textContent = "Sobald Sie oder Ihr Gegenüber sprechen, erscheint hier das Transkript.";
     element("transkript-inhalt").append(leer);
     this.schublade(false);
   }
@@ -90,7 +199,7 @@ export class Ansicht {
       const zeile = document.createElement("div");
       zeile.className = `transkript-zeile ${rolle}`;
       const name = document.createElement("strong");
-      name.textContent = rolle === "sie" ? "Sie" : "Brandt";
+      name.textContent = rolle === "sie" ? "Sie" : this.personaName;
       const text = document.createElement("p");
       zeile.append(name, text);
       inhalt.append(zeile);
@@ -123,13 +232,17 @@ export class Ansicht {
     this.sprecher = rolle;
     const text =
       rolle === "brandt"
-        ? "Markus Brandt spricht"
+        ? `${this.personaName} spricht`
         : rolle === "sie"
           ? "Sie sprechen"
           : "Verbunden · Gesprächspause";
     element("sprecher").textContent = text;
     element("cue-text").textContent =
-      rolle === "brandt" ? "Brandt spricht" : rolle === "sie" ? "Sie sprechen" : "Verbunden";
+      rolle === "brandt"
+        ? `${this.personaName} spricht`
+        : rolle === "sie"
+          ? "Sie sprechen"
+          : "Verbunden";
     element("cue-licht").className = `cue-licht ${rolle ?? ""}`;
   }
   aktualisieren(wert: Zustand) {
@@ -140,6 +253,9 @@ export class Ansicht {
     this.status(wert.meldung);
     element("transkript-knopf").hidden = false;
     const beendet = wert.phase === "beendet";
+    element("sitzung").classList.toggle("ist-beendet", beendet);
+    element("buehne").classList.toggle("ist-beendet", beendet);
+    element("transkript-titel").textContent = beendet ? "Transkript" : "Live-Transkript";
     element("abschluss").hidden = !beendet;
     element("sprechend").hidden = beendet;
     element("ringe").hidden = beendet;

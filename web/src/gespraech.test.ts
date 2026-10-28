@@ -1,13 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Gespraech } from "./gespraech.ts";
+import { abschlusstext, Gespraech } from "./gespraech.ts";
 import type { Mikrofon, Ports, Zustand } from "./gespraech.ts";
-import { ApiFehler } from "./api.ts";
+import { ApiFehler, sitzungStarten, sitzungBeenden } from "./api.ts";
+import { Notizen } from "./briefing.ts";
 import type { StartAntwort } from "./api.ts";
 import type { HerzEnde } from "./herzschlag.ts";
 import { offen, spuelen, TestUhr } from "./testhilfe.ts";
 
 function aufbau() {
+  const notizen = new Notizen();
   const uhr = new TestUhr();
   const zustaende: Zustand[] = [];
   const enden: string[] = [];
@@ -73,6 +75,7 @@ function aufbau() {
       zustaende.push(wert);
     },
     leeren() {
+      notizen.leeren();
       geleert++;
     },
     transkript() {
@@ -84,6 +87,7 @@ function aufbau() {
   };
   const g = new Gespraech(ports);
   return {
+    notizen,
     g,
     ports,
     uhr,
@@ -196,7 +200,9 @@ void test("Abmelden stoppt sofort und löscht das Transkript; 401 führt zur Anm
   const t = aufbau();
   await t.g.starten();
   t.delta();
+  t.notizen.setzen("B", "Flüchtige synthetische Notiz");
   t.ende({ art: "anmeldung" });
+  assert.equal(t.notizen.lesen("B"), "");
   assert.equal(t.zaehler().abgemeldet, 1);
   assert.equal(t.zaehler().geleert, 2);
   assert.equal(t.zaehler().tracksGestoppt, 1);
@@ -281,9 +287,71 @@ void test("401 beim aktuellen Beenden löscht das Transkript und fordert Anmeldu
   await t.g.starten();
   t.ports.beenden = () => Promise.reject(new ApiFehler("Bitte erneut anmelden.", 401));
   t.g.beenden();
+  t.notizen.setzen("B", "Notiz während der Endanfrage");
   await spuelen();
+  assert.equal(t.notizen.lesen("B"), "");
   assert.equal(t.zaehler().abgemeldet, 1);
   assert.equal(t.zaehler().geleert, 2);
+});
+
+void test("Neustart, Abmelden und Verlassen verwerfen sämtliche Notizen", async () => {
+  const t = aufbau();
+  await t.g.starten();
+  t.g.beenden();
+  t.notizen.setzen("X", "Notiz zum beendeten Gespräch");
+  await t.g.starten();
+  assert.equal(t.notizen.lesen("X"), "");
+  t.notizen.setzen("Y", "Notiz vor Abmeldung");
+  t.g.abmelden();
+  assert.equal(t.notizen.lesen("Y"), "");
+  await t.g.starten();
+  t.notizen.setzen("Z", "Notiz vor Seitenwechsel");
+  t.g.verlassen();
+  assert.equal(t.notizen.lesen("Z"), "");
+});
+
+void test("Sitzungsrequests senden ausschließlich SDP oder Sitzungsreferenz, niemals Notizen", async (ctx) => {
+  const anfragen: { pfad: unknown; body: unknown }[] = [];
+  ctx.mock.method(globalThis, "fetch", (pfad: unknown, optionen: RequestInit) => {
+    assert.equal(typeof optionen.body, "string");
+    anfragen.push({ pfad, body: JSON.parse(optionen.body as string) as unknown });
+    return Promise.resolve(
+      pfad === "/api/session"
+        ? new Response(
+            JSON.stringify({ session_ref: "synthetisch", sdp: "antwort", max_dauer_s: 600 }),
+          )
+        : new Response(null, { status: 204 }),
+    );
+  });
+  const t = aufbau();
+  t.ports.starten = sitzungStarten;
+  t.ports.beenden = sitzungBeenden;
+  await t.g.starten();
+  t.notizen.setzen("B", "DARF_NICHT_GESENDET_WERDEN");
+  t.g.beenden();
+  await spuelen();
+  assert.equal(t.notizen.lesen("B"), "DARF_NICHT_GESENDET_WERDEN");
+  await t.g.starten();
+  t.g.beenden();
+  await spuelen();
+  assert.deepEqual(anfragen, [
+    { pfad: "/api/session", body: { sdp: "angebot" } },
+    { pfad: "/api/end", body: { session_ref: "synthetisch" } },
+    { pfad: "/api/session", body: { sdp: "angebot" } },
+    { pfad: "/api/end", body: { session_ref: "synthetisch" } },
+  ]);
+  assert.doesNotMatch(JSON.stringify(anfragen), /notizen|DARF_NICHT/u);
+});
+
+void test("Abschlusstext verwendet die öffentliche Persona und unterscheidet Endgründe", () => {
+  assert.equal(
+    abschlusstext("auflegen", "Alex Beispiel"),
+    "Alex Beispiel hat aufgelegt. Das Gespräch ist beendet.",
+  );
+  assert.match(abschlusstext("nutzer"), /Sie haben/u);
+  assert.match(abschlusstext("zeitlimit"), /abgelaufen/u);
+  assert.match(abschlusstext("inaktiv"), /Inaktivität/u);
+  assert.match(abschlusstext("verbindung_verloren"), /unterbrochen/u);
 });
 void test("Ausfall der optionalen Pegelanzeige blockiert den Gesprächsstart nicht", async () => {
   const t = aufbau();
