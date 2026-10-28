@@ -107,10 +107,11 @@ $("ende").onclick = async () => {
   await post("/api/end", { session_ref: ref });
   setTimeout(() => { if (!beendet) aufraeumen("Gespräch beendet."); }, 20000);
 };
-// Tab schließen: Ende als Beacon (ohne Origin; Server prüft Cookie und session_ref)
+// Tab schließen: Ende als Beacon mit Kennzeichen (Chrome sendet dabei meist Origin mit;
+// der Server prüft Cookie, Origin falls vorhanden und session_ref)
 addEventListener("pagehide", () => {
   if (ref && !beendet) navigator.sendBeacon("/api/end",
-    new Blob([JSON.stringify({ session_ref: ref })], { type: "application/json" }));
+    new Blob([JSON.stringify({ session_ref: ref, grund: "tab" })], { type: "application/json" }));
 });
 fetch("/api/me").then(async (r) => { if (r.ok) angemeldet((await r.json()).name); });
 </script>

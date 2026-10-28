@@ -85,6 +85,9 @@ def session_payload(settings: LiveSettings, voice: str | None) -> dict[str, Any]
         raise ValueError("Unbekannte Stimme")
     session: dict[str, Any] = {
         "model": "gpt-live-1",
+        # Ausdrücklich keine Speicherung für Forking/Aufnahme-Download (Standard heute false;
+        # Vorgaben der API können sich ohne Ankündigung ändern).
+        "store": False,
         "instructions": settings.prompt,
         "delegation": {
             "type": "responses",

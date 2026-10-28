@@ -106,6 +106,7 @@ def test_payload_always_locked_and_region_explicit() -> None:
     assert payload["client"]["data_channel"]["allowed_server_events"] == live.BROWSER_SERVER_EVENTS
     assert payload["delegation"]["responses"]["tools"][0]["name"] == "auflegen"
     assert "store" not in payload["delegation"]["responses"]
+    assert payload["store"] is False  # keine Speicherung für Forking/Aufnahme-Download
     with pytest.raises(ValueError):
         live.session_payload(settings(), "unbekannt")
     with pytest.raises(ValueError):
@@ -477,9 +478,28 @@ def test_app_login_start_end_and_headers(tmp_path) -> None:
             assert starts[-1][1]["provider_status"] == 401
             assert starts[-1][1]["provider_code"] == "invalid_api_key"
             r = await client.post("/api/end", json={"session_ref": "R" * 32}, headers=h)
-            assert r.status == 200
+            assert r.status == 200 and registry.ended[-1][2] == "nutzer"
             r = await client.post("/api/end", json={"session_ref": "R" * 32})  # Beacon
             assert r.status == 200 and registry.ended[-1][2] == "tab_geschlossen"
+            # Chrome sendet beim Beacon den Origin mit; das Kennzeichen entscheidet
+            tab = {"session_ref": "R" * 32, "grund": "tab"}
+            r = await client.post("/api/end", json=tab, headers=h)
+            assert r.status == 200 and registry.ended[-1][2] == "tab_geschlossen"
+            r = await client.post("/api/end", json=tab)
+            assert r.status == 200 and registry.ended[-1][2] == "tab_geschlossen"
+            ended = len(registry.ended)
+            for falsch in (
+                {"session_ref": "R" * 32, "grund": None},
+                {"session_ref": "R" * 32, "grund": "nutzer"},
+                {"session_ref": "R" * 32, "grund": 1},
+                {"session_ref": "R" * 32, "extra": "x"},
+            ):
+                r = await client.post("/api/end", json=falsch, headers=h)
+                assert r.status == 400
+            r = await client.post("/api/end", json=tab, headers={"Origin": "https://boese.example"})
+            assert r.status == 403 and len(registry.ended) == ended
+            r = await client.get("/api/me")
+            assert r.status == 200  # Beacon meldet nicht ab
             r = await client.post("/api/end", json={"session_ref": "F" * 32}, headers=h)
             assert r.status == 404  # fremde Referenz
             r = await client.post(

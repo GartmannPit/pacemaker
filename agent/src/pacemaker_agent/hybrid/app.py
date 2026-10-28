@@ -261,13 +261,17 @@ def create_app(
         user = current(request)
         body = await read_json(request, LIMIT_SMALL)
         ref = body.get("session_ref")
+        if set(body) - {"session_ref", "grund"} or ("grund" in body and body["grund"] != "tab"):
+            raise Fehler("anfrage_ungueltig")
         if not isinstance(ref, str) or not _REF.fullmatch(ref):
             raise Fehler("anfrage_ungueltig")
         origin = request.headers.get("Origin")
         if origin is not None and origin != config.public_origin:
             raise Fehler("herkunft_ungueltig")
-        # Ohne Origin nur als Beacon: gültiges Cookie (SameSite=Strict) plus eigene session_ref
-        reason = "nutzer" if origin else "tab_geschlossen"
+        # Beacon beim Schließen des Tabs: Kennzeichen "grund" (Chrome sendet Origin mit) oder
+        # ohne Origin; dann genügen gültiges Cookie (SameSite=Strict) plus eigene session_ref.
+        # Der Browser ist nicht vertrauenswürdig: Der Grund unterscheidet nur zwei Nutzer-Enden.
+        reason = "tab_geschlossen" if "grund" in body or not origin else "nutzer"
         if not await registry.end(user.user_id, ref, reason=reason):
             raise Fehler("nicht_gefunden")
         return web.json_response({})
