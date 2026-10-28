@@ -233,3 +233,25 @@ Provider-Aufbewahrung; DPA bleibt Pilotblocker).
 **Offen:** Ursache Beacon (Fall 3); Nachtest der Datenkanalsperre nach der API-Formatänderung
 (`allowed_client_events: []` unverändert dokumentiert, live nicht erneut geprüft);
 Nachlaufzeit ohne Beacon messen. Prüfungen: 228 Tests, ruff grün.
+
+### Nachtrag 2: Herzschlag und Sperre (2026-10-28, abends)
+
+- **Tab ohne Beacon** (Cmd+W im eingebetteten Editor-Browser) lieferte zuvor erst nach ≈ 80 s
+  `verbindung_verloren`. Neu: Herzschlag der Seite alle 5 s, Register beendet nach 15 s ohne
+  Herzschlag (`herzschlag_fehlt`, Prüftakt 1 s); Seite beendet lokal bei 404/401 oder ohne
+  Bestätigung für 15 s (`022ea38`, `07cdc40`, `14390a8`; Plan von Codex geprüft;
+  Integrationsreview fand fehlenden Shutdown-Schließversuch nach unbestätigtem Erstversuch,
+  behoben `7cd6ae5`). Ende-Anfragen im Betriebslog mit Status (`4856dab`).
+- **Live (Referenz, Pits Stimme):** Tab schließen ohne Beacon → `herzschlag_fehlt`, Sitzung
+  33 s nach Start beendet; Tab schließen mit Beacon → `tab_geschlossen`; Wegnavigieren →
+  Beacon 200, `tab_geschlossen`. Nachlauf zwischen Schließen und Ende nicht exakt gemessen
+  (Schließzeitpunkt nicht protokolliert).
+- **Datenkanalsperre nach API-Formatänderung bestätigt** (Prototyp, `?debug=1`): Angriffe 1–4,
+  6–8 einschließlich Befehlsflut sämtlich `event_not_allowed`; Angriff 5 nicht auslösbar (kein
+  offener Werkzeugaufruf), wie im Architekturversuch.
+- **Lücke:** Bricht der Browser beim Schließen die Beacon-Verbindung ab, bricht aiohttp den
+  Handler ab (`handler_cancellation`); das Ende läuft weiter (shield), aber der Statuseintrag
+  fehlt im Betriebslog.
+- **Offen:** Hintergrund-Tab > 5 min mit aktivem Gespräch (Chrome-Timerdrosselung; Erwartung
+  laut Chrome-Doku unkritisch, nicht gemessen). Kosten dieser Runde ≈ 0,08 $; Abnahme gesamt
+  ≈ 0,79 $. Prüfungen: 261 Tests, ruff grün.
