@@ -19,6 +19,7 @@ from typing import Any, Protocol
 from aiohttp import web
 
 from .auth import Auth, AuthError, Overloaded, RateLimited
+from .briefing import briefing as briefing_data
 from .contracts import (
     BudgetStatus,
     CreateUnclear,
@@ -273,6 +274,10 @@ def create_app(
         state = budget_status()
         return web.json_response({"kontingent_knapp": state.warning, "gesperrt": state.blocked})
 
+    async def briefing(request: web.Request) -> web.Response:
+        current(request)
+        return web.json_response(briefing_data(config.max_duration_s))
+
     async def start(request: web.Request) -> web.Response:
         if not origin_ok(request):
             raise Fehler("herkunft_ungueltig")
@@ -349,6 +354,7 @@ def create_app(
     app.router.add_post("/api/logout", logout)
     app.router.add_get("/api/me", me)
     app.router.add_get("/api/status", status)
+    app.router.add_get("/api/briefing", briefing)
     app.router.add_post("/api/session", start)
     app.router.add_post("/api/end", end)
     app.router.add_post("/api/herzschlag", heartbeat)
