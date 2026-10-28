@@ -242,7 +242,8 @@ Nachlaufzeit ohne Beacon messen. Prüfungen: 228 Tests, ruff grün.
   Bestätigung für 15 s (`022ea38`, `07cdc40`, `14390a8`; Plan von Codex geprüft;
   Integrationsreview fand fehlenden Shutdown-Schließversuch nach unbestätigtem Erstversuch,
   behoben `7cd6ae5`). Ende-Anfragen im Betriebslog mit Status (`4856dab`).
-- **Live (Referenz, Pits Stimme):** Tab schließen ohne Beacon → `herzschlag_fehlt`, Sitzung
+- **Live (Referenz, Pits Stimme; Firefox bzw. eingebetteter Editor-Browser, Chrome nicht
+  getestet):** Tab schließen ohne Beacon → `herzschlag_fehlt`, Sitzung
   33 s nach Start beendet; Tab schließen mit Beacon → `tab_geschlossen`; Wegnavigieren →
   Beacon 200, `tab_geschlossen`. Nachlauf zwischen Schließen und Ende nicht exakt gemessen
   (Schließzeitpunkt nicht protokolliert).
