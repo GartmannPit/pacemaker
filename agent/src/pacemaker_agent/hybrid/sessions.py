@@ -44,6 +44,7 @@ class _Session:
     reason: EndReason | None = None
     handle: SidebandHandle | None = None
     watcher: asyncio.Task[None] | None = None
+    heartbeat_watcher: asyncio.Task[None] | None = None
     closer: asyncio.Task[None] | None = None
     reconciler: asyncio.Task[None] | None = None
     observed_usage: UsageSummary = field(default_factory=_unknown_usage)
@@ -51,6 +52,7 @@ class _Session:
     finish_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     initializing: bool = False
     deadline: float = 0
+    last_seen: float = 0
 
 
 class SessionRegistry:
@@ -71,6 +73,8 @@ class SessionRegistry:
         max_duration_s: float = 600,
         idle_timeout_s: float = 120,
         close_timeout_s: float = 15,
+        heartbeat_timeout_s: float = 15,
+        heartbeat_check_s: float = 1,
         unclear_retry_offsets_s: tuple[float, ...] = (0, 5, 15, 30, 60),
         unclear_deadline_s: float = 120,
         clock: Callable[[], float] = time.monotonic,
@@ -81,6 +85,9 @@ class SessionRegistry:
             or not 0 < max_duration_s <= 600
             or not 0 < idle_timeout_s
             or not 0 < close_timeout_s <= 15
+            or not math.isfinite(heartbeat_timeout_s)
+            or not math.isfinite(heartbeat_check_s)
+            or not 0 < heartbeat_check_s <= heartbeat_timeout_s
             or not math.isfinite(unclear_deadline_s)
             or unclear_deadline_s <= 0
             or not unclear_retry_offsets_s
@@ -104,6 +111,8 @@ class SessionRegistry:
         self.max_duration_s = max_duration_s
         self.idle_timeout_s = idle_timeout_s
         self.close_timeout_s = close_timeout_s
+        self.heartbeat_timeout_s = heartbeat_timeout_s
+        self.heartbeat_check_s = heartbeat_check_s
         self.unclear_retry_offsets_s = tuple(unclear_retry_offsets_s)
         self.unclear_deadline_s = unclear_deadline_s
         self._clock = clock
@@ -194,6 +203,13 @@ class SessionRegistry:
 
     async def _record(self, session: _Session, state: SessionState) -> None:
         session.state = state
+        heartbeat_watcher = session.heartbeat_watcher
+        if (
+            state != "laufend"
+            and heartbeat_watcher is not None
+            and heartbeat_watcher is not asyncio.current_task()
+        ):
+            heartbeat_watcher.cancel()
         await self.journal.append(
             "session",
             local_id=session.local_id,
@@ -298,9 +314,11 @@ class SessionRegistry:
                 await self._finish(session, await self._force_close(session), _unknown_usage())
                 raise StartFailed from None
 
+            session.last_seen = self._clock()
             await self._record(session, "laufend")
             session.initializing = False
             session.watcher = self._spawn(self._watch(session))
+            session.heartbeat_watcher = self._spawn(self._watch_heartbeat(session))
             if session.reason is not None or self._stopping:
                 await self._request_close(session, session.reason or "server_ende")
                 raise StartFailed
@@ -383,6 +401,30 @@ class SessionRegistry:
             return _unknown_usage()
 
     async def _request_close(
+        self, session: _Session, reason: EndReason, *, usage: UsageSummary | None = None
+    ) -> None:
+        async with self._lock:
+            closer = self._schedule_close(session, reason, usage=usage)
+        if closer is not None:
+            await asyncio.shield(closer)
+
+    def _schedule_close(
+        self, session: _Session, reason: EndReason, *, usage: UsageSummary | None = None
+    ) -> asyncio.Task[None] | None:
+        """Unter self._lock genau einen initialen Abschlussauftrag speichern."""
+        if usage is not None:
+            self._remember_usage(session, usage)
+        if session.state in {"beendet", "erzeugung_ungeklaert"}:
+            return None
+        session.reason = session.reason or reason
+        if session.initializing or session.provider_id is None:
+            # Ein Ende während create/attach wird nach erfolgreichem Attach beauftragt.
+            return None
+        if session.closer is None:
+            session.closer = self._spawn(self._close(session, session.reason, usage=usage))
+        return session.closer
+
+    async def _close(
         self, session: _Session, reason: EndReason, *, usage: UsageSummary | None = None
     ) -> None:
         async with session.close_lock:
@@ -540,11 +582,32 @@ class SessionRegistry:
             session = self._sessions.get(session_ref)
             if session is None or session.user_id != user_id or session.state == "beendet":
                 return False
-            if session.closer is None or session.closer.done():
-                session.closer = self._spawn(self._request_close(session, reason))
-            closer = session.closer
-        await asyncio.shield(closer)
+            closer = self._schedule_close(session, reason)
+        if closer is not None:
+            await asyncio.shield(closer)
         return True
+
+    async def heartbeat(self, user_id: str, session_ref: str) -> bool:
+        async with self._lock:
+            session = self._sessions.get(session_ref)
+            if (
+                session is None
+                or session.user_id != user_id
+                or session.state not in {"startend", "laufend"}
+            ):
+                return False
+            session.last_seen = self._clock()
+            return True
+
+    async def _watch_heartbeat(self, session: _Session) -> None:
+        while True:
+            await asyncio.sleep(self.heartbeat_check_s)
+            async with self._lock:
+                if session.state != "laufend" or self._stopping:
+                    return
+                if self._clock() - session.last_seen > self.heartbeat_timeout_s:
+                    self._schedule_close(session, "herzschlag_fehlt")
+                    return
 
     async def recover(self) -> None:
         # Provider-Wartezeiten sind abbrechbar; nur lokale Buchungen sind dauerhaft geschützt.
@@ -585,9 +648,10 @@ class SessionRegistry:
             self._stopping = True
             self._ready = False
         retries = [
-            s.reconciler
+            task
             for s in self._sessions.values()
-            if s.reconciler is not None and not s.reconciler.done()
+            for task in (s.reconciler, s.heartbeat_watcher)
+            if task is not None and task is not asyncio.current_task() and not task.done()
         ]
         if self._recovery is not None and not self._recovery.done():
             retries.append(self._recovery)

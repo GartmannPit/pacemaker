@@ -393,6 +393,7 @@ def test_close_timeout_then_force_and_retry_unconfirmed(tmp_path, force_error):
             assert budget.status().spent_micro == 0
             starter.force_error = None
             assert await registry.end("a", result.session_ref, reason="nutzer")
+            await until(lambda: not registry.snapshot())  # Die Nachbehandlung wiederholt Close.
         assert_closed(journal, budget, registry, spent=50_056, reason="nutzer")
         await registry.shutdown()
         journal.close()
@@ -1265,6 +1266,282 @@ def test_replacement_keeps_observed_usage_and_late_provider_block(tmp_path):
             assert len([r for r in journal.records if r["event"] == "budget_settle"]) == 1
         finally:
             await registry.shutdown()
+            journal.close()
+            log.close()
+
+    asyncio.run(run())
+
+
+# --- Herzschlag der Gesprächsseite -----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "options",
+    [{"heartbeat_timeout_s": value} for value in (0, -1, float("nan"), float("inf"), -float("inf"))]
+    + [
+        {"heartbeat_check_s": value}
+        for value in (0, -1, float("nan"), float("inf"), -float("inf"), 16)
+    ]
+    + [{"heartbeat_timeout_s": 0.5, "heartbeat_check_s": 1}],
+)
+def test_invalid_heartbeat_configuration(tmp_path, options):
+    with Journal(tmp_path / "state") as journal:
+        log = OpLog(tmp_path / "op.jsonl")
+        budget = Budget(journal)
+        try:
+            with pytest.raises(ValueError, match="Registerkonfiguration"):
+                SessionRegistry(budget, FakeStarter(journal), journal, log, **options)
+        finally:
+            log.close()
+
+
+def test_heartbeat_deadline_commissions_close_within_timeout_and_check(tmp_path, monkeypatch):
+    async def run():
+        journal, log, budget, starter, registry = make(
+            tmp_path, heartbeat_timeout_s=0.075, heartbeat_check_s=0.02
+        )
+        commissioned = []
+        schedule = registry._schedule_close
+
+        def track(session, reason, **kwargs):
+            commissioned.append((registry._clock() - session.last_seen, reason))
+            return schedule(session, reason, **kwargs)
+
+        monkeypatch.setattr(registry, "_schedule_close", track)
+        try:
+            await registry.recover()
+            result = await registry.start("user", "SDP", None)
+            session = registry._sessions[result.session_ref]
+            await until(lambda: not registry.snapshot())
+            assert 0.075 < commissioned[0][0] <= 0.095
+            assert commissioned[0][1] == "herzschlag_fehlt"
+            assert starter.handles[0].close_calls == ["herzschlag_fehlt"]
+            assert_closed(journal, budget, registry, spent=50_056, reason="herzschlag_fehlt")
+            assert session.heartbeat_watcher.done()
+            assert len([r for r in journal.records if r["event"] == "budget_settle"]) == 1
+            assert any(r.get("reason") == "herzschlag_fehlt" for r in read_rows(log.path))
+        finally:
+            await registry.shutdown()
+            assert not registry._tasks
+            journal.close()
+            log.close()
+
+    asyncio.run(run())
+
+
+def test_regular_heartbeat_extends_deadline_and_exact_boundary_does_not_expire(tmp_path):
+    async def run():
+        now = 100.0
+        journal, log, budget, starter, registry = make(
+            tmp_path, clock=lambda: now, heartbeat_timeout_s=10, heartbeat_check_s=0.003
+        )
+        try:
+            await registry.recover()
+            result = await registry.start("user", "SDP", None)
+            session = registry._sessions[result.session_ref]
+            assert session.last_seen == now
+            for now in (109.0, 118.0, 127.0, 136.0):
+                assert await registry.heartbeat("user", result.session_ref)
+                assert session.last_seen == now
+                await asyncio.sleep(0.012)  # Mehrere Prüftakte je Herzschlag.
+                assert session.state == "laufend"
+                assert session.closer is None
+                assert starter.handles[0].close_calls == []
+            now = 146.0  # Exakt die Frist seit dem letzten angenommenen Herzschlag.
+            await asyncio.sleep(0.012)
+            assert session.state == "laufend" and session.closer is None
+            now = 147.0
+            await until(lambda: not registry.snapshot())
+            assert_closed(journal, budget, registry, reason="herzschlag_fehlt")
+        finally:
+            await registry.shutdown()
+            journal.close()
+            log.close()
+
+    asyncio.run(run())
+
+
+def test_heartbeat_during_start_is_volatile_and_running_resets_last_seen(tmp_path):
+    async def run():
+        now = 100.0
+        journal, log, budget, starter, registry = make(tmp_path, clock=lambda: now)
+        starter.create_gate.clear()
+        try:
+            await registry.recover()
+            start = asyncio.create_task(registry.start("user", "SDP", None))
+            await until(lambda: starter.calls)
+            session = next(iter(registry._sessions.values()))
+            before = (list(journal.records), log.path.read_text())
+            now = 110.0
+            assert await registry.heartbeat("user", session.local_id)
+            assert session.last_seen == now
+            assert (journal.records, log.path.read_text()) == before
+            now = 120.0
+            starter.create_gate.set()
+            await start
+            assert session.last_seen == now
+            before = (list(journal.records), log.path.read_text())
+            now = 121.0
+            assert await registry.heartbeat("user", session.local_id)
+            assert session.last_seen == now
+            assert (journal.records, log.path.read_text()) == before
+        finally:
+            starter.create_gate.set()
+            await registry.shutdown()
+            journal.close()
+            log.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "state",
+    ["startend", "laufend", "endend", "abschluss_ungeklaert", "erzeugung_ungeklaert", "beendet"],
+)
+def test_rejected_heartbeat_has_no_effect(tmp_path, state):
+    async def run():
+        now = 100.0
+        journal, log, budget, starter, registry = make(tmp_path, clock=lambda: now)
+        try:
+            await registry.recover()
+            result = await registry.start("user", "SDP", None)
+            session = registry._sessions[result.session_ref]
+            session.state = state  # Vertrag für alle Zustände unabhängig von Provider-Fehlern.
+            before = (session.last_seen, list(journal.records), log.path.read_text())
+            now = 105.0
+            assert not await registry.heartbeat("other", result.session_ref)
+            assert not await registry.heartbeat("user", "unbekannt")
+            if state not in {"startend", "laufend"}:
+                assert not await registry.heartbeat("user", result.session_ref)
+            assert (session.last_seen, journal.records, log.path.read_text()) == before
+            assert session.closer is None
+            assert starter.handles[0].close_calls == []
+        finally:
+            session.state = "laufend"
+            await registry.shutdown()
+            journal.close()
+            log.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("first", ["heartbeat", "end"])
+@pytest.mark.parametrize("mode", ["confirmed", "hanging", "unconfirmed"])
+def test_heartbeat_and_end_share_initial_close_and_reconciler(tmp_path, monkeypatch, first, mode):
+    async def run():
+        now = 100.0
+        journal, log, budget, starter, registry = make(
+            tmp_path,
+            clock=lambda: now,
+            heartbeat_timeout_s=10,
+            heartbeat_check_s=0.003,
+            close_timeout_s=0.02,
+            unclear_retry_offsets_s=(0,),
+            unclear_deadline_s=0.04,
+        )
+        spawned = []
+        spawn = registry._spawn
+
+        def track(operation):
+            task = spawn(operation)
+            spawned.append((operation.cr_code.co_name, task))
+            return task
+
+        monkeypatch.setattr(registry, "_spawn", track)
+        try:
+            await registry.recover()
+            result = await registry.start("user", "SDP", None)
+            session = registry._sessions[result.session_ref]
+            handle = starter.handles[0]
+            handle.close_gate.clear()  # Der zweite Auslöser trifft einen offenen Auftrag.
+            handle.close_confirmed = mode == "confirmed"
+            starter.force_confirmed = mode == "confirmed"
+            if first == "heartbeat":
+                now = 111.0
+                await until(lambda: handle.close_calls)
+            else:
+                # Beide Auslöser laufen los, während die Registersperre noch gehalten wird.
+                async with registry._lock:
+                    ending = asyncio.create_task(
+                        registry.end("user", result.session_ref, reason="nutzer")
+                    )
+                    await asyncio.sleep(0)
+                    now = 111.0
+                    await asyncio.sleep(0.006)
+            endings = [
+                asyncio.create_task(registry.end("user", result.session_ref, reason="nutzer"))
+                for _ in range(8)
+            ]
+            if first == "end":
+                endings.append(ending)
+            await until(lambda: handle.close_calls)
+            closer = session.closer
+            if mode != "hanging":
+                handle.close_gate.set()
+            assert all(await asyncio.gather(*endings))
+            assert session.closer is closer
+            assert len(handle.close_calls) == 1
+            assert len([t for name, t in spawned if name == "_close"]) == 1
+            assert session.heartbeat_watcher.done()
+            if mode != "confirmed":
+                await until(lambda: session.reconciler is not None)
+                # Auch ein erneutes end() nach dem initialen Fehlversuch startet keinen Close.
+                assert await registry.end("user", result.session_ref, reason="nutzer")
+                assert session.closer is closer
+                assert len([t for name, t in spawned if name == "_reconcile"]) == 1
+                now += 1  # Die bestehende Nachbehandlung darf ihren Ersatzabschluss buchen.
+            await until(lambda: not registry.snapshot())
+            assert_closed(
+                journal,
+                budget,
+                registry,
+                spent=50_056 if mode == "confirmed" else 550_000,
+                reason="herzschlag_fehlt" if first == "heartbeat" else "nutzer",
+            )
+            bookings = [r for r in journal.records if r["event"] == "budget_settle"]
+            assert len(bookings) == 1
+            assert bool(bookings[0].get("unconfirmed")) == (mode != "confirmed")
+            assert sum(c[0] == "force" for c in starter.calls) == (0 if mode == "confirmed" else 2)
+        finally:
+            await registry.shutdown()
+            assert all(task.done() for _, task in spawned)
+            assert not registry._tasks
+            journal.close()
+            log.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("trigger", ["end", "remote", "deadline", "shutdown"])
+def test_heartbeat_task_cleanup_when_leaving_running(tmp_path, trigger):
+    async def run():
+        journal, log, budget, starter, registry = make(
+            tmp_path, max_duration_s=0.04 if trigger == "deadline" else 600
+        )
+        try:
+            await registry.recover()
+            result = await registry.start("user", "SDP", None)
+            session = registry._sessions[result.session_ref]
+            heartbeat = session.heartbeat_watcher
+            await asyncio.sleep(0)
+            assert not heartbeat.done()
+            if trigger == "end":
+                await registry.end("user", result.session_ref, reason="nutzer")
+            elif trigger == "remote":
+                starter.handles[0].finish("inaktiv")
+            elif trigger == "shutdown":
+                starter.handles[0].close_gate.clear()
+                stop = asyncio.create_task(registry.shutdown())
+                await until(lambda: starter.handles[0].close_calls)
+                assert heartbeat.done()  # Vor dem möglicherweise hängenden Close abgewartet.
+                starter.handles[0].close_gate.set()
+                await stop
+            await until(lambda: not registry.snapshot())
+            await until(heartbeat.done)
+            assert not await registry.heartbeat("user", result.session_ref)
+        finally:
+            await registry.shutdown()
+            assert not registry._tasks
             journal.close()
             log.close()
 

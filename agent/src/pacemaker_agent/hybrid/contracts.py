@@ -16,6 +16,7 @@ EndReason = Literal[
     "inaktiv",
     "tab_geschlossen",
     "verbindung_verloren",
+    "herzschlag_fehlt",
     "sideband_abbruch",
     "attach_fehler",
     "server_ende",
