@@ -48,6 +48,7 @@ class LiveSettings:
     backend_model: str
     prompt: str
     hangup_tool: dict
+    greeting: str = ""  # Begrüßung über session.commentary.append (Schritt 2b)
 
     def __post_init__(self) -> None:
         if self.region not in LIVE_REGIONS:
@@ -180,6 +181,7 @@ class LiveStarter:
             deadline_s=deadline_s,
             idle_timeout_s=idle_timeout_s,
             hangup_tool_name=self._s.hangup_tool["name"],
+            greeting=self._s.greeting,
         )
 
     async def force_close(self, provider_id: str) -> CloseOutcome:

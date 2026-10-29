@@ -155,6 +155,12 @@ class SidebandHandle(Protocol):
 
     def provider_blocked(self) -> bool: ...  # Guthaben-/Quota-Fehler während der Sitzung
 
+    async def greet(self) -> bool: ...  # initiale Begrüßung (Schritt 2b); False bei Sendefehler
+
+    def greeting_audio_ms(self) -> int | None: ...  # Begrüßung bis erstes hörbares Audio
+
+    def greeting_rejected(self) -> bool: ...  # Provider lehnte die Begrüßung nach dem Senden ab
+
 
 class Starter(Protocol):
     """Provider-Seite (live.py); in Tests durch eine Attrappe ersetzt."""

@@ -95,6 +95,13 @@ class PersonaState:
 # Werkzeug zum Gespraechsende (2026-10-08): Ohne es verabschiedete sich die Persona und
 # redete im naechsten Turn weiter (Pits Probelaeufe, Summary §15.4). Der Abschied steckt im
 # Argument, damit er sicher gesprochen wird, bevor das Gespraech endet (pipeline.py).
+# Hybrid-Pfad (Schritt 2b): Der Server lässt Brandt den Anruf annehmen, sobald der Browser
+# empfangsbereit ist (session.commentary.append; Vorab-Probe V1). Wortlaut vorläufig.
+GREETING_COMMENTARY = (
+    "Dein Telefon klingelt gerade, und du nimmst den Anruf an. Melde dich jetzt knapp, wie am "
+    "Telefon üblich, nur mit deinem Nachnamen, etwa: 'Brandt, ja?' Keine Begrüßungsrede."
+)
+
 HANGUP_TOOL_NAME = "auflegen"
 HANGUP_TOOL = {
     "name": HANGUP_TOOL_NAME,

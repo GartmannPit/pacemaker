@@ -49,6 +49,28 @@ BRANDT: dict[str, Any] = {
 }
 
 
+# Auswahl auf der Startseite (Schritt 2b); weitere Frameworks werden verfügbar, sobald die
+# Charakterkarte Werte dafür hat (Schritt 3).
+FRAMEWORKS: list[dict[str, Any]] = [
+    {"id": "bant", "name": "BANT", "verfuegbar": True},
+    {"id": "meddic", "name": "MEDDIC", "verfuegbar": False},
+    {"id": "spiced", "name": "SPICED", "verfuegbar": False},
+]
+VERFUEGBARE_FRAMEWORKS = frozenset(f["id"] for f in FRAMEWORKS if f["verfuegbar"])
+
+# Wortlaut vorläufig (Vorschlag Claude, Freigabe Pit offen; Plan 2b §8).
+AUFGABEN = [
+    "Vereinbaren Sie einen Termin für ein Folgegespräch.",
+    "Klären Sie die Kriterien des Frameworks.",
+]
+
+
 def briefing(max_duration_s: float) -> dict[str, Any]:
     """Briefing für das nächste Gespräch; nur öffentliche Angaben."""
-    return {**BRANDT, "framework": BANT, "max_dauer_s": int(max_duration_s)}
+    return {
+        **BRANDT,
+        "framework": BANT,
+        "frameworks": FRAMEWORKS,
+        "aufgaben": AUFGABEN,
+        "max_dauer_s": int(max_duration_s),
+    }

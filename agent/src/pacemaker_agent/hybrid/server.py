@@ -17,7 +17,7 @@ import aiohttp
 from aiohttp import web
 from dotenv import load_dotenv
 
-from ..personas.kaltakquise_head_of_ops import HANGUP_TOOL, system_prompt
+from ..personas.kaltakquise_head_of_ops import GREETING_COMMENTARY, HANGUP_TOOL, system_prompt
 from .app import AppConfig, check_web_dist, create_app
 from .auth import Auth, UserFile
 from .budget import Budget
@@ -73,6 +73,7 @@ def load_config() -> ServerConfig:
             backend_model=os.environ.get("OPENAI_LIVE_BACKEND_MODEL", "gpt-4.1-mini"),
             prompt=system_prompt(short_opener=False),
             hangup_tool=HANGUP_TOOL,
+            greeting=GREETING_COMMENTARY,
         )
     except ValueError as exc:
         raise SystemExit(f"{exc} (erlaubt: eu, referenz).") from exc
@@ -123,6 +124,12 @@ def build(cfg: ServerConfig) -> web.Application:
 
         async def heartbeat(self, user_id, session_ref):
             return await registry().heartbeat(user_id, session_ref)
+
+        async def greet(self, user_id, session_ref):
+            return await registry().greet(user_id, session_ref)
+
+        async def claim_measurement(self, user_id, session_ref):
+            return await registry().claim_measurement(user_id, session_ref)
 
     app = create_app(
         auth=auth,

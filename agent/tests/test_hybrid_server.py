@@ -265,6 +265,7 @@ async def attached(monkeypatch, ws: FakeWS, **kwargs) -> sideband.HybridSideband
         deadline_s=kwargs.get("deadline_s", 30),
         idle_timeout_s=kwargs.get("idle_timeout_s", 30),
         hangup_tool_name="auflegen",
+        greeting=kwargs.get("greeting", ""),
     )
 
 
@@ -411,6 +412,17 @@ class FakeRegistry:
         if session_ref != "R" * 32:
             return None
         return HeartbeatStatus(state=self.beat_state, reason=self.beat_reason)
+
+    async def greet(self, user_id, session_ref):
+        self.greeted = getattr(self, "greeted", []) + [(user_id, session_ref)]
+        return session_ref == "R" * 32
+
+    async def claim_measurement(self, user_id, session_ref):
+        if session_ref != "R" * 32:
+            return None
+        first = not getattr(self, "measured", False)
+        self.measured = True
+        return first
 
 
 class FakeOpLog:
@@ -592,6 +604,13 @@ def test_app_briefing_is_public_only(tmp_path) -> None:
             assert r.status == 200 and body["framework"]["name"] == "BANT"
             assert [k["key"] for k in body["framework"]["kriterien"]] == ["B", "A", "N", "T"]
             assert body["max_dauer_s"] == 600 and r.headers["Cache-Control"] == "no-store"
+            # Schritt 2b §4: Auswahl und Aufgaben; nur BANT verfügbar
+            assert [(f["id"], f["verfuegbar"]) for f in body["frameworks"]] == [
+                ("bant", True),
+                ("meddic", False),
+                ("spiced", False),
+            ]
+            assert body["aufgaben"] and all(isinstance(a, str) for a in body["aufgaben"])
             # Werte der Charakterkarte erreichen den Browser nicht vorab (§10)
             text = json.dumps(body, ensure_ascii=False)
             for verdeckt in ("15.000", "Geschäftsführer", "neun Monate", "WhatsApp", "Excel"):
@@ -968,5 +987,169 @@ def test_server_reports_background_recovery_failure_without_exception_text(tmp_p
         rows = [json.loads(line) for line in text.splitlines()]
         assert sum(r["event"] == "wiederanlauf_fehlgeschlagen" for r in rows) == 1
         assert "GEHEIMER" not in text and "RuntimeError" not in text
+
+    asyncio.run(run())
+
+
+def test_sideband_greeting_uses_commentary_and_measures_first_audio(monkeypatch) -> None:
+    # Schritt 2b, Nachtrag V1: session.commentary.append, kein response.create.
+    async def run() -> None:
+        ws = FakeWS()
+        sb = await attached(monkeypatch, ws, greeting="Melde dich knapp.")
+        assert sb.greeting_audio_ms() is None
+        ws.feed({"type": "session.output_audio.delta", "delta": AUDIO})  # vor der Begrüßung
+        await asyncio.sleep(0.05)
+        assert sb.greeting_audio_ms() is None
+        assert await sb.greet()
+        sent = types_sent(ws, "session.commentary.append")
+        assert len(sent) == 1 and sent[0]["content"] == "Melde dich knapp."
+        assert "delegation_id" in sent[0] and sent[0]["delegation_id"] is None
+        assert not types_sent(ws, "response.create")
+        still = base64.b64encode(bytes(480)).decode()
+        ws.feed({"type": "session.output_audio.delta", "delta": still})
+        await asyncio.sleep(0.05)
+        assert sb.greeting_audio_ms() is None  # Stille zählt nicht
+        ws.feed({"type": "session.output_audio.delta", "delta": AUDIO})
+        await asyncio.sleep(0.05)
+        first = sb.greeting_audio_ms()
+        assert isinstance(first, int) and first >= 0
+        ws.feed({"type": "session.output_audio.delta", "delta": AUDIO})
+        await asyncio.sleep(0.05)
+        assert sb.greeting_audio_ms() == first  # erstes Audio bleibt
+        assert not sb.greeting_rejected()
+        ws.feed({"type": "error", "error": {"code": "x", "client_event_id": "andere"}})
+        await asyncio.sleep(0.05)
+        assert not sb.greeting_rejected()
+        ws.feed({"type": "error", "error": {"code": "x", "client_event_id": sent[0]["event_id"]}})
+        await asyncio.sleep(0.05)
+        assert sb.greeting_rejected()  # Codex-Review: asynchrone Ablehnung erkannt
+        await sb.close(reason="nutzer")
+        assert not await sb.greet()  # nach dem Ende nichts mehr senden
+        assert len(types_sent(ws, "session.commentary.append")) == 1
+
+    asyncio.run(run())
+
+
+def test_sideband_greeting_without_text_or_on_send_error(monkeypatch) -> None:
+    async def run() -> None:
+        ws = FakeWS()
+        sb = await attached(monkeypatch, ws)
+        assert not await sb.greet()  # kein Begrüßungstext konfiguriert
+        assert not types_sent(ws, "session.commentary.append")
+        ws2 = FakeWS()
+        sb2 = await attached(monkeypatch, ws2, greeting="x")
+
+        async def broken(_raw: str) -> None:
+            raise ConnectionError("weg")
+
+        ws2.send = broken
+        assert not await sb2.greet()
+        ws.feed(None)
+        ws2.feed(None)
+        await sb.wait_closed()
+        await sb2.wait_closed()
+
+    asyncio.run(run())
+
+
+def test_app_framework_choice_greeting_and_measurement(tmp_path) -> None:
+    # Schritt 2b §4/§5, B4, B5, B8
+    async def run() -> None:
+        registry, oplog = FakeRegistry(), FakeOpLog()
+        client = await client_for(tmp_path, registry, oplog)
+        h = {"Origin": ORIGIN}
+        ref = {"session_ref": "R" * 32}
+        messung = {
+            "status": "ok",
+            "c_bis_audio_ms": 2400,
+            "bereit_bis_audio_ms": 1200,
+            "c_bis_transkript_ms": None,
+        }
+        try:
+            r = await client.post("/api/session/bereit", json=ref, headers=h)
+            assert r.status == 401
+            r = await client.post(
+                "/api/login", json={"name": "pit", "passwort": "ein-langes-passwort"}, headers=h
+            )
+            assert r.status == 200
+            # framework_id: fehlend → bant, gültig, nicht verfügbar, unbekannt, falscher Typ
+            for body, status in (
+                ({"sdp": "O"}, 200),
+                ({"sdp": "O", "framework_id": "bant"}, 200),
+                ({"sdp": "O", "framework_id": "meddic"}, 400),
+                ({"sdp": "O", "framework_id": "xyz"}, 400),
+                ({"sdp": "O", "framework_id": 1}, 400),
+                ({"sdp": "O", "framework_id": []}, 400),
+                ({"sdp": "O", "framework_id": {}}, 400),
+                ({"sdp": "O", "framework_id": None}, 400),
+                ({"sdp": "O", "framework_id": "bant", "debug": True}, 400),
+                ({"framework_id": "bant"}, 400),
+            ):
+                r = await client.post("/api/session", json=body, headers=h)
+                assert r.status == status, body
+            assert len(registry.started) == 2  # Abweisungen ohne Start/Provider-Aufruf
+            # bereit: Origin Pflicht, eigene Sitzung, Schema
+            r = await client.post("/api/session/bereit", json=ref)
+            assert r.status == 403
+            r = await client.post("/api/session/bereit", json=ref, headers=h)
+            assert r.status == 200 and await r.json() == {}
+            r = await client.post("/api/session/bereit", json={"session_ref": "F" * 32}, headers=h)
+            assert r.status == 404
+            r = await client.post("/api/session/bereit", json={**ref, "x": 1}, headers=h)
+            assert r.status == 400
+            # messung: Schema streng, erste zählt, fremd → 404
+            for falsch in (
+                {**messung, "extra": 1},
+                {k: v for k, v in messung.items() if k != "c_bis_transkript_ms"},
+                {**messung, "status": "gut"},
+                {**messung, "status": []},
+                {**messung, "status": {}},
+                {**messung, "c_bis_audio_ms": -1},
+                {**messung, "c_bis_audio_ms": 600_001},
+                {**messung, "c_bis_audio_ms": 1.5},
+                {**messung, "c_bis_audio_ms": True},
+                {**messung, "c_bis_audio_ms": "1"},
+            ):
+                r = await client.post(
+                    "/api/session/messung", json={**ref, "messung": falsch}, headers=h
+                )
+                assert r.status == 400, falsch
+            r = await client.post("/api/session/messung", json={**ref, "messung": messung})
+            assert r.status == 403
+            r = await client.post(
+                "/api/session/messung",
+                json={"session_ref": "F" * 32, "messung": messung},
+                headers=h,
+            )
+            assert r.status == 404
+            for _ in range(2):
+                r = await client.post(
+                    "/api/session/messung", json={**ref, "messung": messung}, headers=h
+                )
+                assert r.status == 200
+            logged = [f for e, f in oplog.rows if e == "anruf_messung"]
+            assert logged == [
+                {
+                    "session_ref": "R" * 32,
+                    "messstatus": "ok",
+                    "c_bis_audio_ms": 2400,
+                    "bereit_bis_audio_ms": 1200,
+                }
+            ]
+            # Ende mit Abbruchmessung: ungültige Messung blockiert das Ende nie
+            registry.measured = False
+            for kaputt in ({"status": "abbruch"}, {**messung, "status": []}, [], "x"):
+                r = await client.post("/api/end", json={**ref, "messung": kaputt}, headers=h)
+                assert r.status == 200 and registry.ended[-1][2] == "nutzer"  # Ende geht immer
+            assert len([e for e, _ in oplog.rows if e == "anruf_messung"]) == 1
+            abbruch = {**messung, "status": "abbruch", "c_bis_audio_ms": None}
+            r = await client.post("/api/end", json={**ref, "messung": abbruch}, headers=h)
+            assert r.status == 200
+            assert [f["messstatus"] for e, f in oplog.rows if e == "anruf_messung"] == [
+                "ok",
+                "abbruch",
+            ]
+        finally:
+            await client.close()
 
     asyncio.run(run())
