@@ -13,7 +13,8 @@ void test("Briefing-JSON bildet öffentliche Angaben und beliebige Kriterien ohn
     "framework":{"id":"test","name":"Test-Framework","quelle":"Ihr Team",
       "kriterien":[{"key":"X","label":"Anforderung","leitfrage":"Was brauchen Sie?"},
         {"key":"Y","label":"Verfahren","leitfrage":"Wie entscheiden Sie?"}]},
-    "max_dauer_s":450
+    "frameworks":[{"id":"test","name":"Test-Framework","verfuegbar":true}],
+    "aufgaben":["Bedarf verstehen"], "max_dauer_s":450
   }`) as Briefing;
   const vorher = JSON.stringify(daten);
   const modell = briefingModell(daten);
@@ -64,4 +65,14 @@ void test("Notizen werden nur lokal je Schlüssel gehalten und vollständig verw
   notizen.leeren();
   assert.equal(notizen.lesen("X"), "");
   assert.equal(notizen.lesen("Y"), "");
+});
+
+void test("Scoreboard zählt ausschließlich ausgefüllte Kriterien, keine Leerzeichen oder fremde Schlüssel", () => {
+  const notizen = new Notizen();
+  notizen.setzen("B", "Synthetischer Betrag");
+  notizen.setzen("A", "  ");
+  notizen.setzen("fremd", "Zählt nicht");
+  assert.equal(notizen.ausgefuellt(["B", "A", "N", "T"]), 1);
+  notizen.leeren();
+  assert.equal(notizen.ausgefuellt(["B", "A", "N", "T"]), 0);
 });

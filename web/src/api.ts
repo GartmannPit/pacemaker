@@ -23,6 +23,8 @@ export interface FrameworkKriterium {
   leitfrage: string;
 }
 export interface Briefing {
+  frameworks: { id: string; name: string; verfuegbar: boolean }[];
+  aufgaben: string[];
   persona: {
     name: string;
     rolle: string;
@@ -63,11 +65,18 @@ export interface Auswertung {
 // (sideband.ATTACH_TIMEOUT_S); ein früherer Abbruch würde einen gültigen Start verwerfen.
 const START_ZEITLIMIT_MS = 50000;
 
-export function sitzungStarten(sdp: string): Promise<StartAntwort> {
-  return api<StartAntwort>("/api/session", { sdp }, START_ZEITLIMIT_MS);
+export interface Messung {
+  status: "ok" | "frist" | "abbruch" | "fehler";
+  c_bis_audio_ms: number | null;
+  bereit_bis_audio_ms: number | null;
+  c_bis_transkript_ms: number | null;
 }
-export function sitzungBeenden(session_ref: string): Promise<unknown> {
-  return api("/api/end", { session_ref });
+
+export function sitzungStarten(sdp: string, framework_id: string): Promise<StartAntwort> {
+  return api<StartAntwort>("/api/session", { sdp, framework_id }, START_ZEITLIMIT_MS);
+}
+export function sitzungBeenden(session_ref: string, messung?: Messung): Promise<unknown> {
+  return api("/api/end", { session_ref, ...(messung ? { messung } : {}) });
 }
 
 export async function api<T>(pfad: string, daten?: object, zeitlimit = 10000): Promise<T> {

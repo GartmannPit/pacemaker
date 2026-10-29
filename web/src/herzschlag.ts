@@ -4,7 +4,7 @@ export interface Uhr {
 }
 
 export const systemUhr: Uhr = {
-  jetzt: () => Date.now(),
+  jetzt: () => performance.now(),
   setzen(aufgabe, ms) {
     const timer = setTimeout(aufgabe, ms);
     return () => {
@@ -26,34 +26,39 @@ export type EndeGrund =
   | "server_ende"
   | "wiederanlauf";
 
+export function serverGrund(wert: unknown): EndeGrund | "unbekannt" {
+  return typeof wert === "string" && ENDGRUENDE.includes(wert as EndeGrund)
+    ? (wert as EndeGrund)
+    : "unbekannt";
+}
+export const ENDGRUENDE: readonly EndeGrund[] = [
+  "nutzer",
+  "auflegen",
+  "zeitlimit",
+  "inaktiv",
+  "tab_geschlossen",
+  "verbindung_verloren",
+  "herzschlag_fehlt",
+  "sideband_abbruch",
+  "attach_fehler",
+  "server_ende",
+  "wiederanlauf",
+];
+
 export interface HerzAntwort {
   zustand: "laufend" | "endend" | "beendet";
-  grund: EndeGrund | null;
+  grund: string | null;
 }
 
 export type HerzEnde =
-  { art: "ende"; grund: EndeGrund | null } | { art: "anmeldung" } | { art: "frist" };
+  { art: "ende"; grund: EndeGrund | "unbekannt" | null } | { art: "anmeldung" } | { art: "frist" };
 
 export function istHerzAntwort(wert: unknown): wert is HerzAntwort {
   if (!wert || typeof wert !== "object") return false;
   if (!("zustand" in wert) || !("grund" in wert)) return false;
   return (
     ["laufend", "endend", "beendet"].includes(String(wert.zustand)) &&
-    (wert.grund === null ||
-      (typeof wert.grund === "string" &&
-        [
-          "nutzer",
-          "auflegen",
-          "zeitlimit",
-          "inaktiv",
-          "tab_geschlossen",
-          "verbindung_verloren",
-          "herzschlag_fehlt",
-          "sideband_abbruch",
-          "attach_fehler",
-          "server_ende",
-          "wiederanlauf",
-        ].includes(wert.grund)))
+    (wert.grund === null || typeof wert.grund === "string")
   );
 }
 
@@ -125,7 +130,11 @@ export function herzschlagStarten(
         if (uhr.jetzt() - bestaetigt >= 15000) {
           abschliessen({ art: "frist" });
         } else if (istHerzAntwort(daten)) {
-          if (daten.zustand !== "laufend") abschliessen({ art: "ende", grund: daten.grund });
+          if (daten.zustand !== "laufend")
+            abschliessen({
+              art: "ende",
+              grund: daten.grund === null ? null : serverGrund(daten.grund),
+            });
           else {
             bestaetigt = uhr.jetzt();
             fristPlanen();

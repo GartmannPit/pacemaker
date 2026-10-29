@@ -3,6 +3,7 @@ import { api, ApiFehler, fehlermeldung, sitzungStarten, sitzungBeenden } from ".
 import type { Briefing, Kontingent } from "./api.ts";
 import { Ansicht, element } from "./ansicht.ts";
 import { browserVerbindung, Gespraech, herzschlagStarten, systemUhr } from "./gespraech.ts";
+import { anrufAudioStarten } from "./anruf-audio.ts";
 import { PEGEL_AKTIV, pegelStarten } from "./pegel.ts";
 import type { Pegel } from "./pegel.ts";
 
@@ -13,13 +14,6 @@ let revision = 0;
 let ladeRevision = 0;
 let pegel: Pegel | null = null;
 let pegelEin = PEGEL_AKTIV && new URLSearchParams(location.search).get("pegel") !== "0";
-let tonRevision = 0;
-let tonGesperrt = false;
-
-function tonBlockiert(blockiert: boolean) {
-  tonGesperrt = blockiert;
-  element("ton").hidden = !blockiert;
-}
 function pegelKnopf() {
   element("pegel-schalter").setAttribute("aria-pressed", String(pegelEin));
   element("pegel-schalter").textContent = pegelEin
@@ -30,8 +24,6 @@ function anmeldung(meldung: string) {
   revision++;
   benutzer = "";
   gespraech.abmelden();
-  tonRevision++;
-  tonBlockiert(false);
   pegel = null;
   element<HTMLInputElement>("passwort").value = "";
   element("anmeldefehler").hidden = true;
@@ -40,46 +32,49 @@ function anmeldung(meldung: string) {
 }
 const gespraech = new Gespraech<MediaStream>({
   uhr: systemUhr,
-  analyse() {
-    tonRevision++;
-    tonBlockiert(false);
+  analyse(erkannt, aenderung) {
     pegelEin = PEGEL_AKTIV && new URLSearchParams(location.search).get("pegel") !== "0";
-    element<HTMLButtonElement>("pegel-schalter").disabled = !pegelEin;
     pegelKnopf();
-    pegel = pegelStarten(
-      element<HTMLCanvasElement>("ringe"),
-      (e, b) => {
-        ansicht.pegel(e, b);
-      },
-      (aktiv) => {
-        element("pegel-status").textContent = aktiv
-          ? "Eigener Mikrofonpegel aktiv"
-          : "Pegelanzeige nicht aktiv; das Gespräch ist davon unabhängig.";
-      },
-    );
-    return pegel;
+    return anrufAudioStarten(erkannt, aenderung, (context) => {
+      pegel = pegelStarten(
+        element<HTMLCanvasElement>("ringe"),
+        (e, b) => {
+          ansicht.pegel(e, b);
+        },
+        (aktiv) => {
+          element("pegel-status").textContent = aktiv
+            ? "Pegelanzeige aktiv"
+            : "Pegelanzeige nicht aktiv; das Gespräch ist davon unabhängig.";
+        },
+        context,
+      );
+      return pegel;
+    });
   },
   mikrofon: () => navigator.mediaDevices.getUserMedia({ audio: true }),
-  peer: (stream, analyse, callbacks) =>
-    browserVerbindung(stream, analyse, audio, { ...callbacks, tonBlockiert }),
+  peer: (stream, analyse, callbacks) => browserVerbindung(stream, analyse, audio, callbacks),
   starten: sitzungStarten,
   beenden: sitzungBeenden,
+  bereit: (session_ref) => api("/api/session/bereit", { session_ref }),
+  messung: (session_ref, messung) => api("/api/session/messung", { session_ref, messung }),
   personaName: () => ansicht.gegenueber(),
   herz: (ref, ende) => herzschlagStarten(ref, ende),
-  beacon: (ref) => {
+  beacon: (ref, messung) => {
     navigator.sendBeacon(
       "/api/end",
-      new Blob([JSON.stringify({ session_ref: ref, grund: "tab" })], { type: "application/json" }),
+      new Blob(
+        [JSON.stringify({ session_ref: ref, grund: "tab", ...(messung ? { messung } : {}) })],
+        { type: "application/json" },
+      ),
     );
   },
   zustand(wert) {
     ansicht.aktualisieren(wert);
-    if (wert.phase === "gespraech") element("ton").hidden = !tonGesperrt;
-    if (wert.phase === "beendet") {
-      tonRevision++;
-      tonBlockiert(false);
-      pegel = null;
-    }
+    if (["bereit", "ausfuellen"].includes(wert.phase)) pegel = null;
+    if (wert.phase === "bereit" && benutzer) void statusLaden(false);
+  },
+  ansage: (text) => {
+    ansicht.ansage(text);
   },
   transkript: (rolle, delta) => {
     ansicht.transkript(rolle, delta);
@@ -90,7 +85,7 @@ const gespraech = new Gespraech<MediaStream>({
   abgemeldet: anmeldung,
 });
 
-async function statusLaden() {
+async function statusLaden(briefingLaden = true) {
   const aktuell = revision;
   const ladung = ++ladeRevision;
   element<HTMLButtonElement>("start").disabled = true;
@@ -98,16 +93,25 @@ async function statusLaden() {
   try {
     const [status, briefing] = await Promise.all([
       api<Kontingent>("/api/status"),
-      api<Briefing>("/api/briefing"),
+      briefingLaden ? api<Briefing>("/api/briefing") : Promise.resolve(null),
     ]);
     if (aktuell !== revision || ladung !== ladeRevision || !benutzer) return;
-    ansicht.briefing(briefing);
-    ansicht.status("Ihr Briefing ist bereit.");
+    if (briefing) {
+      ansicht.briefing(briefing);
+      ansicht.status("Ihr Briefing ist bereit.");
+    }
     element("kontingent").hidden = !status.kontingent_knapp && !status.gesperrt;
     element("kontingent").textContent = status.gesperrt
       ? "Das Übungskontingent ist aufgebraucht. Es kann zurzeit kein Gespräch gestartet werden."
       : "Das Übungskontingent ist bald aufgebraucht.";
-    element<HTMLButtonElement>("start").disabled = status.gesperrt;
+    element<HTMLButtonElement>("start").disabled = status.gesperrt || !ansicht.framework();
+    if (
+      !element("bereit").hidden &&
+      (document.activeElement === document.body ||
+        document.activeElement?.closest("[hidden], [inert]"))
+    ) {
+      element(status.gesperrt ? "bereit-titel" : "start").focus();
+    }
     element("status-neu").hidden = !status.gesperrt;
   } catch (fehler) {
     if (aktuell !== revision || ladung !== ladeRevision) return;
@@ -175,13 +179,24 @@ element("abmelden").addEventListener("click", () => {
     });
 });
 element("start").addEventListener("click", () => {
-  if (benutzer && !element<HTMLButtonElement>("start").disabled) void gespraech.starten();
+  const framework = ansicht.framework();
+  if (benutzer && framework && !element<HTMLButtonElement>("start").disabled)
+    void gespraech.starten(framework);
 });
-element("beenden").addEventListener("click", () => {
-  gespraech.beenden();
-});
-element("neustart").addEventListener("click", () => {
-  if (benutzer) bereit(benutzer);
+for (const id of ["beenden", "mikrofon-abbrechen", "briefing-abbrechen", "anwaehlen-abbrechen"])
+  element(id).addEventListener("click", () => {
+    gespraech.beenden();
+  });
+for (const prefix of ["briefing", "ergebnis"]) {
+  element(`${prefix}-weiter`).addEventListener("click", () => {
+    gespraech.ueberspringen();
+  });
+  element(`${prefix}-pause`).addEventListener("click", () => {
+    gespraech.pause();
+  });
+}
+element("fertig").addEventListener("click", () => {
+  gespraech.fertig();
 });
 element("status-neu").addEventListener("click", () => {
   void statusLaden();
@@ -201,24 +216,11 @@ element("pegel-schalter").addEventListener("click", () => {
   pegelKnopf();
 });
 element("ton").addEventListener("click", () => {
-  const aktuell = tonRevision;
-  void audio.play().then(
-    () => {
-      if (aktuell === tonRevision) tonBlockiert(false);
-    },
-    () => {
-      if (aktuell === tonRevision)
-        ansicht.status(
-          "Die Wiedergabe ist noch blockiert. Bitte prüfen Sie die Audiofreigabe Ihres Browsers und wählen Sie erneut „Ton aktivieren“.",
-        );
-    },
-  );
+  void gespraech.tonAktivieren();
 });
 addEventListener("pagehide", () => {
   gespraech.verlassen();
-  ansicht.stop();
   revision++;
-  tonRevision++;
   pegel = null;
 });
 // Ein aus dem Back/Forward-Cache zurückgekehrter Tab besitzt keine aktive Sitzung.

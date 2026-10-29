@@ -12,6 +12,7 @@ export function pegelStarten(
   canvas: HTMLCanvasElement,
   werte: (eigen: number, brandt: number) => void,
   verfuegbar: (aktiv: boolean) => void,
+  geteilterContext?: AudioContext,
 ): Pegel {
   let aktiv = true;
   let anzeigen = PEGEL_AKTIV && new URLSearchParams(location.search).get("pegel") !== "0";
@@ -99,7 +100,10 @@ export function pegelStarten(
     verfuegbar(false);
   }
   // Synchron im Start-Klick, vor der ersten Mikrofon-Promise.
-  if (anzeigen) {
+  if (geteilterContext) {
+    context = geteilterContext;
+    zustand();
+  } else if (anzeigen) {
     try {
       context = new AudioContext();
       context.onstatechange = zustand;
@@ -193,7 +197,7 @@ export function pegelStarten(
       remote = null;
       eigenDaten = null;
       remoteDaten = null;
-      if (context) {
+      if (context && !geteilterContext) {
         context.onstatechange = null;
         void context.close().catch(() => {});
         context = null;

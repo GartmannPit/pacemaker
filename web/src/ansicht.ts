@@ -1,3 +1,4 @@
+import { abschlussText } from "./gespraech.ts";
 import type { Phase, Rolle, Zustand } from "./gespraech.ts";
 import { briefingModell, Notizen } from "./briefing.ts";
 import type { Briefing } from "./api.ts";
@@ -24,83 +25,99 @@ export function zeit(ms: number): string {
 export class Ansicht {
   private notizen = new Notizen();
   private personaName = "Ihr Gegenüber";
-  private phase: Phase = "bereit";
-  private zustand: Zustand | null = null;
+  private phase: Phase | null = null;
   private zeile: { rolle: Rolle; text: HTMLParagraphElement } | null = null;
   private sprecher: Rolle | null = null;
   private deltaSprecher: Rolle | null = null;
-  private deltaZeit = 0;
-  private pegelZeit = 0;
-  private uhr: ReturnType<typeof setInterval> | null = null;
-  private reduziert = matchMedia("(prefers-reduced-motion: reduce)");
+  private deltaZeit = -Infinity;
+  private pegelZeit = -Infinity;
+  private kriterien: string[] = [];
 
   status(meldung: string) {
-    element("status").textContent = meldung;
+    const status = element("status");
+    if (status.textContent !== meldung) status.textContent = meldung;
   }
-  private fokus(id: string) {
-    element(id).focus();
+  ansage(text: string) {
+    element("timer-ansage").textContent = text;
   }
   private ansicht(id: string) {
-    for (const name of ["anmeldung", "bereit", "sitzung"]) element(name).hidden = name !== id;
+    for (const name of [
+      "anmeldung",
+      "bereit",
+      "mikrofon_anfrage",
+      "briefing",
+      "anwaehlen",
+      "sitzung",
+      "ausfuellen",
+      "scoreboard",
+    ]) {
+      element(name).hidden = name !== id;
+      element(name).inert = name !== id;
+    }
   }
   anmeldung(meldung: string) {
-    this.phase = "bereit";
-    this.zustand = null;
-    this.stop();
+    this.phase = null;
     this.leeren();
-    this.briefingLeeren();
-    element("auswertung-notizen").replaceChildren();
+    this.personaName = "Ihr Gegenüber";
+    this.kriterien = [];
+    for (const id of [
+      "frameworks",
+      "briefing-ziel",
+      "briefing-fakten",
+      "briefing-hinweis",
+      "briefing-dauer",
+      "briefing-aufgaben",
+      "briefing-kriterien",
+      "gespraech-aufgaben",
+      "gespraech-kriterien",
+      "persona-name",
+      "auswertung-notizen",
+      "framework-name",
+      "framework-quelle",
+      "kriterien-titel",
+    ])
+      element(id).replaceChildren();
     this.ansicht("anmeldung");
+    element("ton-hilfe").hidden = true;
     element("abmelden").hidden = true;
     element("transkript-knopf").hidden = true;
     element("nutzer").textContent = "";
     this.status(meldung);
-    this.fokus("anmeldung-titel");
+    element("anmeldung-titel").focus();
   }
   bereit(name: string) {
     this.phase = "bereit";
-    this.zustand = null;
-    this.stop();
     this.leeren();
-    this.briefingLeeren();
     this.ansicht("bereit");
     element("nutzer").textContent = name;
     element("abmelden").hidden = false;
     element("transkript-knopf").hidden = true;
     this.status("Ihr Briefing wird geladen …");
-    this.fokus("bereit-titel");
-  }
-  private briefingLeeren() {
-    this.personaName = "Ihr Gegenüber";
-    element("bereit-titel").textContent = "Ihr Briefing wird geladen …";
-    element("szene").textContent = "Gesprächstraining mit einer KI-Trainingsfigur";
-    element("briefing-inhalt").hidden = true;
-    for (const id of [
-      "briefing-ziel",
-      "briefing-fakten",
-      "briefing-dauer",
-      "briefing-hinweis",
-      "framework-name",
-      "framework-quelle",
-      "briefing-kriterien",
-      "briefing-punkte",
-      "persona-name",
-      "persona-beschreibung",
-      "persona-produkt",
-      "gespraech-kriterien",
-    ])
-      element(id).replaceChildren();
-    element("kontingent").hidden = true;
+    element("start").focus();
   }
   briefing(daten: Briefing) {
     const modell = briefingModell(daten);
     this.personaName = modell.name;
-    element("bereit-titel").textContent = modell.titel;
+    this.kriterien = modell.kriterien.map((k) => k.key);
+    element("frameworks").replaceChildren(
+      textElement("legend", "Framework"),
+      ...daten.frameworks.map((f) => {
+        const label = document.createElement("label");
+        const input = document.createElement("input");
+        input.type = "radio";
+        input.name = "framework";
+        input.value = f.id;
+        input.disabled = !f.verfuegbar;
+        input.checked = f.id === daten.framework.id && f.verfuegbar;
+        label.className = f.verfuegbar ? "framework-wahl" : "framework-wahl nicht-verfuegbar";
+        label.append(input, textElement("strong", f.name));
+        if (!f.verfuegbar) label.append(textElement("span", "In Vorbereitung", "klein"));
+        return label;
+      }),
+    );
+    element("briefing-titel").textContent = modell.titel;
     element("briefing-ziel").textContent = `Ihr Ziel: ${modell.ziel}`;
-    element("szene").textContent = `Probe · Gespräch mit ${modell.name}`;
     element("persona-name").textContent = modell.name;
-    element("persona-beschreibung").textContent = modell.beschreibung;
-    element("persona-produkt").textContent = `Sie verkaufen ${modell.produkt}.`;
     element("briefing-fakten").replaceChildren(
       ...modell.fakten.flatMap(({ label, wert }) => [
         textElement("dt", label),
@@ -111,30 +128,19 @@ export class Ansicht {
     element("briefing-hinweis").textContent = modell.hinweis;
     element("framework-name").textContent = modell.framework;
     element("framework-quelle").textContent = modell.quelle;
-    element("kriterien-titel").textContent = `Qualifizierung · ${modell.framework}`;
-    element("briefing-kriterien").replaceChildren(
-      ...modell.kriterien.map((k) => {
-        const zeile = textElement("li", "", "kriterium");
-        const inhalt = textElement("div", "");
-        inhalt.append(textElement("strong", k.label), textElement("p", k.leitfrage, "klein"));
-        zeile.append(
-          textElement("span", k.key, "kriterium-key"),
-          inhalt,
-          textElement("span", k.status, "klein"),
-        );
-        return zeile;
-      }),
-    );
-    element("briefing-punkte").replaceChildren(...modell.punkte.map((p) => textElement("li", p)));
-    element("gespraech-kriterien").replaceChildren(
-      ...modell.kriterien.map((k) => {
-        const zeile = textElement("li", "");
-        zeile.title = `${k.label}: ${k.leitfrage}`;
-        zeile.setAttribute("aria-label", `${k.key} · ${k.label}: ${k.gespraechStatus}`);
-        zeile.append(textElement("b", k.key), textElement("span", k.gespraechStatus));
-        return zeile;
-      }),
-    );
+    element("kriterien-titel").textContent = modell.framework;
+    for (const id of ["briefing-aufgaben", "gespraech-aufgaben"])
+      element(id).replaceChildren(...daten.aufgaben.map((a) => textElement("li", a)));
+    for (const id of ["briefing-kriterien", "gespraech-kriterien"])
+      element(id).replaceChildren(
+        ...modell.kriterien.map((k) => {
+          const zeile = textElement("li", "", "kriterium");
+          const inhalt = textElement("div", "");
+          inhalt.append(textElement("strong", k.label), textElement("p", k.leitfrage, "klein"));
+          zeile.append(textElement("span", k.key, "kriterium-key"), inhalt);
+          return zeile;
+        }),
+      );
     element("auswertung-notizen").replaceChildren(
       ...modell.kriterien.map((k, index) => {
         const zeile = textElement("div", "", "notiz");
@@ -144,11 +150,10 @@ export class Ansicht {
         label.textContent = `${k.label} – Was haben Sie erfahren?`;
         const feld = document.createElement("textarea");
         feld.id = label.htmlFor;
-        feld.name = `notiz-${String(index)}`;
+        feld.name = label.htmlFor;
         feld.autocomplete = "off";
         feld.rows = 3;
         feld.setAttribute("aria-describedby", "notizen-hinweis");
-        feld.value = this.notizen.lesen(k.key);
         feld.addEventListener("input", () => {
           this.notizen.setzen(k.key, feld.value);
         });
@@ -157,13 +162,18 @@ export class Ansicht {
         return zeile;
       }),
     );
-    element("briefing-inhalt").hidden = false;
+  }
+  framework(): string | null {
+    return (
+      element("frameworks").querySelector<HTMLInputElement>("input:checked:not(:disabled)")
+        ?.value ?? null
+    );
   }
   gegenueber(): string {
     return this.personaName;
   }
   schublade(offen: boolean) {
-    const knopf = element<HTMLButtonElement>("transkript-knopf");
+    const knopf = element("transkript-knopf");
     const drawer = element("transkript");
     const fokusImDrawer = drawer.contains(document.activeElement);
     drawer.hidden = !offen;
@@ -171,23 +181,33 @@ export class Ansicht {
     knopf.setAttribute("aria-expanded", String(offen));
     knopf.textContent = offen ? "Transkript ausblenden" : "Transkript einblenden";
     element("gespraech-layout").classList.toggle("offen", offen);
-    if (offen) this.fokus("transkript-titel");
+    if (offen) element("transkript-titel").focus();
     else if (fokusImDrawer) knopf.focus();
   }
   leeren() {
     this.notizen.leeren();
     for (const feld of element("auswertung-notizen").querySelectorAll("textarea")) feld.value = "";
+    for (const id of [
+      "abschluss-text",
+      "ergebnis-dauer",
+      "ergebnis-grund",
+      "ergebnis-felder",
+      "timer-ansage",
+    ])
+      element(id).textContent = "";
     this.zeile = null;
     this.deltaSprecher = null;
     this.sprecher = null;
-    this.deltaZeit = 0;
-    this.pegelZeit = 0;
-    element("transkript-inhalt").replaceChildren();
-    const leer = document.createElement("p");
-    leer.className = "klein";
-    leer.id = "transkript-leer";
-    leer.textContent = "Sobald Sie oder Ihr Gegenüber sprechen, erscheint hier das Transkript.";
-    element("transkript-inhalt").append(leer);
+    this.deltaZeit = -Infinity;
+    this.pegelZeit = -Infinity;
+    element("transkript-inhalt").replaceChildren(
+      textElement(
+        "p",
+        "Sobald Sie oder Ihr Gegenüber sprechen, erscheint hier das Transkript.",
+        "klein",
+      ),
+    );
+    element("transkript-inhalt").firstElementChild?.setAttribute("id", "transkript-leer");
     this.schublade(false);
   }
   transkript(rolle: Rolle, delta: string) {
@@ -208,97 +228,78 @@ export class Ansicht {
     this.zeile.text.textContent += delta;
     if (unten) inhalt.scrollTop = inhalt.scrollHeight;
     this.deltaSprecher = rolle;
-    this.deltaZeit = Date.now();
+    this.deltaZeit = performance.now();
     this.sprecherPruefen();
   }
   pegel(eigen: number, brandt: number) {
-    const balken = element("mikrofonpegel").children;
-    for (let i = 0; i < balken.length; i++) {
-      const balkenEl = balken[i];
-      if (balkenEl instanceof HTMLElement)
-        balkenEl.style.transform = `scaleY(${String(this.reduziert.matches ? 0.14 : Math.max(0.14, eigen * (0.6 + 0.4 * Math.sin(i + 1))))})`;
-    }
     if (eigen > 0.08 || brandt > 0.08) {
-      this.pegelZeit = Date.now();
+      this.pegelZeit = performance.now();
       this.sprecherSetzen(brandt >= eigen ? "brandt" : "sie");
     } else this.sprecherPruefen();
   }
   private sprecherPruefen() {
-    if (Date.now() - this.pegelZeit < 500) return;
-    this.sprecherSetzen(Date.now() - this.deltaZeit < 1400 ? this.deltaSprecher : null);
+    if (performance.now() - this.pegelZeit < 500) return;
+    this.sprecherSetzen(performance.now() - this.deltaZeit < 1400 ? this.deltaSprecher : null);
   }
   private sprecherSetzen(rolle: Rolle | null) {
     if (this.phase !== "gespraech" || this.sprecher === rolle) return;
     this.sprecher = rolle;
-    const text =
+    element("sprecher").textContent =
       rolle === "brandt"
         ? `${this.personaName} spricht`
         : rolle === "sie"
           ? "Sie sprechen"
           : "Verbunden · Gesprächspause";
-    element("sprecher").textContent = text;
-    element("cue-text").textContent =
-      rolle === "brandt"
-        ? `${this.personaName} spricht`
-        : rolle === "sie"
-          ? "Sie sprechen"
-          : "Verbunden";
-    element("cue-licht").className = `cue-licht ${rolle ?? ""}`;
   }
   aktualisieren(wert: Zustand) {
     const wechsel = wert.phase !== this.phase;
     this.phase = wert.phase;
-    this.zustand = wert;
-    this.ansicht("sitzung");
+    this.ansicht(wert.phase === "gespraech" ? "sitzung" : wert.phase);
+    if (wechsel) this.schublade(false);
     this.status(wert.meldung);
-    element("transkript-knopf").hidden = false;
-    const beendet = wert.phase === "beendet";
-    element("sitzung").classList.toggle("ist-beendet", beendet);
-    element("buehne").classList.toggle("ist-beendet", beendet);
-    element("transkript-titel").textContent = beendet ? "Transkript" : "Live-Transkript";
-    element("abschluss").hidden = !beendet;
-    element("sprechend").hidden = beendet;
-    element("ringe").hidden = beendet;
-    element("pegel-schalter").hidden = beendet;
-    element("beenden").hidden = beendet;
-    element("beenden").textContent = wert.phase === "verbindet" ? "Abbrechen" : "Beenden";
-    element("ton").hidden = true;
-    if (beendet) {
-      this.stop();
-      element("abschluss-text").textContent = wert.meldung;
-      element("dauer").textContent =
-        wert.start === null
-          ? "Es wurde kein Gespräch aufgebaut."
-          : `Gesprächsdauer: ${zeit(wert.dauer)}`;
-      element("cue-text").textContent = "Beendet";
-      element("cue-licht").className = "cue-licht";
-    } else {
-      element("gespraech-titel").textContent =
-        wert.phase === "verbindet" ? "Gespräch wird aufgebaut …" : "Ihr Telefongespräch";
-      element("sprecher").textContent =
-        wert.phase === "verbindet" ? "Bitte warten Sie." : "Verbunden · Gesprächspause";
-      element("cue-text").textContent =
-        wert.phase === "verbindet" ? "Verbindungsaufbau" : "Verbunden";
-      if (this.uhr === null)
-        this.uhr = setInterval(() => {
-          this.tick();
-          this.sprecherPruefen();
-        }, 250);
-      this.tick();
+    element("transkript-knopf").hidden = wert.phase !== "gespraech";
+    if (["anwaehlen", "gespraech"].includes(wert.phase)) {
+      const ziel = element(wert.phase === "anwaehlen" ? "anwaehlen" : "anruf-ton");
+      if (element("ton-hilfe").parentElement !== ziel) ziel.append(element("ton-hilfe"));
     }
-    if (wechsel) this.fokus(beendet ? "abschluss-titel" : "gespraech-titel");
-  }
-  private tick() {
-    const wert = this.zustand;
-    element("restzeit").textContent =
-      wert?.start === null || !wert
-        ? "–:–"
-        : zeit(wert.maxDauer * 1000 - (Date.now() - wert.start));
-  }
-  stop() {
-    if (this.uhr !== null) clearInterval(this.uhr);
-    this.uhr = null;
-    for (const balken of element("mikrofonpegel").children)
-      if (balken instanceof HTMLElement) balken.style.transform = "scaleY(.14)";
+    element("ton-hilfe").hidden =
+      !wert.tonBlockiert || !["anwaehlen", "gespraech"].includes(wert.phase);
+    if (wert.phase === "briefing" || wert.phase === "scoreboard") {
+      const prefix = wert.phase === "briefing" ? "briefing" : "ergebnis";
+      element(`${prefix}-countdown`).textContent = String(wert.countdown ?? "");
+      element(`${prefix}-pause`).textContent = wert.pausiert ? "Fortsetzen" : "Anhalten";
+      element(`${prefix}-pause`).setAttribute("aria-pressed", String(wert.pausiert));
+      element(`${prefix}-timer-text`).textContent = wert.pausiert
+        ? "Angehalten"
+        : wert.phase === "briefing"
+          ? "Sekunden bis zum Anruf"
+          : "Sekunden bis zum Start";
+    }
+    if (wert.phase === "gespraech") {
+      element("restzeit").textContent = zeit(wert.restzeit ?? 0);
+      this.sprecherPruefen();
+    }
+    if (wert.phase === "ausfuellen") element("abschluss-text").textContent = wert.meldung;
+    if (wert.phase === "scoreboard" && wert.abschluss) {
+      element("ergebnis-dauer").textContent = zeit(wert.abschluss.dauer);
+      element("ergebnis-grund").textContent = abschlussText(
+        wert.abschluss.endgrund,
+        this.personaName,
+      );
+      element("ergebnis-felder").textContent =
+        `${String(this.notizen.ausgefuellt(this.kriterien))} von ${String(this.kriterien.length)}`;
+    }
+    if (wechsel) {
+      const fokus: Record<Phase, string> = {
+        bereit: "start",
+        mikrofon_anfrage: "mikrofon-titel",
+        briefing: "briefing-titel",
+        anwaehlen: "anwaehlen-titel",
+        gespraech: "gespraech-titel",
+        ausfuellen: "abschluss-titel",
+        scoreboard: "ergebnis-titel",
+      };
+      element(fokus[wert.phase]).focus();
+    }
   }
 }
