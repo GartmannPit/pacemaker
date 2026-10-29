@@ -1,7 +1,8 @@
 # Phase 1, Schritt 2b — Gesprächsablauf neu (Plan)
 
 Stand: 2026-10-29 · Status: **FREIGEGEBEN (Pit, 2026-10-29)** nach Codex-Review (Runde 3, §9); Vorab-Probe V1
-läuft; Wortlaut Meldung/Aufgaben und Timer-Frage (§8) offen ·
+bestanden (Nachtrag am Ende: Begrüßung über `session.commentary.append`); Wortlaut
+Meldung/Aufgaben und Timer-Frage (§8) offen ·
 Anlass: Rückmeldung Pit 2026-10-29 zur Seite aus [Schritt 2](./phase-1-schritt-2-web.md) ·
 Bezug: [Phase-1-Plan](./phase-1-mvp.md) §2, [Schritt 1](./phase-1-schritt-1-server.md) A6
 
@@ -141,8 +142,9 @@ mit dem Ergebnis als Nachtrag ergänzt, bevor Schritt 2b umgesetzt wird.
   Begrüßung fließt wie jede Response in die Abrechnung; Reserve und Ersatzabrechnung
   unverändert. Kommt `bereit` nicht, bevor die Sitzung endet, wird nichts gesendet.
 - Persona-Prompt (Markus Brandt): Er nimmt einen Anruf an und meldet sich knapp
-  (Vorschlag „Brandt, Rhenus Logistik, ja?“; Freigabe Pit), keine Begrüßungsrede; Abstimmung
-  mit Schritt 3.
+  (Vorschlag „Brandt, ja?“; Freigabe Pit), keine Begrüßungsrede; Abstimmung mit Schritt 3.
+  Kein Firmenname: Das Briefing nennt nur „Logistikdienstleister“; ein realer Firmenname
+  ist ausgeschlossen.
 - `POST /api/session` akzeptiert neben `sdp` optional `framework_id` (String, Default `bant`);
   nur verfügbare IDs, sonst `400` ohne Provider-Aufruf. Alle anderen Felder werden weiter
   abgewiesen (u. a. Debug-/Unlock, A6). Kein Einfluss auf die Persona bis Schritt 3.
@@ -253,3 +255,36 @@ Format und Status sind übernommen (§5). Ein Vergleichslauf der Antwortlatenz i
 angesetzt, weil Turn-Pfad und Wiedergabe (`<audio>`) unverändert bleiben; der Analyser greift
 nur passiv ab. Eine Browser-Latenzmessung im Gespräch ist ohnehin Teil von Schritt 7
 (Phase-1-Plan §7). Entscheidet Pit anders, wird sie präregistriert ergänzt.
+
+## Nachtrag: Vorab-Probe V1 (2026-10-29)
+
+Referenzlauf (`OPENAI_LIVE_REGION=referenz`), Prompt `system_prompt(short_opener=False)` wie im
+Server, Browser (Chromium über Playwright) als WebRTC-Gegenstelle mit **Stille statt
+Mikrofon** (kein Nutzer-Audio). Probenskript außerhalb des Repos (Scratchpad), nutzt
+`LiveStarter.create` und `HybridSideband.attach` des Servers. Messpunkt: erstes hörbares
+gespiegeltes Persona-Audio **am Sideband (Serveruhr)**, nicht Wiedergabe im Browser.
+2 Sitzungen, je 15 s Live-Zeit laut Usage; Kosten ≈ 0,03 $ (Budgetpreise 0,05 $/min Live, dazu
+wenige Backend-Tokens in Sitzung 1). Schätzung vorab ≈ 0,05 $.
+
+| Sitzung | Gesendet nach `bereit` | Erstes hörbares Audio | Gesagt |
+|---|---|---|---|
+| 1 | `response.create` | 1008 ms | „Mhm. Einen Moment, ich steig ein. Ja, also, ich bin grad echt ziemlich eingespannt. Worum geht's denn konkret? Wir haben für den Bereich …“ |
+| 2 | `session.commentary.append` („Telefon klingelt, melde dich knapp mit Nachnamen, etwa ‚Brandt, ja?‘“) | 1129 ms | „Brandt, ja?“ |
+
+**Folgerungen (ersetzen die betroffenen Teile von §2–§4):**
+- Die Begrüßung nutzt **`session.commentary.append`** (`delegation_id: null`), nicht
+  `response.create`. `response.create` startet eine delegierte Backend-Antwort
+  (`session.delegation.created`, Backend-Textausgabe), erzeugt inhaltlich unpassende Sprache,
+  kostet Backend-Tokens und würde sich mit der Werkzeug-Fortsetzungslogik des Sidebands
+  (`_pending`) überschneiden. `session.commentary.append` wird mit
+  `session.commentary.appended` bestätigt; diese Bestätigung kann nach dem ersten Audio
+  eintreffen (Sitzung 2: 1430 ms).
+- B4 entsprechend: genau ein `session.commentary.append` als initiale Begrüßung, keine
+  Delegation; Fehlerpfad wie beschrieben.
+- Hinweis für die Umsetzung: Der Sideband kann laut Architekturversuch auch
+  `session.input_audio.mute`/`unmute` senden. Die Stummschaltung in C bleibt im Browser
+  (`enabled = false`, §3 B); serverseitiges Stummschalten ist eine mögliche Ergänzung, keine
+  Planänderung.
+- Einzelwerte aus 2 Sitzungen, Serveruhr; **keine Browser-E2E-Latenz** und keine
+  belastbare Aussage über Verteilung. Erhebung im Browser in B10.
+- Wortlaut der Meldung: Vorschlag „Brandt, ja?“ (siehe §4); Freigabe Pit offen.
