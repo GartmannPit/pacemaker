@@ -56,6 +56,9 @@ export class Notizen {
   lesen(key: string): string {
     return this.werte.get(key) ?? "";
   }
+  ausgefuellt(keys: readonly string[]): number {
+    return keys.filter((key) => this.lesen(key).trim().length > 0).length;
+  }
   leeren(): void {
     this.werte.clear();
   }

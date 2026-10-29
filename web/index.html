@@ -23,7 +23,7 @@
         </svg>
         <span>OneTry</span>
       </a>
-      <span class="szene" id="szene">Gesprächstraining mit einer KI-Trainingsfigur</span>
+      <span class="ki-kopf">KI-Gesprächspartner</span>
       <div class="kopf-aktionen">
         <button
           class="sekundaer"
@@ -39,6 +39,7 @@
       </div>
     </header>
     <p id="status" class="status" role="status">Anmeldung wird geprüft …</p>
+    <p id="timer-ansage" class="sr" role="status" aria-live="polite" aria-atomic="true"></p>
     <main id="inhalt" tabindex="-1">
       <section id="anmeldung" class="einstieg" aria-labelledby="anmeldung-titel" hidden>
         <div class="einstieg-inhalt">
@@ -62,16 +63,50 @@
         </div>
         <div class="einstieg-zeichen" aria-hidden="true"><span>KI</span></div>
       </section>
-      <section id="bereit" class="briefing-seite" aria-labelledby="bereit-titel" hidden>
-        <h1 id="bereit-titel" tabindex="-1">Ihr Briefing wird geladen …</h1>
-        <p id="briefing-ziel" class="einleitung"></p>
-        <p class="ki-hinweis">Sie sprechen mit einer <strong>KI-Trainingsfigur</strong>.</p>
-        <div id="briefing-inhalt" class="briefing-spalten" hidden>
+      <section id="bereit" class="start-seite" aria-labelledby="bereit-titel" hidden inert>
+        <h1 id="bereit-titel" tabindex="-1">Ihr nächster Anruf</h1>
+        <p class="einleitung">Wählen Sie ein Framework für Ihr Gespräch.</p>
+        <fieldset id="frameworks"><legend>Framework</legend></fieldset>
+        <p id="kontingent" class="warnung" hidden></p>
+        <button class="primaer start-knopf" id="start" disabled>Anruf starten</button>
+        <button class="sekundaer" id="status-neu" hidden>Briefing erneut laden</button>
+        <p class="klein">
+          Verwenden Sie möglichst ein Headset. Beim Start wird Ihr Mikrofon angefragt.
+        </p>
+        <p class="klein">Transkript und Notizen bleiben nur im Speicher dieser Seite.</p>
+      </section>
+      <section
+        id="mikrofon_anfrage"
+        class="zentriert"
+        aria-labelledby="mikrofon-titel"
+        hidden
+        inert
+      >
+        <h1 id="mikrofon-titel" tabindex="-1">Mikrofon freigeben</h1>
+        <p>Bitte erlauben Sie den Mikrofonzugriff in Ihrem Browser.</p>
+        <button class="sekundaer" id="mikrofon-abbrechen">Abbrechen</button>
+      </section>
+      <section id="briefing" class="briefing-seite" aria-labelledby="briefing-titel" hidden inert>
+        <div class="seiten-kopf">
+          <div>
+            <h1 id="briefing-titel" tabindex="-1">Ihr Briefing</h1>
+            <p id="briefing-ziel" class="einleitung"></p>
+          </div>
+          <div class="countdown-block">
+            <span id="briefing-countdown" class="countdown" aria-hidden="true">20</span
+            ><span class="klein" id="briefing-timer-text">Sekunden bis zum Anruf</span>
+          </div>
+        </div>
+        <div class="briefing-spalten">
           <section class="briefing-panel" aria-labelledby="fakten-titel">
-            <h2 id="fakten-titel">Was Sie wissen</h2>
+            <h2 id="fakten-titel">Ihr Gegenüber</h2>
             <dl id="briefing-fakten" class="fakten"></dl>
-            <p class="briefing-zeit">Zeit: höchstens <strong id="briefing-dauer"></strong></p>
+            <p class="briefing-zeit">
+              Gesprächsdauer: höchstens <strong id="briefing-dauer"></strong>
+            </p>
             <p id="briefing-hinweis" class="klein"></p>
+            <h2 class="aufgaben-titel">Ihre Aufgaben</h2>
+            <ul id="briefing-aufgaben" class="aufgaben"></ul>
           </section>
           <section class="briefing-panel" aria-labelledby="framework-name">
             <div class="framework-kopf">
@@ -79,25 +114,21 @@
               <span id="framework-quelle" class="klein"></span>
             </div>
             <ul id="briefing-kriterien" class="kriterien"></ul>
-            <h3 class="punkte-titel">Punkteschema</h3>
-            <ul id="briefing-punkte" class="punkte-schema"></ul>
           </section>
         </div>
-        <div class="briefing-start">
-          <p id="kontingent" class="warnung" hidden></p>
-          <button class="primaer" id="start" disabled>Gespräch starten</button>
-          <button class="sekundaer" id="status-neu" hidden>Briefing erneut laden</button>
-          <p class="klein">
-            Verwenden Sie möglichst ein Headset, um Echo zu vermeiden. Beim Start wird Ihr Mikrofon
-            angefragt.
-          </p>
-          <p class="klein">
-            Das Transkript bleibt nur in diesem Browserfenster und wird von OneTry nicht
-            gespeichert.
-          </p>
+        <div class="seiten-aktionen">
+          <button class="primaer" id="briefing-weiter">Überspringen</button>
+          <button class="sekundaer" id="briefing-pause">Anhalten</button>
+          <button class="sekundaer" id="briefing-abbrechen">Abbrechen</button>
         </div>
       </section>
-      <section id="sitzung" aria-label="Ihr Übungsgespräch" hidden>
+      <section id="anwaehlen" class="zentriert" aria-labelledby="anwaehlen-titel" hidden inert>
+        <div class="anruf-zeichen" aria-hidden="true"><span></span><span></span><span></span></div>
+        <h1 id="anwaehlen-titel" tabindex="-1">Ihr Gegenüber wird angewählt …</h1>
+        <p>Ihr Mikrofon bleibt bis zum Gesprächsbeginn stumm.</p>
+        <button class="sekundaer" id="anwaehlen-abbrechen">Abbrechen</button>
+      </section>
+      <section id="sitzung" aria-labelledby="gespraech-titel" hidden inert>
         <section class="meilensteine" aria-label="Auswertung folgt">
           <ol class="strecke" aria-label="Geplante Meilensteine; Auswertung folgt">
             <li><span class="knoten" aria-hidden="true"></span>Gesprächserlaubnis</li>
@@ -109,71 +140,37 @@
           </ol>
           <p class="auswertung">Auswertung folgt</p>
         </section>
+        <div class="anruf-kopf">
+          <div>
+            <h1 id="gespraech-titel" tabindex="-1"><span id="persona-name"></span></h1>
+            <span class="klein">KI-Gesprächspartner</span>
+          </div>
+          <div class="anruf-aktionen">
+            <span class="klein">Restzeit <span id="restzeit">–:–</span></span
+            ><button class="primaer" id="beenden">Auflegen</button>
+          </div>
+        </div>
+        <div id="anruf-ton"></div>
         <div class="gespraech-layout" id="gespraech-layout">
-          <aside class="gegenueber" aria-labelledby="gegenueber-titel">
-            <h2 id="gegenueber-titel">Ihr Gegenüber</h2>
-            <div>
-              <p class="persona-name" id="persona-name"></p>
-              <p class="beschreibung" id="persona-beschreibung"></p>
-              <span class="abzeichen">KI-Trainingsfigur</span>
-            </div>
+          <aside class="gegenueber">
+            <section>
+              <h2>Ihre Aufgaben</h2>
+              <ul id="gespraech-aufgaben" class="aufgaben"></ul>
+            </section>
             <section class="qualifizierung" aria-labelledby="kriterien-titel">
               <h2 id="kriterien-titel">Qualifizierung</h2>
-              <ul id="gespraech-kriterien" class="kriterien-mini"></ul>
+              <ul id="gespraech-kriterien" class="kriterien-kompakt"></ul>
             </section>
-            <dl class="persona-zustand">
-              <div>
-                <dt>Geduld</dt>
-                <dd>folgt</dd>
-              </div>
-              <div>
-                <dt>Offenheit</dt>
-                <dd>folgt</dd>
-              </div>
-            </dl>
-            <p class="gegenueber-fuss" id="persona-produkt"></p>
           </aside>
           <div class="buehne" id="buehne">
             <canvas id="ringe" aria-hidden="true"></canvas>
             <div id="sprechend" class="sprechend">
-              <h1 id="gespraech-titel" tabindex="-1">Gespräch wird aufgebaut …</h1>
-              <p id="sprecher" aria-live="polite">Bitte warten Sie.</p>
-            </div>
-            <div id="abschluss" class="abschluss" hidden>
-              <h1 id="abschluss-titel" tabindex="-1">Ihre Auswertung</h1>
-              <p id="abschluss-text"></p>
-              <p id="dauer" class="klein"></p>
-              <p class="klein">Ihr Gegenüber ist eine KI-Trainingsfigur.</p>
-              <p>Was haben Sie erfahren? Halten Sie Ihre Erkenntnisse je Kriterium fest.</p>
-              <p id="notizen-hinweis" class="klein">
-                Ihre Notizen bleiben nur im Speicher dieser Seite. Sie werden nicht gesendet und bei
-                einem neuen Versuch oder beim Abmelden verworfen.
-              </p>
-              <dl class="auswertung-folgt">
-                <div>
-                  <dt>Abgleich</dt>
-                  <dd>folgt in Schritt 3</dd>
-                </div>
-                <div>
-                  <dt>Punkte</dt>
-                  <dd>folgt in Schritt 3</dd>
-                </div>
-                <div>
-                  <dt>Zitate</dt>
-                  <dd>folgt in Schritt 3</dd>
-                </div>
-              </dl>
-              <div id="auswertung-notizen" class="notizen"></div>
-              <button class="primaer" id="neustart">Neuer Versuch</button>
-              <p class="klein">
-                Ihr Transkript bleibt bis zum nächsten Gespräch oder bis zum Abmelden sichtbar.
-              </p>
+              <p id="sprecher" aria-live="polite">Verbunden · Gesprächspause</p>
             </div>
             <div class="audio-hilfe">
-              <button class="sekundaer" id="ton" hidden>Ton aktivieren</button
-              ><button class="bewegung" id="pegel-schalter" aria-pressed="true">
-                Pegelanzeige ausschalten
-              </button>
+              <button class="bewegung" id="pegel-schalter" aria-pressed="true">
+                Pegelanzeige ausschalten</button
+              ><span class="sr" id="pegel-status"></span>
             </div>
           </div>
           <aside id="transkript" class="transkript" aria-labelledby="transkript-titel" hidden inert>
@@ -195,25 +192,58 @@
             </div>
           </aside>
         </div>
-        <footer class="cue-leiste">
-          <div class="cue">
-            <span id="cue-licht" class="cue-licht" aria-hidden="true"></span>
-            <div>
-              <span class="klein">Gespräch</span>
-              <p id="cue-text">Verbindungsaufbau</p>
-            </div>
-            <div id="mikrofonpegel" class="mikrofonpegel" aria-hidden="true">
-              <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-            </div>
-            <span class="sr" id="pegel-status">Eigener Mikrofonpegel</span>
-          </div>
-          <div class="uhr"><span id="restzeit">–:–</span><span class="klein">Restzeit</span></div>
-          <div class="cue-aktionen">
-            <p class="ki-text">Sie sprechen mit einer<br /><strong>KI-Trainingsfigur</strong></p>
-            <button class="primaer" id="beenden">Abbrechen</button>
-          </div>
-        </footer>
       </section>
+      <section
+        id="ausfuellen"
+        class="abschluss-seite"
+        aria-labelledby="abschluss-titel"
+        hidden
+        inert
+      >
+        <h1 id="abschluss-titel" tabindex="-1">Was haben Sie erfahren?</h1>
+        <p id="abschluss-text" class="einleitung"></p>
+        <p id="notizen-hinweis" class="klein">
+          Ihre Notizen bleiben in diesem Browser und werden nicht gesendet. Beim nächsten Versuch
+          oder beim Abmelden werden sie verworfen.
+        </p>
+        <div id="auswertung-notizen" class="notizen"></div>
+        <button class="primaer" id="fertig">Fertig</button>
+      </section>
+      <section id="scoreboard" class="ergebnis-seite" aria-labelledby="ergebnis-titel" hidden inert>
+        <div class="seiten-kopf">
+          <h1 id="ergebnis-titel" tabindex="-1">Ihr Gesprächsergebnis</h1>
+          <div class="countdown-block">
+            <span class="countdown" id="ergebnis-countdown" aria-hidden="true">10</span
+            ><span class="klein" id="ergebnis-timer-text">Sekunden bis zum Start</span>
+          </div>
+        </div>
+        <dl class="ergebnis-daten">
+          <div>
+            <dt>Gesprächsdauer</dt>
+            <dd id="ergebnis-dauer"></dd>
+          </div>
+          <div>
+            <dt>Abschluss</dt>
+            <dd id="ergebnis-grund"></dd>
+          </div>
+          <div>
+            <dt>Ausgefüllte Felder</dt>
+            <dd id="ergebnis-felder"></dd>
+          </div>
+          <div>
+            <dt>Punkte</dt>
+            <dd>Folgen mit der Auswertung</dd>
+          </div>
+        </dl>
+        <div class="seiten-aktionen">
+          <button class="primaer" id="ergebnis-weiter">Überspringen</button
+          ><button class="sekundaer" id="ergebnis-pause">Anhalten</button>
+        </div>
+      </section>
+      <div class="ton-hilfe" id="ton-hilfe" hidden>
+        <p>Die Wiedergabe benötigt Ihre Freigabe.</p>
+        <button class="primaer" id="ton">Ton aktivieren</button>
+      </div>
     </main>
     <audio id="audio" autoplay></audio>
     <script type="module" src="/src/main.ts"></script>

@@ -189,3 +189,20 @@ void test("Hängender JSON-Body wird nach 4 s abgebrochen und bestätigt nichts"
   await spuelen();
   assert.deepEqual(ereignisse, [{ art: "frist" }]);
 });
+
+void test("Unbekannter Server-Endgrund beendet mit unbekannt statt Herzschlagfrist", async () => {
+  const uhr = new TestUhr();
+  const ereignisse: HerzEnde[] = [];
+  herzschlagStarten(
+    "eins",
+    (e) => {
+      ereignisse.push(e);
+    },
+    {
+      uhr,
+      fetch: () => Promise.resolve(antwort("beendet", "neuer_grund")),
+    },
+  );
+  await uhr.weiter(5000);
+  assert.deepEqual(ereignisse, [{ art: "ende", grund: "unbekannt" }]);
+});
