@@ -19,6 +19,7 @@ from typing import Any, Protocol
 from aiohttp import web
 
 from .auth import Auth, AuthError, Overloaded, RateLimited
+from .briefing import VERFUEGBARE_FRAMEWORKS
 from .briefing import briefing as briefing_data
 from .contracts import (
     BudgetStatus,
@@ -71,6 +72,28 @@ class Registry(Protocol):
     async def end(self, user_id: str, session_ref: str, *, reason: Any) -> bool: ...
 
     async def heartbeat(self, user_id: str, session_ref: str) -> Any: ...  # HeartbeatStatus | None
+
+    async def greet(self, user_id: str, session_ref: str) -> bool: ...
+
+    async def claim_measurement(self, user_id: str, session_ref: str) -> bool | None: ...
+
+
+MESSSTATUS = frozenset({"ok", "frist", "abbruch", "fehler"})
+MESSWERTE = ("c_bis_audio_ms", "bereit_bis_audio_ms", "c_bis_transkript_ms")
+MESSWERT_MAX_MS = 600_000
+
+
+def messung_gueltig(messung: object) -> bool:
+    """Eröffnungsmessung der Seite (Schritt 2b §5): genau die festen Schlüssel, nur Ganzzahlen."""
+    if not isinstance(messung, dict) or set(messung) != {"status", *MESSWERTE}:
+        return False
+    if type(messung["status"]) is not str or messung["status"] not in MESSSTATUS:
+        return False
+    for key in MESSWERTE:
+        value = messung[key]
+        if value is not None and not (type(value) is int and 0 <= value <= MESSWERT_MAX_MS):
+            return False
+    return True
 
 
 @dataclass(frozen=True)
@@ -283,8 +306,12 @@ def create_app(
             raise Fehler("herkunft_ungueltig")
         user = current(request)
         body = await read_json(request, LIMIT_START)
-        if set(body) != {"sdp"}:
+        if set(body) - {"framework_id"} != {"sdp"}:
             # u. a. keine debug-/unlock-Felder (A6); Stimme legt der Server fest (§4.5)
+            raise Fehler("anfrage_ungueltig")
+        # Framework-Auswahl (Schritt 2b §4); bis Schritt 3 ohne Einfluss auf die Persona.
+        framework_id = body.get("framework_id", "bant")
+        if type(framework_id) is not str or framework_id not in VERFUEGBARE_FRAMEWORKS:
             raise Fehler("anfrage_ungueltig")
         sdp = body["sdp"]
         if not isinstance(sdp, str) or not sdp or len(sdp) > LIMIT_SDP:
@@ -310,11 +337,26 @@ def create_app(
             }
         )
 
+    async def log_messung(user_id: str, ref: str, messung: dict) -> bool:
+        first = await registry.claim_measurement(user_id, ref)
+        if first is None:
+            return False
+        if first:
+            oplog.write(
+                "anruf_messung",
+                session_ref=ref,
+                messstatus=messung["status"],
+                **{key: messung[key] for key in MESSWERTE if messung[key] is not None},
+            )
+        return True
+
     async def end(request: web.Request) -> web.Response:
         user = current(request)
         body = await read_json(request, LIMIT_SMALL)
         ref = body.get("session_ref")
-        if set(body) - {"session_ref", "grund"} or ("grund" in body and body["grund"] != "tab"):
+        if set(body) - {"session_ref", "grund", "messung"} or (
+            "grund" in body and body["grund"] != "tab"
+        ):
             raise Fehler("anfrage_ungueltig")
         if not isinstance(ref, str) or not _REF.fullmatch(ref):
             raise Fehler("anfrage_ungueltig")
@@ -325,6 +367,12 @@ def create_app(
         # ohne Origin; dann genügen gültiges Cookie (SameSite=Strict) plus eigene session_ref.
         # Der Browser ist nicht vertrauenswürdig: Der Grund unterscheidet nur zwei Nutzer-Enden.
         reason = "tab_geschlossen" if "grund" in body or not origin else "nutzer"
+        # Abbruchmessung beim Anwählen (Schritt 2b §5): nie Bedingung für das Ende.
+        try:
+            if messung_gueltig(body.get("messung")):
+                await log_messung(user.user_id, ref, body["messung"])
+        except Exception:
+            pass
         if not await registry.end(user.user_id, ref, reason=reason):
             raise Fehler("nicht_gefunden")
         return web.json_response({})
@@ -345,6 +393,33 @@ def create_app(
         # Ende und Grund erfährt die Seite nur hier, nicht aus dem Datenkanal (§4.1, §4.2)
         return web.json_response({"zustand": status.state, "grund": status.reason})
 
+    async def ready_for_greeting(request: web.Request) -> web.Response:
+        # Browser verbunden und Wiedergabe frei: erst jetzt meldet sich die Persona (2b §4).
+        if not origin_ok(request):
+            raise Fehler("herkunft_ungueltig")
+        user = current(request)
+        body = await read_json(request, LIMIT_SMALL)
+        ref = body.get("session_ref")
+        if set(body) != {"session_ref"} or not isinstance(ref, str) or not _REF.fullmatch(ref):
+            raise Fehler("anfrage_ungueltig")
+        if not await registry.greet(user.user_id, ref):
+            raise Fehler("nicht_gefunden")
+        return web.json_response({})
+
+    async def measurement(request: web.Request) -> web.Response:
+        if not origin_ok(request):
+            raise Fehler("herkunft_ungueltig")
+        user = current(request)
+        body = await read_json(request, LIMIT_SMALL)
+        ref = body.get("session_ref")
+        if set(body) != {"session_ref", "messung"} or not isinstance(ref, str):
+            raise Fehler("anfrage_ungueltig")
+        if not _REF.fullmatch(ref) or not messung_gueltig(body["messung"]):
+            raise Fehler("anfrage_ungueltig")
+        if not await log_messung(user.user_id, ref, body["messung"]):
+            raise Fehler("nicht_gefunden")
+        return web.json_response({})
+
     app = web.Application(middlewares=[schutz], client_max_size=LIMIT_START)
     app.router.add_get("/", index)
     app.router.add_get("/assets/{name}", asset)
@@ -358,4 +433,6 @@ def create_app(
     app.router.add_post("/api/session", start)
     app.router.add_post("/api/end", end)
     app.router.add_post("/api/herzschlag", heartbeat)
+    app.router.add_post("/api/session/bereit", ready_for_greeting)
+    app.router.add_post("/api/session/messung", measurement)
     return app

@@ -57,6 +57,18 @@ class Handle:
     def provider_blocked(self):
         return getattr(self, "blocked", False)
 
+    async def greet(self):
+        self.greet_calls = getattr(self, "greet_calls", 0) + 1
+        if getattr(self, "greet_error", None):
+            raise self.greet_error
+        return getattr(self, "greet_result", True)
+
+    def greeting_audio_ms(self):
+        return getattr(self, "greet_ms", None)
+
+    def greeting_rejected(self):
+        return getattr(self, "greet_rejected", False)
+
     def finish(self, reason="auflegen", *, confirmed=True):
         self.future.set_result((CloseOutcome(confirmed, reason), self.summary))
 
@@ -1778,5 +1790,91 @@ def test_heartbeat_task_cleanup_when_leaving_running(tmp_path, trigger):
             assert not registry._tasks
             journal.close()
             log.close()
+
+    asyncio.run(run())
+
+
+def test_greeting_once_for_own_running_session_and_logged(tmp_path):
+    # Schritt 2b §4, B4: Begrüßung erst nach "bereit", genau einmal, nur eigene laufende Sitzung.
+    async def run():
+        with Journal(tmp_path / "state") as journal:
+            log = OpLog(tmp_path / "op.jsonl")
+            budget = Budget(journal)
+            starter = FakeStarter(journal)
+            registry = SessionRegistry(budget, starter, journal, log)
+            await registry.recover()
+            start = await registry.start("user_a", "SYNTHETISCHE_SDP", None)
+            handle = starter.handles[0]
+            assert not hasattr(handle, "greet_calls")  # keine Begrüßung ohne "bereit"
+            assert not await registry.greet("user_b", start.session_ref)
+            assert not await registry.greet("user_a", "fremd")
+            assert await registry.greet("user_a", start.session_ref)
+            assert await registry.greet("user_a", start.session_ref)  # idempotent
+            assert handle.greet_calls == 1
+            assert await registry.claim_measurement("user_b", start.session_ref) is None
+            assert await registry.claim_measurement("user_a", start.session_ref) is True
+            assert await registry.claim_measurement("user_a", start.session_ref) is False
+            handle.greet_ms = 1129
+            assert await registry.end("user_a", start.session_ref, reason="nutzer")
+            assert not await registry.greet("user_a", start.session_ref)
+            assert await registry.claim_measurement("user_a", start.session_ref) is None
+            await registry.shutdown()
+            log.close()
+            rows = read_rows(tmp_path / "op.jsonl")
+            greet = [r for r in rows if r["event"].startswith("begruessung")]
+            assert [r["event"] for r in greet] == ["begruessung_gesendet", "begruessung_audio"]
+            assert greet[1]["dauer_ms"] == 1129
+            assert all(r["session_ref"] == start.session_ref for r in greet)
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("failure", ["result", "error"])
+def test_greeting_failure_is_logged_and_session_keeps_running(tmp_path, failure):
+    async def run():
+        with Journal(tmp_path / "state") as journal:
+            log = OpLog(tmp_path / "op.jsonl")
+            budget = Budget(journal)
+            starter = FakeStarter(journal)
+            registry = SessionRegistry(budget, starter, journal, log)
+            await registry.recover()
+            start = await registry.start("user_a", "SYNTHETISCHE_SDP", None)
+            handle = starter.handles[0]
+            if failure == "result":
+                handle.greet_result = False
+            else:
+                handle.greet_error = ConnectionError("GEHEIMER_PROVIDER_TEXT")
+            assert await registry.greet("user_a", start.session_ref)
+            assert registry.snapshot() == {start.session_ref: "laufend"}
+            assert await registry.end("user_a", start.session_ref, reason="nutzer")
+            await registry.shutdown()
+            log.close()
+            text = (tmp_path / "op.jsonl").read_text()
+            assert "begruessung_fehlgeschlagen" in text and "GEHEIM" not in text
+            audio = [
+                r for r in read_rows(tmp_path / "op.jsonl") if r["event"] == "begruessung_audio"
+            ]
+            assert len(audio) == 1 and "dauer_ms" not in audio[0]  # kein Audio gemessen
+
+    asyncio.run(run())
+
+
+def test_greeting_rejected_by_provider_is_logged(tmp_path):
+    async def run():
+        with Journal(tmp_path / "state") as journal:
+            log = OpLog(tmp_path / "op.jsonl")
+            budget = Budget(journal)
+            starter = FakeStarter(journal)
+            registry = SessionRegistry(budget, starter, journal, log)
+            await registry.recover()
+            start = await registry.start("user_a", "SYNTHETISCHE_SDP", None)
+            assert await registry.greet("user_a", start.session_ref)
+            starter.handles[0].greet_rejected = True
+            assert await registry.end("user_a", start.session_ref, reason="nutzer")
+            await registry.shutdown()
+            log.close()
+            events = [r["event"] for r in read_rows(tmp_path / "op.jsonl")]
+            assert events.count("begruessung_gesendet") == 1
+            assert events.count("begruessung_fehlgeschlagen") == 1
 
     asyncio.run(run())

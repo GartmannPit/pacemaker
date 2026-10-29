@@ -64,10 +64,17 @@ class TranscriptPart:
 class HybridSideband:
     """Eine angehängte Sitzung. Erzeugen nur über `attach()`."""
 
-    def __init__(self, websocket: ClientConnection, hangup_tool_name: str) -> None:
+    def __init__(
+        self, websocket: ClientConnection, hangup_tool_name: str, greeting: str = ""
+    ) -> None:
         loop = asyncio.get_running_loop()
         self._ws = websocket
         self._hangup = hangup_tool_name
+        self._greeting = greeting
+        self._greet_at: float | None = None
+        self._greet_audio_ms: int | None = None
+        self._greet_event_id: str | None = None
+        self._greet_rejected = False
         self._done: asyncio.Future[tuple[CloseOutcome, UsageSummary]] = loop.create_future()
         self._terminal = asyncio.Event()
         self._send_lock = asyncio.Lock()
@@ -102,13 +109,14 @@ class HybridSideband:
         deadline_s: float,
         idle_timeout_s: float,
         hangup_tool_name: str,
+        greeting: str = "",
     ) -> HybridSideband:
         """Anhängen, Empfang starten, per Ping/Pong bestätigen. Fehler gehen an den Aufrufer."""
         for value in (deadline_s, idle_timeout_s):
             if not math.isfinite(value) or value <= 0:
                 raise ValueError("Zeitgrenzen müssen positiv und endlich sein")
         websocket = await connect_attach(base_url, provider_id, api_key)
-        session = cls(websocket, hangup_tool_name)
+        session = cls(websocket, hangup_tool_name, greeting)
         receiver = asyncio.create_task(session._receive())
         session._tasks = [
             receiver,
@@ -153,6 +161,30 @@ class HybridSideband:
 
     def provider_blocked(self) -> bool:
         return self._blocked
+
+    async def greet(self) -> bool:
+        """Lässt die Persona den Anruf annehmen (Schritt 2b, Vorab-Probe V1).
+
+        Einmalig je Sitzung; der Aufrufer (Register) stellt das sicher. Kein response.create:
+        Das startet eine delegierte Backend-Antwort statt einer knappen Meldung.
+        """
+        if not self._greeting or self._terminal.is_set() or self._closing:
+            return False
+        self._greet_at = asyncio.get_running_loop().time()
+        event = events.SessionCommentaryAppendEvent(delegation_id=None, content=self._greeting)
+        self._greet_event_id = event.event_id
+        try:
+            await self._send(event)
+        except Exception:
+            return False
+        return not self._terminal.is_set()
+
+    def greeting_audio_ms(self) -> int | None:
+        return self._greet_audio_ms
+
+    def greeting_rejected(self) -> bool:
+        """Provider hat die Begrüßung nach dem Senden abgelehnt (error mit client_event_id)."""
+        return self._greet_rejected
 
     # --- intern ---------------------------------------------------------------------------------
 
@@ -244,8 +276,13 @@ class HybridSideband:
                     self._output_at = loop.time()
                     self._farewell_text = True
         elif isinstance(event, events.OutputAudioDeltaEvent):
-            if any(t.get_name() == "abschied" for t in self._tasks):
-                if await asyncio.to_thread(_audible, event.delta):
+            farewell = any(t.get_name() == "abschied" for t in self._tasks)
+            greeting = self._greet_at is not None and self._greet_audio_ms is None
+            if (farewell or greeting) and await asyncio.to_thread(_audible, event.delta):
+                if greeting and self._greet_at is not None:
+                    # Nur Gesprächssteuerung/Messung der Eröffnung, keine Bewertung der Stimme.
+                    self._greet_audio_ms = round((loop.time() - self._greet_at) * 1000)
+                if farewell:
                     self._output_at = loop.time()
                     self._farewell_audio = True
         elif isinstance(event, events.SessionUsageUpdatedEvent):
@@ -261,6 +298,8 @@ class HybridSideband:
         elif isinstance(event, events.ErrorEvent):
             if (event.error.code or "") in BLOCKING_CODES:
                 self._blocked = True
+            if self._greet_event_id and event.error.client_event_id == self._greet_event_id:
+                self._greet_rejected = True
 
     def _update_live(self, usage: events.Usage) -> None:
         if usage.seconds is not None and math.isfinite(usage.seconds) and usage.seconds >= 0:

@@ -60,6 +60,9 @@ class _Session:
     close_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     finish_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     initializing: bool = False
+    greeted: bool = False
+    greeting_logged: bool = False
+    measured: bool = False
     deadline: float = 0
     last_seen: float = 0
 
@@ -508,6 +511,17 @@ class SessionRegistry:
         schedule_retry: bool = True,
     ) -> None:
         self._remember_usage(session, usage)
+        if session.greeted and not session.greeting_logged and session.handle is not None:
+            session.greeting_logged = True
+            try:
+                waited = session.handle.greeting_audio_ms()
+                rejected = session.handle.greeting_rejected()
+            except Exception:
+                waited, rejected = None, False
+            if rejected:  # asynchrone Ablehnung durch den Provider (Codex-Review)
+                self._log("begruessung_fehlgeschlagen", session_ref=session.local_id)
+            # Serveruhr: Begrüßung gesendet bis erstes hörbares gespiegeltes Persona-Audio.
+            self._log("begruessung_audio", session_ref=session.local_id, dauer_ms=waited)
         # Jeder Abschluss läuft hier durch: Guthabenfehler dieser Sitzung vor dem Entfernen
         # übernehmen (auch im Zeitlimit-Pfad; Codex-Nachprüfung).
         try:
@@ -632,6 +646,54 @@ class SessionRegistry:
         if closer is not None:
             await asyncio.shield(closer)
         return True
+
+    def _running(self, user_id: str, session_ref: str) -> _Session | None:
+        """Eigene, laufende Sitzung ohne Abschlussabsicht; Aufrufer hält self._lock."""
+        session = self._sessions.get(session_ref)
+        if (
+            session is None
+            or session.user_id != user_id
+            or session.state != "laufend"
+            or session.reason is not None
+            or session.handle is None
+        ):
+            return None
+        return session
+
+    async def greet(self, user_id: str, session_ref: str) -> bool:
+        """Browser ist empfangsbereit (Schritt 2b §4): Begrüßung genau einmal auslösen.
+
+        True = eigene laufende Sitzung (auch bei Wiederholung oder Sendefehler; die Sitzung
+        läuft weiter, die Seite hat eine eigene Frist). False = unbekannt, fremd oder beendet.
+        """
+        async with self._lock:
+            session = self._running(user_id, session_ref)
+            if session is None:
+                return False
+            if session.greeted:
+                return True
+            session.greeted = True
+            handle = session.handle
+        assert handle is not None
+        try:
+            sent = await handle.greet()
+        except Exception:
+            sent = False
+        self._log(
+            "begruessung_gesendet" if sent else "begruessung_fehlgeschlagen",
+            session_ref=session.local_id,
+        )
+        return True
+
+    async def claim_measurement(self, user_id: str, session_ref: str) -> bool | None:
+        """Eröffnungsmessung der Seite: None = keine eigene laufende Sitzung, sonst ob erste."""
+        async with self._lock:
+            session = self._running(user_id, session_ref)
+            if session is None:
+                return None
+            first = not session.measured
+            session.measured = True
+            return first
 
     async def heartbeat(self, user_id: str, session_ref: str) -> HeartbeatStatus | None:
         async with self._lock:

@@ -29,6 +29,10 @@ EVENTS = frozenset(
         "server_ende",
         "abschluss_unbestaetigt",
         "wiederanlauf_fehlgeschlagen",
+        "begruessung_gesendet",
+        "begruessung_fehlgeschlagen",
+        "begruessung_audio",
+        "anruf_messung",
     }
 )
 _IDENTIFIER = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
@@ -47,6 +51,9 @@ _CODES = frozenset(
         "provider_nicht_verfuegbar",
     }
 )
+
+
+_MS_FIELDS = frozenset({"dauer_ms", "c_bis_audio_ms", "bereit_bis_audio_ms", "c_bis_transkript_ms"})
 
 
 class OpLog:
@@ -71,6 +78,11 @@ class OpLog:
             if key in {"spent_micro", "bound_micro", "limit_micro", "status", "level", "count"}:
                 if type(value) is int and 0 <= value <= 2**63 - 1:
                     row[key] = value
+            elif key in _MS_FIELDS:
+                if type(value) is int and 0 <= value <= 2**31 - 1:
+                    row[key] = value
+            elif key == "messstatus" and value in ("ok", "frist", "abbruch", "fehler"):
+                row[key] = value
             elif key == "duration_s":
                 if type(value) in (int, float) and math.isfinite(value) and value >= 0:
                     row[key] = value
