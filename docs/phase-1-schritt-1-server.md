@@ -1,6 +1,6 @@
 # Phase 1, Schritt 1 — Hybrid-Server und Sitzungslebenszyklus (Plan)
 
-Stand: 2026-10-27 · Status: **umgesetzt und gegenseitig geprüft (206 Tests grün); Live-Abnahme (§5.4) ausstehend** · Bezug:
+Stand: 2026-10-29 · Status: **umgesetzt, gegenseitig geprüft und live abgenommen (Nachträge 2026-10-28); Rest offen: Beacon in Chrome, Hintergrund-Tab > 5 min (beides in W8 von Schritt 2)** · Bezug:
 [Phase-1-Plan](./phase-1-mvp.md) §2 Schritt 1, §3, §6 · Prototyp: `agent/tools/gptlive_browser/`
 
 ## 1. Ziel
@@ -177,6 +177,42 @@ Deadline und Inaktivität genau einmal; Abbruch der HTTP-Anfrage bricht das Aufr
   eigene kleine Hetzner-VM (nicht die Mess-VM), Docker, TLS-Reverse-Proxy; Entscheidung und
   AVV vor Inbetriebnahme.
 - Self-Service-Login, Passwort zurücksetzen: Schritt 5. Transkript-Persistenz: Schritt 6.
+
+### Nachtrag zu §6: pm2 als Prozessmanager geprüft (2026-10-29)
+
+Auftrag Pit; Entwurf Claude, schreibgeschützt geprüft von Codex (Votum: Empfehlung tragfähig).
+pm2 ist ein Prozessmanager, kein Hosting: EU-VM, AVV und TLS-Proxy bleiben nötig.
+
+- **Empfehlung: kein pm2 auf der Pilot-VM.** Es bleibt beim Vorschlag oben (Docker, alternativ
+  systemd). Der Server ist bewusst ein Prozess (`flock` je State-Verzeichnis, Logins im
+  Speicher); Cluster-Modus und überlappende Reloads bringen nichts. pm2 brächte Node und ein
+  globales npm-Paket (AGPL-3.0) nur für einen Python-Prozess; eine Verknüpfung mit PM2.io/PM2+
+  (`pm2 link`/`pm2 plus`) wäre ein zusätzlicher, vorab zu prüfender Datenfluss (Standort und
+  AVV nicht geprüft). Standard-`kill_timeout` 1,6 s, danach SIGKILL ([pm2-Doku](https://pm2.keymetrics.io/docs/usage/signals-clean-restart/)).
+  Lokal ist pm2 möglich, aber nicht nötig.
+- **Offen für die Hosting-Entscheidung, unabhängig vom Prozessmanager** (aus dem Codex-Review):
+  1. **Grace-Zeit beim Beenden.** SIGINT und SIGTERM führen in aiohttp 3.14.3 zu `on_cleanup`.
+     Davor wartet aiohttp auf HTTP-Handler (zwei Timeout-Abschnitte zu je `shutdown_timeout`
+     = 60 s). Danach schließt `registry.shutdown()` die Sitzungen parallel, je Sitzung aber
+     `close()` und ggf. `force_close()` mit je 15 s, anschließend bis zu 15 s Aufräumen;
+     Journalzugriffe ohne Zeitlimit. Eine feste Obergrenze gibt es nicht. Grace-Zeit
+     (`stop_grace_period`, `TimeoutStopSec`) mit 20 parallelen Sitzungen messen oder die
+     Server-Fristen verkürzen.
+  2. **Aufbewahrung `betrieb.jsonl`.** Der Server schreibt die Datei selbst; Rotation von
+     stdout/stderr (journald, Docker-Logtreiber, pm2) erfasst sie nicht. Eigenes
+     Aufbewahrungskonzept nötig. Das Journal (`journal.jsonl`) trägt Budget und Wiederanlauf
+     und darf nicht rotiert oder gelöscht werden.
+  3. **SIGKILL ist nicht folgenlos.** `recover()` rekonstruiert Reserven und offene Sitzungen;
+     bis dahin `/healthz` 503 und keine neuen Starts (bis 120 s). Ohne Schließbestätigung
+     unbestätigter Ersatzabschluss mit voller Reserve (≈ 0,55 $ je Sitzung); ohne `provider_id`
+     bleibt die Reserve gebunden; eine abgeschnittene Journalzeile verhindert den Start.
+  4. **Bereitschaft überwachen.** Scheitert die Recovery, läuft der Prozess „nicht bereit“
+     weiter; eine Neustartregel bei Prozessende greift nicht. Eine Überwachung von `/healthz`
+     darf während der regulären Recovery (bis 120 s) nicht neu starten.
+  5. **Docker:** State-Verzeichnis als dauerhaftes Volume; nie zwei State-Verzeichnisse für
+     einen Dienst (getrennte Budgets und Register).
+- Nicht ausgeführt: Signalversuche, Messung der Beendigungsdauer, Tests. Zeitangaben aus dem
+  Code abgeleitet; Standardwerte von Docker und systemd nicht gesondert nachgelesen.
 
 ## Nachtrag: Umsetzung (2026-10-27)
 
