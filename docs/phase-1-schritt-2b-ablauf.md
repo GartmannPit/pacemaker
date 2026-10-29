@@ -288,3 +288,25 @@ wenige Backend-Tokens in Sitzung 1). Schätzung vorab ≈ 0,05 $.
 - Einzelwerte aus 2 Sitzungen, Serveruhr; **keine Browser-E2E-Latenz** und keine
   belastbare Aussage über Verteilung. Erhebung im Browser in B10.
 - Wortlaut der Meldung: Vorschlag „Brandt, ja?“ (siehe §4); Freigabe Pit offen.
+
+## Nachtrag: Umsetzung (2026-10-29)
+
+- **Server (Claude, `70a2c2a`):** `bereit`-Endpunkt mit Begrüßung über
+  `session.commentary.append` (Text `GREETING_COMMENTARY` in der Persona; der Persona-Prompt
+  bleibt unverändert, weil er auch im Pipecat-Messpfad gilt), `messung`-Endpunkt und optionale
+  Abbruchmessung in `/api/end`, `framework_id`, Briefing mit `frameworks`/`aufgaben`,
+  Betriebslog `begruessung_*`/`anruf_messung`. Codex-Review: 3 × P2 (Typprüfung
+  `framework_id`/Messstatus, Ende darf nie an der Messung scheitern, asynchrone Ablehnung der
+  Begrüßung über `client_event_id`), behoben; Nachprüfung ohne Befund.
+- **Seite (Codex, `4de0439`):** Ansichten A–E2, Countdown, Wählton, Detektor
+  (RMS > 0,01 für 60 ms, Abtastung alle 20 ms; vorläufig, Kalibrierung in B10), Messung,
+  Fehlerübergänge. Review Claude: Ablauf, Stummschaltung, `bereit`-Bedingung, Fristen und
+  getrennte Audiographen geprüft. Hinweise: In gedrosselten Hintergrund-Tabs erkennt der
+  Detektor kein Audio (Wechsel dann über das Transkript-Ersatzsignal); Persona-Audio vor
+  `bereit` verfällt für die Erkennung. Der Codex-Lauf hing nach der letzten Prüfung
+  (Laptop im Ruhezustand) und lieferte keinen Abschlussbericht; die Einschätzung zum
+  Nachtrag V1 steht damit aus.
+- **Prüfungen auf `gpt-live` nach Merge:** Agent `pytest` 283 grün, `ruff check`/`format`
+  grün; Web `typecheck`, `lint`, `format:check`, 52 Tests, `build` grün.
+- **Nicht ausgeführt:** B10 (manuelle Browser-Abnahme mit Pit), Eröffnungszeiten im Browser,
+  Firefox/Edge, Hintergrund-Tab. Wortlaut von Meldung und Aufgaben vorläufig (§8).
